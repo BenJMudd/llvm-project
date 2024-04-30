@@ -31,24 +31,26 @@
 using namespace clang;
 
 ConceptSpecializationExpr::ConceptSpecializationExpr(
-    const ASTContext &C, ConceptReference *Loc,
+    const ASTContext &C, NestedNameSpecifierLoc NNS,
+    SourceLocation TemplateKWLoc, DeclarationNameInfo ConceptNameInfo,
+    NamedDecl *FoundDecl, ConceptDecl *NamedConcept,
+    const ASTTemplateArgumentListInfo *ArgsAsWritten,
     ImplicitConceptSpecializationDecl *SpecDecl,
     const ConstraintSatisfaction *Satisfaction)
     : Expr(ConceptSpecializationExprClass, C.BoolTy, VK_PRValue, OK_Ordinary),
-      ConceptRef(Loc), SpecDecl(SpecDecl),
+      ConceptReference(NNS, TemplateKWLoc, ConceptNameInfo, FoundDecl,
+                       NamedConcept, ArgsAsWritten),
+      SpecDecl(SpecDecl),
       Satisfaction(Satisfaction
                        ? ASTConstraintSatisfaction::Create(C, *Satisfaction)
                        : nullptr) {
   setDependence(computeDependence(this, /*ValueDependent=*/!Satisfaction));
 
   // Currently guaranteed by the fact concepts can only be at namespace-scope.
-  assert(!Loc->getNestedNameSpecifierLoc() ||
-         (!Loc->getNestedNameSpecifierLoc()
-               .getNestedNameSpecifier()
-               ->isInstantiationDependent() &&
-          !Loc->getNestedNameSpecifierLoc()
-               .getNestedNameSpecifier()
-               ->containsUnexpandedParameterPack()));
+  assert(!NestedNameSpec ||
+         (!NestedNameSpec.getNestedNameSpecifier()->isInstantiationDependent() &&
+          !NestedNameSpec.getNestedNameSpecifier()
+              ->containsUnexpandedParameterPack()));
   assert((!isValueDependent() || isInstantiationDependent()) &&
          "should not be value-dependent");
 }
@@ -56,20 +58,29 @@ ConceptSpecializationExpr::ConceptSpecializationExpr(
 ConceptSpecializationExpr::ConceptSpecializationExpr(EmptyShell Empty)
     : Expr(ConceptSpecializationExprClass, Empty) {}
 
-ConceptSpecializationExpr *
-ConceptSpecializationExpr::Create(const ASTContext &C, ConceptReference *Loc,
-                                  ImplicitConceptSpecializationDecl *SpecDecl,
-                                  const ConstraintSatisfaction *Satisfaction) {
-  return new (C) ConceptSpecializationExpr(C, Loc, SpecDecl, Satisfaction);
+ConceptSpecializationExpr *ConceptSpecializationExpr::Create(
+    const ASTContext &C, NestedNameSpecifierLoc NNS,
+    SourceLocation TemplateKWLoc, DeclarationNameInfo ConceptNameInfo,
+    NamedDecl *FoundDecl, ConceptDecl *NamedConcept,
+    const ASTTemplateArgumentListInfo *ArgsAsWritten,
+    ImplicitConceptSpecializationDecl *SpecDecl,
+    const ConstraintSatisfaction *Satisfaction) {
+  return new (C) ConceptSpecializationExpr(
+      C, NNS, TemplateKWLoc, ConceptNameInfo, FoundDecl, NamedConcept,
+      ArgsAsWritten, SpecDecl, Satisfaction);
 }
 
 ConceptSpecializationExpr::ConceptSpecializationExpr(
-    const ASTContext &C, ConceptReference *Loc,
+    const ASTContext &C, ConceptDecl *NamedConcept,
+    const ASTTemplateArgumentListInfo *ArgsAsWritten,
     ImplicitConceptSpecializationDecl *SpecDecl,
     const ConstraintSatisfaction *Satisfaction, bool Dependent,
     bool ContainsUnexpandedParameterPack)
     : Expr(ConceptSpecializationExprClass, C.BoolTy, VK_PRValue, OK_Ordinary),
-      ConceptRef(Loc), SpecDecl(SpecDecl),
+      ConceptReference(NestedNameSpecifierLoc(), SourceLocation(),
+                       DeclarationNameInfo(), NamedConcept, NamedConcept,
+                       ArgsAsWritten),
+      SpecDecl(SpecDecl),
       Satisfaction(Satisfaction
                        ? ASTConstraintSatisfaction::Create(C, *Satisfaction)
                        : nullptr) {
@@ -83,15 +94,15 @@ ConceptSpecializationExpr::ConceptSpecializationExpr(
   setDependence(D);
 }
 
-ConceptSpecializationExpr *
-ConceptSpecializationExpr::Create(const ASTContext &C, ConceptReference *Loc,
-                                  ImplicitConceptSpecializationDecl *SpecDecl,
-                                  const ConstraintSatisfaction *Satisfaction,
-                                  bool Dependent,
-                                  bool ContainsUnexpandedParameterPack) {
-  return new (C)
-      ConceptSpecializationExpr(C, Loc, SpecDecl, Satisfaction, Dependent,
-                                ContainsUnexpandedParameterPack);
+ConceptSpecializationExpr *ConceptSpecializationExpr::Create(
+    const ASTContext &C, ConceptDecl *NamedConcept,
+    const ASTTemplateArgumentListInfo *ArgsAsWritten,
+    ImplicitConceptSpecializationDecl *SpecDecl,
+    const ConstraintSatisfaction *Satisfaction, bool Dependent,
+    bool ContainsUnexpandedParameterPack) {
+  return new (C) ConceptSpecializationExpr(C, NamedConcept, ArgsAsWritten,
+                                           SpecDecl, Satisfaction, Dependent,
+                                           ContainsUnexpandedParameterPack);
 }
 
 const TypeConstraint *
@@ -117,15 +128,13 @@ static bool RequirementContainsError(concepts::Requirement *R) {
 }
 
 RequiresExpr::RequiresExpr(ASTContext &C, SourceLocation RequiresKWLoc,
-                           RequiresExprBodyDecl *Body, SourceLocation LParenLoc,
+                           RequiresExprBodyDecl *Body,
                            ArrayRef<ParmVarDecl *> LocalParameters,
-                           SourceLocation RParenLoc,
                            ArrayRef<concepts::Requirement *> Requirements,
                            SourceLocation RBraceLoc)
     : Expr(RequiresExprClass, C.BoolTy, VK_PRValue, OK_Ordinary),
       NumLocalParameters(LocalParameters.size()),
-      NumRequirements(Requirements.size()), Body(Body), LParenLoc(LParenLoc),
-      RParenLoc(RParenLoc), RBraceLoc(RBraceLoc) {
+      NumRequirements(Requirements.size()), Body(Body), RBraceLoc(RBraceLoc) {
   RequiresExprBits.IsSatisfied = false;
   RequiresExprBits.RequiresKWLoc = RequiresKWLoc;
   bool Dependent = false;
@@ -170,18 +179,18 @@ RequiresExpr::RequiresExpr(ASTContext &C, EmptyShell Empty,
   : Expr(RequiresExprClass, Empty), NumLocalParameters(NumLocalParameters),
     NumRequirements(NumRequirements) { }
 
-RequiresExpr *RequiresExpr::Create(
-    ASTContext &C, SourceLocation RequiresKWLoc, RequiresExprBodyDecl *Body,
-    SourceLocation LParenLoc, ArrayRef<ParmVarDecl *> LocalParameters,
-    SourceLocation RParenLoc, ArrayRef<concepts::Requirement *> Requirements,
-    SourceLocation RBraceLoc) {
+RequiresExpr *
+RequiresExpr::Create(ASTContext &C, SourceLocation RequiresKWLoc,
+                     RequiresExprBodyDecl *Body,
+                     ArrayRef<ParmVarDecl *> LocalParameters,
+                     ArrayRef<concepts::Requirement *> Requirements,
+                     SourceLocation RBraceLoc) {
   void *Mem =
       C.Allocate(totalSizeToAlloc<ParmVarDecl *, concepts::Requirement *>(
                      LocalParameters.size(), Requirements.size()),
                  alignof(RequiresExpr));
-  return new (Mem)
-      RequiresExpr(C, RequiresKWLoc, Body, LParenLoc, LocalParameters,
-                   RParenLoc, Requirements, RBraceLoc);
+  return new (Mem) RequiresExpr(C, RequiresKWLoc, Body, LocalParameters,
+                                Requirements, RBraceLoc);
 }
 
 RequiresExpr *

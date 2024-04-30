@@ -176,8 +176,6 @@ private:
 
   bool decomposeMulByConstant(LLVMContext &Context, EVT VT,
                               SDValue C) const override;
-  bool isCheapToSpeculateCttz(Type *Ty) const override;
-  bool isCheapToSpeculateCtlz(Type *Ty) const override;
 };
 
 } // namespace llvm

@@ -31,9 +31,8 @@ public:
   };
   using SourceRangeSet = std::set<SourceRange, SourceRangeLessThan>;
 
-  LambdaFunctionNameCheck(StringRef Name, ClangTidyContext *Context);
-
-  void storeOptions(ClangTidyOptions::OptionMap &Opts) override;
+  LambdaFunctionNameCheck(StringRef Name, ClangTidyContext *Context)
+      : ClangTidyCheck(Name, Context) {}
   void registerMatchers(ast_matchers::MatchFinder *Finder) override;
   void registerPPCallbacks(const SourceManager &SM, Preprocessor *PP,
                            Preprocessor *ModuleExpanderPP) override;
@@ -41,7 +40,6 @@ public:
 
 private:
   SourceRangeSet SuppressMacroExpansions;
-  bool IgnoreMacros;
 };
 
 } // namespace clang::tidy::bugprone

@@ -100,7 +100,7 @@ LogicalResult FooAnalysis::initialize(Operation *top) {
     return top->emitError("expected at least one block in the region");
 
   // Initialize the top-level state.
-  (void)getOrCreate<FooState>(&top->getRegion(0).front())->join(0);
+  getOrCreate<FooState>(&top->getRegion(0).front())->join(0);
 
   // Visit all nested blocks and operations.
   for (Block &block : top->getRegion(0)) {

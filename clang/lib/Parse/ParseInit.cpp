@@ -35,7 +35,7 @@ bool Parser::MayBeDesignationStart() {
     return true;
 
   case tok::l_square: {  // designator: array-designator
-    if (!PP.getLangOpts().CPlusPlus)
+    if (!PP.getLangOpts().CPlusPlus11)
       return true;
 
     // C++11 lambda expressions and C99 designators can be ambiguous all the
@@ -431,7 +431,7 @@ ExprResult Parser::ParseInitializerWithPotentialDesignator(
 ///       initializer: [C99 6.7.8]
 ///         '{' initializer-list '}'
 ///         '{' initializer-list ',' '}'
-/// [C23]   '{' '}'
+/// [C2x]   '{' '}'
 ///
 ///       initializer-list:
 ///         designation[opt] initializer ...[opt]
@@ -449,10 +449,10 @@ ExprResult Parser::ParseBraceInitializer() {
   ExprVector InitExprs;
 
   if (Tok.is(tok::r_brace)) {
-    // Empty initializers are a C++ feature and a GNU extension to C before C23.
+    // Empty initializers are a C++ feature and a GNU extension to C before C2x.
     if (!getLangOpts().CPlusPlus) {
-      Diag(LBraceLoc, getLangOpts().C23
-                          ? diag::warn_c23_compat_empty_initializer
+      Diag(LBraceLoc, getLangOpts().C2x
+                          ? diag::warn_c2x_compat_empty_initializer
                           : diag::ext_c_empty_initializer);
     }
     // Match the '}'.

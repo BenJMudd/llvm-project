@@ -117,8 +117,7 @@ public:
                           StringRef FileName, bool IsAngled,
                           CharSourceRange FilenameRange,
                           OptionalFileEntryRef File, StringRef SearchPath,
-                          StringRef RelativePath, const Module *SuggestedModule,
-                          bool ModuleImported,
+                          StringRef RelativePath, const Module *Imported,
                           SrcMgr::CharacteristicKind FileType) override {
     clearCurrentEnum(HashLoc);
   }
@@ -485,7 +484,7 @@ void MacroToEnumCallbacks::fixEnumMacro(const MacroList &MacroList) const {
       Check->diag(Begin, "replace macro with enum")
       << FixItHint::CreateInsertion(Begin, "enum {\n");
 
-  for (size_t I = 0U; I < MacroList.size(); ++I) {
+  for (size_t I = 0u; I < MacroList.size(); ++I) {
     const EnumMacro &Macro = MacroList[I];
     SourceLocation DefineEnd =
         Macro.Directive->getMacroInfo()->getDefinitionLoc();

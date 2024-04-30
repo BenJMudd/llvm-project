@@ -10,11 +10,3 @@ xvfrecip.s $xr3, $xr16
 xvfrecip.d $xr17, $xr24
 # CHECK-INST: xvfrecip.d $xr17, $xr24
 # CHECK-ENCODING: encoding: [0x11,0xfb,0x9c,0x76]
-
-xvfrecipe.s $xr3, $xr16
-# CHECK-INST: xvfrecipe.s $xr3, $xr16
-# CHECK-ENCODING: encoding: [0x03,0x16,0x9d,0x76]
-
-xvfrecipe.d $xr17, $xr24
-# CHECK-INST: xvfrecipe.d $xr17, $xr24
-# CHECK-ENCODING: encoding: [0x11,0x1b,0x9d,0x76]

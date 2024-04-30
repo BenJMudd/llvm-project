@@ -327,8 +327,8 @@ private:
       const parser::SectionSubscript &);
   std::vector<Subscript> AnalyzeSectionSubscripts(
       const std::list<parser::SectionSubscript> &);
-  std::optional<Component> CreateComponent(DataRef &&, const Symbol &,
-      const semantics::Scope &, bool C919bAlreadyEnforced = false);
+  std::optional<Component> CreateComponent(
+      DataRef &&, const Symbol &, const semantics::Scope &);
   MaybeExpr CompleteSubscripts(ArrayRef &&);
   MaybeExpr ApplySubscripts(DataRef &&, std::vector<Subscript> &&);
   void CheckConstantSubscripts(ArrayRef &);
@@ -352,6 +352,7 @@ private:
       const parser::ProcComponentRef &, ActualArguments &&, bool isSubroutine);
   std::optional<characteristics::Procedure> CheckCall(
       parser::CharBlock, const ProcedureDesignator &, ActualArguments &);
+  bool CheckPPCIntrinsic(const ProcedureDesignator &, ActualArguments &);
   using AdjustActuals =
       std::optional<std::function<bool(const Symbol &, ActualArguments &)>>;
   bool ResolveForward(const Symbol &);
@@ -506,18 +507,9 @@ public:
   }
 
   bool Pre(const parser::ComponentDefStmt &) {
-    inComponentDefStmt_ = true;
-    return true;
-  }
-  void Post(const parser::ComponentDefStmt &) { inComponentDefStmt_ = false; }
-  bool Pre(const parser::Initialization &x) {
-    // Default component initialization expressions (but not DATA-like ones
-    // as in DEC STRUCTUREs) were already analyzed in name resolution
-    // and PDT instantiation; do not attempt to re-analyze them without
-    // type parameters.
-    return !inComponentDefStmt_ ||
-        std::holds_alternative<
-            std::list<common::Indirection<parser::DataStmtValue>>>(x.u);
+    // Already analyzed in name resolution and PDT instantiation;
+    // do not attempt to re-analyze now without type parameters.
+    return false;
   }
 
   template <typename A> bool Pre(const parser::Scalar<A> &x) {
@@ -547,7 +539,6 @@ private:
   SemanticsContext &context_;
   evaluate::ExpressionAnalyzer exprAnalyzer_{context_};
   int whereDepth_{0}; // nesting of WHERE statements & constructs
-  bool inComponentDefStmt_{false};
 };
 } // namespace Fortran::semantics
 #endif // FORTRAN_SEMANTICS_EXPRESSION_H_

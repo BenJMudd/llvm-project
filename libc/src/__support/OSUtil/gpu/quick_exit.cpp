@@ -6,14 +6,17 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "src/__support/OSUtil/quick_exit.h"
+#ifndef LLVM_LIBC_SRC_SUPPORT_OSUTIL_GPU_QUICK_EXIT_H
+#define LLVM_LIBC_SRC_SUPPORT_OSUTIL_GPU_QUICK_EXIT_H
+
+#include "quick_exit.h"
 
 #include "src/__support/RPC/rpc_client.h"
 #include "src/__support/macros/properties/architectures.h"
 
-namespace LIBC_NAMESPACE {
+namespace __llvm_libc {
 
-[[noreturn]] void quick_exit(int status) {
+void quick_exit(int status) {
   // We want to first make sure the server is listening before we exit.
   rpc::Client::Port port = rpc::client.open<RPC_EXIT>();
   port.send_and_recv([](rpc::Buffer *) {}, [](rpc::Buffer *) {});
@@ -22,7 +25,16 @@ namespace LIBC_NAMESPACE {
   });
   port.close();
 
-  gpu::end_program();
+#if defined(LIBC_TARGET_ARCH_IS_NVPTX)
+  LIBC_INLINE_ASM("exit;" ::: "memory");
+#elif defined(LIBC_TARGET_ARCH_IS_AMDGPU)
+  // This will terminate the entire wavefront, may not be valid with divergent
+  // work items.
+  __builtin_amdgcn_endpgm();
+#endif
+  __builtin_unreachable();
 }
 
-} // namespace LIBC_NAMESPACE
+} // namespace __llvm_libc
+
+#endif // LLVM_LIBC_SRC_SUPPORT_OSUTIL_GPU_QUICK_EXIT_H

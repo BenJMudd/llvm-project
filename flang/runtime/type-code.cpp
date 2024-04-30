@@ -10,9 +10,7 @@
 
 namespace Fortran::runtime {
 
-RT_OFFLOAD_API_GROUP_BEGIN
-
-RT_API_ATTRS TypeCode::TypeCode(TypeCategory f, int kind) {
+TypeCode::TypeCode(TypeCategory f, int kind) {
   switch (f) {
   case TypeCategory::Integer:
     switch (kind) {
@@ -112,7 +110,7 @@ RT_API_ATTRS TypeCode::TypeCode(TypeCategory f, int kind) {
   }
 }
 
-RT_API_ATTRS Fortran::common::optional<std::pair<TypeCategory, int>>
+std::optional<std::pair<TypeCategory, int>>
 TypeCode::GetCategoryAndKind() const {
   switch (raw_) {
   case CFI_type_signed_char:
@@ -204,10 +202,7 @@ TypeCode::GetCategoryAndKind() const {
   case CFI_type_char32_t:
     return std::make_pair(TypeCategory::Character, 4);
   default:
-    return Fortran::common::nullopt;
+    return std::nullopt;
   }
 }
-
-RT_OFFLOAD_API_GROUP_END
-
 } // namespace Fortran::runtime

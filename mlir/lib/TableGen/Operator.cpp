@@ -854,7 +854,3 @@ std::string Operator::getRemoverName(StringRef name) const {
 }
 
 bool Operator::hasFolder() const { return def.getValueAsBit("hasFolder"); }
-
-bool Operator::useCustomPropertiesEncoding() const {
-  return def.getValueAsBit("useCustomPropertiesEncoding");
-}

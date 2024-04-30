@@ -26,12 +26,6 @@ int anon_bar() { return 1; }
 auto anon_lambda = [] {};
 } // namespace
 
-__attribute__((always_inline)) int inlined_foo(const char *str) {
-  if (bool b = bar())
-    return 1;
-  return 2;
-}
-
 int main() {
   ns::foo<decltype(bar)>(bar);
   ns::foo<decltype(bar)>("bar");
@@ -43,6 +37,6 @@ int main() {
   f.foo(anon_bar);
   f.operator<< <(2 > 1)>(0);
   f.returns_func_ptr<int>(detail::Quux<int>{});
-  inlined_foo("bar");
+
   return 0;
 }

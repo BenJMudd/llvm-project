@@ -25,7 +25,7 @@ public:
   DirectXTargetMachine(const Target &T, const Triple &TT, StringRef CPU,
                        StringRef FS, const TargetOptions &Options,
                        std::optional<Reloc::Model> RM,
-                       std::optional<CodeModel::Model> CM, CodeGenOptLevel OL,
+                       std::optional<CodeModel::Model> CM, CodeGenOpt::Level OL,
                        bool JIT);
 
   ~DirectXTargetMachine() override;
@@ -47,8 +47,7 @@ public:
   }
 
   TargetTransformInfo getTargetTransformInfo(const Function &F) const override;
-  void registerPassBuilderCallbacks(PassBuilder &PB,
-                                    bool PopulateClassToPassNames) override;
+  void registerPassBuilderCallbacks(PassBuilder &PB) override;
 };
 } // namespace llvm
 

@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_LIBC_SRC___SUPPORT_FPUTIL_AARCH64_FENVIMPL_H
-#define LLVM_LIBC_SRC___SUPPORT_FPUTIL_AARCH64_FENVIMPL_H
+#ifndef LLVM_LIBC_SRC_SUPPORT_FPUTIL_AARCH64_FENVIMPL_H
+#define LLVM_LIBC_SRC_SUPPORT_FPUTIL_AARCH64_FENVIMPL_H
 
 #include "src/__support/macros/attributes.h" // LIBC_INLINE
 #include "src/__support/macros/properties/architectures.h"
@@ -17,13 +17,12 @@
 #endif
 
 #include <arm_acle.h>
+#include <fenv.h>
 #include <stdint.h>
 
-#include "hdr/fenv_macros.h"
-#include "hdr/types/fenv_t.h"
 #include "src/__support/FPUtil/FPBits.h"
 
-namespace LIBC_NAMESPACE {
+namespace __llvm_libc {
 namespace fputil {
 
 struct FEnv {
@@ -156,8 +155,8 @@ LIBC_INLINE int set_except(int excepts) {
 LIBC_INLINE int raise_except(int excepts) {
   float zero = 0.0f;
   float one = 1.0f;
-  float largeValue = FPBits<float>::max_normal().get_val();
-  float smallValue = FPBits<float>::min_normal().get_val();
+  float largeValue = float(FPBits<float>(FPBits<float>::MAX_NORMAL));
+  float smallValue = float(FPBits<float>(FPBits<float>::MIN_NORMAL));
   auto divfunc = [](float a, float b) {
     __asm__ __volatile__("ldr  s0, %0\n\t"
                          "ldr  s1, %1\n\t"
@@ -279,6 +278,6 @@ LIBC_INLINE int set_env(const fenv_t *envp) {
 }
 
 } // namespace fputil
-} // namespace LIBC_NAMESPACE
+} // namespace __llvm_libc
 
-#endif // LLVM_LIBC_SRC___SUPPORT_FPUTIL_AARCH64_FENVIMPL_H
+#endif // LLVM_LIBC_SRC_SUPPORT_FPUTIL_AARCH64_FENVIMPL_H

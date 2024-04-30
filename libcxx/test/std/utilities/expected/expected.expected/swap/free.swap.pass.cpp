@@ -6,6 +6,8 @@
 //===----------------------------------------------------------------------===//
 
 // UNSUPPORTED: c++03, c++11, c++14, c++17, c++20
+// Older Clangs do not support the C++20 feature to constrain destructors
+// XFAIL: clang-15, apple-clang-14
 
 // friend constexpr void swap(expected& x, expected& y) noexcept(noexcept(x.swap(y)));
 
@@ -31,16 +33,16 @@ static_assert(!std::is_swappable_v<std::expected<NotSwappable, int>>);
 // !is_swappable_v<E>
 static_assert(!std::is_swappable_v<std::expected<int, NotSwappable>>);
 
-struct NotMoveConstructible {
-  NotMoveConstructible(NotMoveConstructible&&) = delete;
-  friend void swap(NotMoveConstructible&, NotMoveConstructible&) {}
+struct NotMoveContructible {
+  NotMoveContructible(NotMoveContructible&&) = delete;
+  friend void swap(NotMoveContructible&, NotMoveContructible&) {}
 };
 
 // !is_move_constructible_v<T>
-static_assert(!std::is_swappable_v<std::expected<NotMoveConstructible, int>>);
+static_assert(!std::is_swappable_v<std::expected<NotMoveContructible, int>>);
 
 // !is_move_constructible_v<E>
-static_assert(!std::is_swappable_v<std::expected<int, NotMoveConstructible>>);
+static_assert(!std::is_swappable_v<std::expected<int, NotMoveContructible>>);
 
 struct MoveMayThrow {
   MoveMayThrow(MoveMayThrow&&) noexcept(false);

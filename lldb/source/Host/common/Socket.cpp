@@ -269,6 +269,11 @@ Status Socket::Write(const void *buf, size_t &num_bytes) {
   return error;
 }
 
+Status Socket::PreDisconnect() {
+  Status error;
+  return error;
+}
+
 Status Socket::Close() {
   Status error;
   if (!IsValid() || !m_should_close_fd)

@@ -132,9 +132,9 @@ Function *GenEmptyFunction(Module *M) {
   // Define a few arguments
   LLVMContext &Context = M->getContext();
   Type* ArgsTy[] = {
-    PointerType::get(Context, 0),
-    PointerType::get(Context, 0),
-    PointerType::get(Context, 0),
+    Type::getInt8PtrTy(Context),
+    Type::getInt32PtrTy(Context),
+    Type::getInt64PtrTy(Context),
     Type::getInt32Ty(Context),
     Type::getInt64Ty(Context),
     Type::getInt8Ty(Context)
@@ -175,7 +175,7 @@ public:
         Ty = Type::getPPC_FP128Ty(Context);
       else if (Arg == "x86_mmx")
         Ty = Type::getX86_MMXTy(Context);
-      else if (Arg.starts_with("i")) {
+      else if (Arg.startswith("i")) {
         unsigned N = 0;
         Arg.drop_front().getAsInteger(10, N);
         if (N > 0)

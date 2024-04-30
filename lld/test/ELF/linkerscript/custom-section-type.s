@@ -76,7 +76,7 @@ SECTIONS {
 .section progbits,"a",@note
 .byte 0
 
-.section expr,"a",@0x60000000
+.section expr,"a",@12345
 .byte 0
 
 #--- unknown1.lds

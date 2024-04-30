@@ -6,11 +6,7 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This checker evaluates "standalone" clang builtin functions that are not
-// just special-cased variants of well-known non-builtin functions.
-// Builtin functions like __builtin_memcpy and __builtin_alloca should be
-// evaluated by the same checker that handles their non-builtin variant to
-// ensure that the two variants are handled consistently.
+// This checker evaluates clang builtin functions.
 //
 //===----------------------------------------------------------------------===//
 
@@ -48,8 +44,7 @@ bool BuiltinFunctionChecker::evalCall(const CallEvent &Call,
   default:
     return false;
 
-  case Builtin::BI__builtin_assume:
-  case Builtin::BI__assume: {
+  case Builtin::BI__builtin_assume: {
     assert (Call.getNumArgs() > 0);
     SVal Arg = Call.getArgSVal(0);
     if (Arg.isUndef())
@@ -81,6 +76,27 @@ bool BuiltinFunctionChecker::evalCall(const CallEvent &Call,
     assert (Call.getNumArgs() > 0);
     SVal Arg = Call.getArgSVal(0);
     C.addTransition(state->BindExpr(CE, LCtx, Arg));
+    return true;
+  }
+
+  case Builtin::BI__builtin_alloca_with_align:
+  case Builtin::BI__builtin_alloca: {
+    // FIXME: Refactor into StoreManager itself?
+    MemRegionManager& RM = C.getStoreManager().getRegionManager();
+    const AllocaRegion* R =
+      RM.getAllocaRegion(CE, C.blockCount(), C.getLocationContext());
+
+    // Set the extent of the region in bytes. This enables us to use the
+    // SVal of the argument directly. If we save the extent in bits, we
+    // cannot represent values like symbol*8.
+    auto Size = Call.getArgSVal(0);
+    if (Size.isUndef())
+      return true; // Return true to model purity.
+
+    state = setDynamicExtent(state, R, Size.castAs<DefinedOrUnknownSVal>(),
+                             C.getSValBuilder());
+
+    C.addTransition(state->BindExpr(CE, LCtx, loc::MemRegionVal(R)));
     return true;
   }
 

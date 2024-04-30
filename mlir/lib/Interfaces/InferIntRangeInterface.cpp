@@ -8,8 +8,8 @@
 
 #include "mlir/Interfaces/InferIntRangeInterface.h"
 #include "mlir/IR/BuiltinTypes.h"
-#include "mlir/Interfaces/InferIntRangeInterface.cpp.inc"
 #include <optional>
+#include "mlir/Interfaces/InferIntRangeInterface.cpp.inc"
 
 using namespace mlir;
 

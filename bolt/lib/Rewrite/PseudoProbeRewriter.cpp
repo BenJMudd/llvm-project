@@ -183,7 +183,9 @@ void PseudoProbeRewriter::updatePseudoProbes() {
         // A call probe may be duplicated due to ICP
         // Go through output of InputOffsetToAddressMap to collect all related
         // probes
-        auto CallOutputAddresses = BC.getIOAddressMap().lookupAll(AP.first);
+        const InputOffsetToAddressMapTy &Offset2Addr =
+            F->getInputOffsetToAddressMap();
+        auto CallOutputAddresses = Offset2Addr.equal_range(Offset);
         auto CallOutputAddress = CallOutputAddresses.first;
         if (CallOutputAddress == CallOutputAddresses.second) {
           Probe->setAddress(INT64_MAX);
@@ -248,8 +250,7 @@ void PseudoProbeRewriter::encodePseudoProbes() {
   auto EmitInt = [&](uint64_t Value, uint32_t Size) {
     const bool IsLittleEndian = BC.AsmInfo->isLittleEndian();
     uint64_t Swapped = support::endian::byte_swap(
-        Value,
-        IsLittleEndian ? llvm::endianness::little : llvm::endianness::big);
+        Value, IsLittleEndian ? support::little : support::big);
     unsigned Index = IsLittleEndian ? 0 : 8 - Size;
     auto Entry = StringRef(reinterpret_cast<char *>(&Swapped) + Index, Size);
     Contents.append(Entry.begin(), Entry.end());

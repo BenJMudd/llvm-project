@@ -33,10 +33,10 @@
 #include "llvm/CodeGen/MachineMemOperand.h"
 #include "llvm/CodeGen/MachineOperand.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
+#include "llvm/CodeGen/MachineValueType.h"
 #include "llvm/CodeGen/TargetRegisterInfo.h"
 #include "llvm/CodeGen/TargetSubtargetInfo.h"
 #include "llvm/CodeGen/ValueTypes.h"
-#include "llvm/CodeGenTypes/MachineValueType.h"
 #include "llvm/IR/Argument.h"
 #include "llvm/IR/Attributes.h"
 #include "llvm/IR/Function.h"
@@ -158,14 +158,13 @@ struct IncomingArgHandler : public CallLowering::IncomingValueHandler {
   }
 
   void assignValueToReg(Register ValVReg, Register PhysReg,
-                        const CCValAssign &VA) override {
+                        CCValAssign VA) override {
     markPhysRegUsed(PhysReg);
     IncomingValueHandler::assignValueToReg(ValVReg, PhysReg, VA);
   }
 
   void assignValueToAddress(Register ValVReg, Register Addr, LLT MemTy,
-                            const MachinePointerInfo &MPO,
-                            const CCValAssign &VA) override {
+                            MachinePointerInfo &MPO, CCValAssign &VA) override {
     MachineFunction &MF = MIRBuilder.getMF();
 
     LLT ValTy(VA.getValVT());
@@ -284,15 +283,14 @@ struct OutgoingArgHandler : public CallLowering::OutgoingValueHandler {
   }
 
   void assignValueToReg(Register ValVReg, Register PhysReg,
-                        const CCValAssign &VA) override {
+                        CCValAssign VA) override {
     MIB.addUse(PhysReg, RegState::Implicit);
     Register ExtReg = extendRegister(ValVReg, VA);
     MIRBuilder.buildCopy(PhysReg, ExtReg);
   }
 
   void assignValueToAddress(Register ValVReg, Register Addr, LLT MemTy,
-                            const MachinePointerInfo &MPO,
-                            const CCValAssign &VA) override {
+                            MachinePointerInfo &MPO, CCValAssign &VA) override {
     MachineFunction &MF = MIRBuilder.getMF();
     auto MMO = MF.getMachineMemOperand(MPO, MachineMemOperand::MOStore, MemTy,
                                        inferAlignFromPtrInfo(MF, MPO));
@@ -300,9 +298,8 @@ struct OutgoingArgHandler : public CallLowering::OutgoingValueHandler {
   }
 
   void assignValueToAddress(const CallLowering::ArgInfo &Arg, unsigned RegIndex,
-                            Register Addr, LLT MemTy,
-                            const MachinePointerInfo &MPO,
-                            const CCValAssign &VA) override {
+                            Register Addr, LLT MemTy, MachinePointerInfo &MPO,
+                            CCValAssign &VA) override {
     unsigned MaxSize = MemTy.getSizeInBytes() * 8;
     // For varargs, we always want to extend them to 8 bytes, in which case
     // we disable setting a max.
@@ -535,9 +532,8 @@ bool AArch64CallLowering::fallBackToDAGISel(const MachineFunction &MF) const {
   }
 
   SMEAttrs Attrs(F);
-  if (Attrs.hasZAState() || Attrs.hasZT0State() ||
-      Attrs.hasStreamingInterfaceOrBody() ||
-      Attrs.hasStreamingCompatibleInterface())
+  if (Attrs.hasNewZAInterface() ||
+      (!Attrs.hasStreamingInterface() && Attrs.hasStreamingBody()))
     return true;
 
   return false;
@@ -638,18 +634,7 @@ bool AArch64CallLowering::lowerFormalArguments(
   MachineRegisterInfo &MRI = MF.getRegInfo();
   auto &DL = F.getParent()->getDataLayout();
   auto &Subtarget = MF.getSubtarget<AArch64Subtarget>();
-
-  // Arm64EC has extra requirements for varargs calls which are only implemented
-  // in SelectionDAG; bail out for now.
-  if (F.isVarArg() && Subtarget.isWindowsArm64EC())
-    return false;
-
-  // Arm64EC thunks have a special calling convention which is only implemented
-  // in SelectionDAG; bail out for now.
-  if (F.getCallingConv() == CallingConv::ARM64EC_Thunk_Native ||
-      F.getCallingConv() == CallingConv::ARM64EC_Thunk_X64)
-    return false;
-
+  // TODO: Support Arm64EC
   bool IsWin64 = Subtarget.isCallingConvWin64(F.getCallingConv()) && !Subtarget.isWindowsArm64EC();
 
   SmallVector<ArgInfo, 8> SplitArgs;
@@ -1013,23 +998,16 @@ bool AArch64CallLowering::isEligibleForTailCallOptimization(
 
 static unsigned getCallOpcode(const MachineFunction &CallerF, bool IsIndirect,
                               bool IsTailCall) {
-  const AArch64FunctionInfo *FuncInfo = CallerF.getInfo<AArch64FunctionInfo>();
-
   if (!IsTailCall)
     return IsIndirect ? getBLRCallOpcode(CallerF) : (unsigned)AArch64::BL;
 
   if (!IsIndirect)
     return AArch64::TCRETURNdi;
 
-  // When BTI or PAuthLR are enabled, there are restrictions on using x16 and
-  // x17 to hold the function pointer.
-  if (FuncInfo->branchTargetEnforcement()) {
-    if (FuncInfo->branchProtectionPAuthLR())
-      return AArch64::TCRETURNrix17;
-    else
-      return AArch64::TCRETURNrix16x17;
-  } else if (FuncInfo->branchProtectionPAuthLR())
-    return AArch64::TCRETURNrinotx16;
+  // When BTI is enabled, we need to use TCRETURNriBTI to make sure that we use
+  // x16 or x17.
+  if (CallerF.getInfo<AArch64FunctionInfo>()->branchTargetEnforcement())
+    return AArch64::TCRETURNriBTI;
 
   return AArch64::TCRETURNri;
 }
@@ -1224,16 +1202,7 @@ bool AArch64CallLowering::lowerCall(MachineIRBuilder &MIRBuilder,
   const AArch64Subtarget &Subtarget = MF.getSubtarget<AArch64Subtarget>();
 
   // Arm64EC has extra requirements for varargs calls; bail out for now.
-  //
-  // Arm64EC has special mangling rules for calls; bail out on all calls for
-  // now.
-  if (Subtarget.isWindowsArm64EC())
-    return false;
-
-  // Arm64EC thunks have a special calling convention which is only implemented
-  // in SelectionDAG; bail out for now.
-  if (Info.CallConv == CallingConv::ARM64EC_Thunk_Native ||
-      Info.CallConv == CallingConv::ARM64EC_Thunk_X64)
+  if (Info.IsVarArg && Subtarget.isWindowsArm64EC())
     return false;
 
   SmallVector<ArgInfo, 8> OutArgs;
@@ -1301,17 +1270,8 @@ bool AArch64CallLowering::lowerCall(MachineIRBuilder &MIRBuilder,
            !Subtarget.noBTIAtReturnTwice() &&
            MF.getInfo<AArch64FunctionInfo>()->branchTargetEnforcement())
     Opc = AArch64::BLR_BTI;
-  else {
-    // For an intrinsic call (e.g. memset), use GOT if "RtLibUseGOT" (-fno-plt)
-    // is set.
-    if (Info.Callee.isSymbol() && F.getParent()->getRtLibUseGOT()) {
-      auto MIB = MIRBuilder.buildInstr(TargetOpcode::G_GLOBAL_VALUE);
-      DstOp(getLLTForType(*F.getType(), DL)).addDefToMIB(MRI, MIB);
-      MIB.addExternalSymbol(Info.Callee.getSymbolName(), AArch64II::MO_GOT);
-      Info.Callee = MachineOperand::CreateReg(MIB.getReg(0), false);
-    }
+  else
     Opc = getCallOpcode(MF, Info.Callee.isReg(), false);
-  }
 
   auto MIB = MIRBuilder.buildInstrNoInsert(Opc);
   unsigned CalleeOpNo = 0;

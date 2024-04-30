@@ -13,7 +13,6 @@
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Config/config.h"
-#include "llvm/Support/AutoConvert.h"
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/Duration.h"
 #include "llvm/Support/ErrorHandling.h"
@@ -794,7 +793,7 @@ void raw_fd_ostream::write_impl(const char *Ptr, size_t Size) {
       }
 #endif
       // Otherwise it's a non-recoverable error. Note it and quit.
-      error_detected(errnoAsErrorCode());
+      error_detected(std::error_code(errno, std::generic_category()));
       break;
     }
 
@@ -824,7 +823,7 @@ uint64_t raw_fd_ostream::seek(uint64_t off) {
   pos = ::lseek(FD, off, SEEK_SET);
 #endif
   if (pos == (uint64_t)-1)
-    error_detected(errnoAsErrorCode());
+    error_detected(std::error_code(errno, std::generic_category()));
   return pos;
 }
 
@@ -846,7 +845,8 @@ size_t raw_fd_ostream::preferred_buffer_size() const {
   if (IsWindowsConsole)
     return 0;
   return raw_ostream::preferred_buffer_size();
-#else
+#elif !defined(__minix)
+  // Minix has no st_blksize.
   assert(FD >= 0 && "File not yet open!");
   struct stat statbuf;
   if (fstat(FD, &statbuf) != 0)
@@ -859,6 +859,8 @@ size_t raw_fd_ostream::preferred_buffer_size() const {
     return 0;
   // Return the preferred block size.
   return statbuf.st_blksize;
+#else
+  return raw_ostream::preferred_buffer_size();
 #endif
 }
 
@@ -896,10 +898,6 @@ void raw_fd_ostream::anchor() {}
 raw_fd_ostream &llvm::outs() {
   // Set buffer settings to model stdout behavior.
   std::error_code EC;
-#ifdef __MVS__
-  EC = enableAutoConversion(STDOUT_FILENO);
-  assert(!EC);
-#endif
   static raw_fd_ostream S("-", EC, sys::fs::OF_None);
   assert(!EC);
   return S;
@@ -907,10 +905,6 @@ raw_fd_ostream &llvm::outs() {
 
 raw_fd_ostream &llvm::errs() {
   // Set standard error to be unbuffered and tied to outs() by default.
-#ifdef __MVS__
-  std::error_code EC = enableAutoConversion(STDERR_FILENO);
-  assert(!EC);
-#endif
   static raw_fd_ostream S(STDERR_FILENO, false, true);
   return S;
 }
@@ -937,16 +931,13 @@ raw_fd_stream::raw_fd_stream(StringRef Filename, std::error_code &EC)
     EC = std::make_error_code(std::errc::invalid_argument);
 }
 
-raw_fd_stream::raw_fd_stream(int fd, bool shouldClose)
-    : raw_fd_ostream(fd, shouldClose, false, OStreamKind::OK_FDStream) {}
-
 ssize_t raw_fd_stream::read(char *Ptr, size_t Size) {
   assert(get_fd() >= 0 && "File already closed.");
   ssize_t Ret = ::read(get_fd(), (void *)Ptr, Size);
   if (Ret >= 0)
     inc_pos(Ret);
   else
-    error_detected(errnoAsErrorCode());
+    error_detected(std::error_code(errno, std::generic_category()));
   return Ret;
 }
 

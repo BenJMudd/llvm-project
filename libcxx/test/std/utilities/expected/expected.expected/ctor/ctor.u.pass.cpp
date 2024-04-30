@@ -119,38 +119,17 @@ constexpr bool test() {
     assert(e.value().j == 6);
   }
 
-  // https://cplusplus.github.io/LWG/issue3836
-
-  // Test &
+  // this is a confusing example, but the behaviour
+  // is exactly what is specified in the spec
+  // see https://cplusplus.github.io/LWG/issue3836
   {
+    struct BaseError {};
+    struct DerivedError : BaseError {};
+
     std::expected<bool, DerivedError> e1(false);
     std::expected<bool, BaseError> e2(e1);
     assert(e2.has_value());
-    assert(!e2.value()); // yes, e2 holds "false" since LWG3836
-  }
-
-  // Test &&
-  {
-    std::expected<bool, DerivedError> e1(false);
-    std::expected<bool, BaseError> e2(std::move(e1));
-    assert(e2.has_value());
-    assert(!e2.value()); // yes, e2 holds "false" since LWG3836
-  }
-
-  // Test const&
-  {
-    const std::expected<bool, DerivedError> e1(false);
-    std::expected<bool, BaseError> e2(e1);
-    assert(e2.has_value());
-    assert(!e2.value()); // yes, e2 holds "false" since LWG3836
-  }
-
-  // Test const&&
-  {
-    const std::expected<bool, DerivedError> e1(false);
-    std::expected<bool, BaseError> e2(std::move(e1));
-    assert(e2.has_value());
-    assert(!e2.value()); // yes, e2 holds "false" since LWG3836
+    assert(e2.value()); // yes, e2 holds "true"
   }
   return true;
 }

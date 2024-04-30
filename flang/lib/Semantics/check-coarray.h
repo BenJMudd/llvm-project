@@ -23,7 +23,6 @@ struct EventPostStmt;
 struct EventWaitStmt;
 struct FormTeamStmt;
 struct ImageSelector;
-struct NotifyWaitStmt;
 struct SyncAllStmt;
 struct SyncImagesStmt;
 struct SyncMemoryStmt;
@@ -42,7 +41,6 @@ public:
   void Leave(const parser::SyncImagesStmt &);
   void Leave(const parser::SyncMemoryStmt &);
   void Leave(const parser::SyncTeamStmt &);
-  void Leave(const parser::NotifyWaitStmt &);
   void Leave(const parser::EventPostStmt &);
   void Leave(const parser::EventWaitStmt &);
   void Leave(const parser::UnlockStmt &);

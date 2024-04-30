@@ -357,7 +357,6 @@ AddressClass ObjectFile::GetAddressClass(addr_t file_addr) {
           case eSectionTypeDWARFAppleObjC:
           case eSectionTypeDWARFGNUDebugAltLink:
           case eSectionTypeCTF:
-          case eSectionTypeSwiftModules:
             return AddressClass::eDebug;
           case eSectionTypeEHFrame:
           case eSectionTypeARMexidx:
@@ -551,8 +550,8 @@ size_t ObjectFile::ReadSectionData(Section *section,
 
   // The object file now contains a full mmap'ed copy of the object file
   // data, so just use this
-  return GetData(section->GetFileOffset(), GetSectionDataSize(section),
-                 section_data);
+  return GetData(section->GetFileOffset(), section->GetFileSize(),
+                  section_data);
 }
 
 bool ObjectFile::SplitArchivePathWithObject(llvm::StringRef path_with_object,
@@ -607,15 +606,15 @@ lldb::SymbolType
 ObjectFile::GetSymbolTypeFromName(llvm::StringRef name,
                                   lldb::SymbolType symbol_type_hint) {
   if (!name.empty()) {
-    if (name.starts_with("_OBJC_")) {
+    if (name.startswith("_OBJC_")) {
       // ObjC
-      if (name.starts_with("_OBJC_CLASS_$_"))
+      if (name.startswith("_OBJC_CLASS_$_"))
         return lldb::eSymbolTypeObjCClass;
-      if (name.starts_with("_OBJC_METACLASS_$_"))
+      if (name.startswith("_OBJC_METACLASS_$_"))
         return lldb::eSymbolTypeObjCMetaClass;
-      if (name.starts_with("_OBJC_IVAR_$_"))
+      if (name.startswith("_OBJC_IVAR_$_"))
         return lldb::eSymbolTypeObjCIVar;
-    } else if (name.starts_with(".objc_class_name_")) {
+    } else if (name.startswith(".objc_class_name_")) {
       // ObjC v1
       return lldb::eSymbolTypeObjCClass;
     }

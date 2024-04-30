@@ -23,14 +23,12 @@ using LocSeq = SourceLocationSequence;
 // Loc is the raw (in-memory) form of SourceLocation.
 void roundTrip(SourceLocation::UIntTy Loc,
                std::optional<uint64_t> ExpectedEncoded = std::nullopt) {
-  uint64_t ActualEncoded = SourceLocationEncoding::encode(
-      SourceLocation::getFromRawEncoding(Loc), /*BaseOffset=*/0,
-      /*BaseModuleFileIndex=*/0);
-  if (ExpectedEncoded) {
+  uint64_t ActualEncoded =
+      SourceLocationEncoding::encode(SourceLocation::getFromRawEncoding(Loc));
+  if (ExpectedEncoded)
     ASSERT_EQ(ActualEncoded, *ExpectedEncoded) << "Encoding " << Loc;
-  }
   SourceLocation::UIntTy DecodedEncoded =
-      SourceLocationEncoding::decode(ActualEncoded).first.getRawEncoding();
+      SourceLocationEncoding::decode(ActualEncoded).getRawEncoding();
   ASSERT_EQ(DecodedEncoded, Loc) << "Decoding " << ActualEncoded;
 }
 
@@ -42,18 +40,16 @@ void roundTrip(std::vector<SourceLocation::UIntTy> Locs,
     LocSeq::State Seq;
     for (auto L : Locs)
       ActualEncoded.push_back(SourceLocationEncoding::encode(
-          SourceLocation::getFromRawEncoding(L), /*BaseOffset=*/0,
-          /*BaseModuleFileIndex=*/0, Seq));
-    if (!ExpectedEncoded.empty()) {
+          SourceLocation::getFromRawEncoding(L), Seq));
+    if (!ExpectedEncoded.empty())
       ASSERT_EQ(ActualEncoded, ExpectedEncoded)
           << "Encoding " << testing::PrintToString(Locs);
-    }
   }
   std::vector<SourceLocation::UIntTy> DecodedEncoded;
   {
     LocSeq::State Seq;
     for (auto L : ActualEncoded) {
-      SourceLocation Loc = SourceLocationEncoding::decode(L, Seq).first;
+      SourceLocation Loc = SourceLocationEncoding::decode(L, Seq);
       DecodedEncoded.push_back(Loc.getRawEncoding());
     }
     ASSERT_EQ(DecodedEncoded, Locs)
@@ -74,7 +70,7 @@ TEST(SourceLocationEncoding, Individual) {
   roundTrip(Big);
   roundTrip(Big + 1);
   roundTrip(MacroBit | Big);
-  roundTrip(MacroBit | (Big + 1));
+  roundTrip(MacroBit | Big + 1);
 }
 
 TEST(SourceLocationEncoding, Sequence) {

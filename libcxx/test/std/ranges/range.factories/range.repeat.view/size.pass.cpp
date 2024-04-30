@@ -10,10 +10,11 @@
 
 // constexpr auto size() const requires (!same_as<Bound, unreachable_sentinel_t>);
 
+#include <ranges>
+#include <numeric>
+#include <concepts>
 #include <cassert>
 #include <iterator>
-#include <limits>
-#include <ranges>
 
 template <class T>
 concept has_size = requires(T&& view) {
@@ -31,9 +32,8 @@ constexpr bool test() {
   }
 
   {
-    constexpr int int_max = std::numeric_limits<int>::max();
-    std::ranges::repeat_view<int, int> rv(10, int_max);
-    assert(rv.size() == int_max);
+    std::ranges::repeat_view<int, int> rv(10, std::numeric_limits<int>::max());
+    assert(rv.size() == std::numeric_limits<int>::max());
   }
 
   return true;

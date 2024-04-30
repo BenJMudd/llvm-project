@@ -23,8 +23,7 @@
 #include "lldb/lldb-enumerations.h"
 #include "lldb/lldb-forward.h"
 #include "llvm/ADT/StringRef.h"
-
-#include <regex>
+#include "llvm/Support/FormatVariadic.h"
 
 using namespace llvm;
 using namespace lldb;
@@ -36,7 +35,8 @@ CommandObjectDWIMPrint::CommandObjectDWIMPrint(CommandInterpreter &interpreter)
                        "dwim-print [<variable-name> | <expression>]",
                        eCommandProcessMustBePaused | eCommandTryTargetAPILock) {
 
-  AddSimpleArgumentList(eArgTypeVarName);
+  CommandArgumentData var_name_arg(eArgTypeVarName, eArgRepeatPlain);
+  m_arguments.push_back({var_name_arg});
 
   m_option_group.Append(&m_format_options,
                         OptionGroupFormat::OPTION_GROUP_FORMAT |
@@ -50,7 +50,13 @@ CommandObjectDWIMPrint::CommandObjectDWIMPrint(CommandInterpreter &interpreter)
 
 Options *CommandObjectDWIMPrint::GetOptions() { return &m_option_group; }
 
-void CommandObjectDWIMPrint::DoExecute(StringRef command,
+void CommandObjectDWIMPrint::HandleArgumentCompletion(
+    CompletionRequest &request, OptionElementVector &opt_element_vector) {
+  lldb_private::CommandCompletions::InvokeCommonCompletionCallbacks(
+      GetCommandInterpreter(), lldb::eVariablePathCompletion, request, nullptr);
+}
+
+bool CommandObjectDWIMPrint::DoExecute(StringRef command,
                                        CommandReturnObject &result) {
   m_option_group.NotifyOptionParsingStarting(&m_exe_ctx);
   OptionsWithRaw args{command};
@@ -59,13 +65,13 @@ void CommandObjectDWIMPrint::DoExecute(StringRef command,
   if (expr.empty()) {
     result.AppendErrorWithFormatv("'{0}' takes a variable or expression",
                                   m_cmd_name);
-    return;
+    return false;
   }
 
   if (args.HasArgs()) {
     if (!ParseOptionsAndNotify(args.GetArgs(), result, m_option_group,
                                m_exe_ctx))
-      return;
+      return false;
   }
 
   // If the user has not specified, default to disabling persistent results.
@@ -89,58 +95,7 @@ void CommandObjectDWIMPrint::DoExecute(StringRef command,
       m_expr_options.m_verbosity, m_format_options.GetFormat());
   dump_options.SetHideRootName(suppress_result);
 
-  bool is_po = m_varobj_options.use_objc;
-
   StackFrame *frame = m_exe_ctx.GetFramePtr();
-
-  // Either the language was explicitly specified, or we check the frame.
-  lldb::LanguageType language = m_expr_options.language;
-  if (language == lldb::eLanguageTypeUnknown && frame)
-    language = frame->GuessLanguage().AsLanguageType();
-
-  // Add a hint if object description was requested, but no description
-  // function was implemented.
-  auto maybe_add_hint = [&](llvm::StringRef output) {
-    // Identify the default output of object description for Swift and
-    // Objective-C
-    // "<Name: 0x...>. The regex is:
-    // - Start with "<".
-    // - Followed by 1 or more non-whitespace characters.
-    // - Followed by ": 0x".
-    // - Followed by 5 or more hex digits.
-    // - Followed by ">".
-    // - End with zero or more whitespace characters.
-    const std::regex swift_class_regex("^<\\S+: 0x[[:xdigit:]]{5,}>\\s*$");
-
-    if (GetDebugger().GetShowDontUsePoHint() && target_ptr &&
-        (language == lldb::eLanguageTypeSwift ||
-         language == lldb::eLanguageTypeObjC) &&
-        std::regex_match(output.data(), swift_class_regex)) {
-
-      static bool note_shown = false;
-      if (note_shown)
-        return;
-
-      result.GetOutputStream()
-          << "note: object description requested, but type doesn't implement "
-             "a custom object description. Consider using \"p\" instead of "
-             "\"po\" (this note will only be shown once per debug session).\n";
-      note_shown = true;
-    }
-  };
-
-  // Dump `valobj` according to whether `po` was requested or not.
-  auto dump_val_object = [&](ValueObject &valobj) {
-    if (is_po) {
-      StreamString temp_result_stream;
-      valobj.Dump(temp_result_stream, dump_options);
-      llvm::StringRef output = temp_result_stream.GetString();
-      maybe_add_hint(output);
-      result.GetOutputStream() << output;
-    } else {
-      valobj.Dump(result.GetOutputStream(), dump_options);
-    }
-  };
 
   // First, try `expr` as the name of a frame variable.
   if (frame) {
@@ -159,39 +114,18 @@ void CommandObjectDWIMPrint::DoExecute(StringRef command,
                                         flags, expr);
       }
 
-      dump_val_object(*valobj_sp);
+      valobj_sp->Dump(result.GetOutputStream(), dump_options);
       result.SetStatus(eReturnStatusSuccessFinishResult);
-      return;
+      return true;
     }
   }
 
-  // Second, try `expr` as a persistent variable.
-  if (expr.starts_with("$"))
-    if (auto *state = target.GetPersistentExpressionStateForLanguage(language))
-      if (auto var_sp = state->GetVariable(expr))
-        if (auto valobj_sp = var_sp->GetValueObject()) {
-          dump_val_object(*valobj_sp);
-          result.SetStatus(eReturnStatusSuccessFinishResult);
-          return;
-        }
-
-  // Third, and lastly, try `expr` as a source expression to evaluate.
+  // Second, also lastly, try `expr` as a source expression to evaluate.
   {
     auto *exe_scope = m_exe_ctx.GetBestExecutionContextScope();
     ValueObjectSP valobj_sp;
-    std::string fixed_expression;
-
-    ExpressionResults expr_result = target.EvaluateExpression(
-        expr, exe_scope, valobj_sp, eval_options, &fixed_expression);
-
-    // Only mention Fix-Its if the expression evaluator applied them.
-    // Compiler errors refer to the final expression after applying Fix-It(s).
-    if (!fixed_expression.empty() && target.GetEnableNotifyAboutFixIts()) {
-      Stream &error_stream = result.GetErrorStream();
-      error_stream << "  Evaluated this expression after applying Fix-It(s):\n";
-      error_stream << "    " << fixed_expression << "\n";
-    }
-
+    ExpressionResults expr_result =
+        target.EvaluateExpression(expr, exe_scope, valobj_sp, eval_options);
     if (expr_result == eExpressionCompleted) {
       if (verbosity != eDWIMPrintVerbosityNone) {
         StringRef flags;
@@ -202,7 +136,7 @@ void CommandObjectDWIMPrint::DoExecute(StringRef command,
       }
 
       if (valobj_sp->GetError().GetError() != UserExpression::kNoResult)
-        dump_val_object(*valobj_sp);
+        valobj_sp->Dump(result.GetOutputStream(), dump_options);
 
       if (suppress_result)
         if (auto result_var_sp =
@@ -214,12 +148,14 @@ void CommandObjectDWIMPrint::DoExecute(StringRef command,
         }
 
       result.SetStatus(eReturnStatusSuccessFinishResult);
+      return true;
     } else {
       if (valobj_sp)
         result.SetError(valobj_sp->GetError());
       else
         result.AppendErrorWithFormatv(
             "unknown error evaluating expression `{0}`", expr);
+      return false;
     }
   }
 }

@@ -93,7 +93,8 @@ AliasResult AMDGPUAAResult::alias(const MemoryLocation &LocA,
     }
   }
 
-  return AliasResult::MayAlias;
+  // Forward the query to the next alias analysis.
+  return AAResultBase::alias(LocA, LocB, AAQI, nullptr);
 }
 
 ModRefInfo AMDGPUAAResult::getModRefInfoMask(const MemoryLocation &Loc,
@@ -110,5 +111,5 @@ ModRefInfo AMDGPUAAResult::getModRefInfoMask(const MemoryLocation &Loc,
       AS == AMDGPUAS::CONSTANT_ADDRESS_32BIT)
     return ModRefInfo::NoModRef;
 
-  return ModRefInfo::ModRef;
+  return AAResultBase::getModRefInfoMask(Loc, AAQI, IgnoreLocals);
 }

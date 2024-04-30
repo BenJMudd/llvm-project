@@ -158,7 +158,7 @@ protected:
         if (module_list.GetSize() &&
             module_list.GetIndexForModule(module) == LLDB_INVALID_INDEX32)
           continue;
-        if (!FileSpec::Match(file_spec, line_entry.GetFile()))
+        if (!FileSpec::Match(file_spec, line_entry.file))
           continue;
         if (start_line > 0 && line_entry.line < start_line)
           continue;
@@ -204,7 +204,7 @@ protected:
     if (cu) {
       assert(file_spec.GetFilename().AsCString());
       bool has_path = (file_spec.GetDirectory().AsCString() != nullptr);
-      const SupportFileList &cu_file_list = cu->GetSupportFiles();
+      const FileSpecList &cu_file_list = cu->GetSupportFiles();
       size_t file_idx = cu_file_list.FindFileIndex(0, file_spec, has_path);
       if (file_idx != UINT32_MAX) {
         // Update the file to how it appears in the CU.
@@ -239,7 +239,7 @@ protected:
             num_matches++;
             if (num_lines > 0 && num_matches > num_lines)
               break;
-            assert(cu_file_spec == line_entry.GetFile());
+            assert(cu_file_spec == line_entry.file);
             if (!cu_header_printed) {
               if (num_matches > 0)
                 strm << "\n\n";
@@ -532,14 +532,14 @@ protected:
     return true;
   }
 
-  void DoExecute(Args &command, CommandReturnObject &result) override {
+  bool DoExecute(Args &command, CommandReturnObject &result) override {
     Target *target = m_exe_ctx.GetTargetPtr();
     if (target == nullptr) {
       target = GetDebugger().GetSelectedTarget().get();
       if (target == nullptr) {
         result.AppendError("invalid target, create a debug target using the "
                            "'target create' command.");
-        return;
+        return false;
       }
     }
 
@@ -562,11 +562,11 @@ protected:
       }
       if (!m_module_list.GetSize()) {
         result.AppendError("No modules match the input.");
-        return;
+        return false;
       }
     } else if (target->GetImages().GetSize() == 0) {
       result.AppendError("The target has no associated executable images.");
-      return;
+      return false;
     }
 
     // Check the arguments to see what lines we should dump.
@@ -595,6 +595,7 @@ protected:
       else
         result.SetStatus(eReturnStatusFailed);
     }
+    return result.Succeeded();
   }
 
   CommandOptions m_options;
@@ -747,24 +748,24 @@ protected:
 
     bool operator==(const SourceInfo &rhs) const {
       return function == rhs.function &&
-             *line_entry.original_file_sp == *rhs.line_entry.original_file_sp &&
+             line_entry.original_file == rhs.line_entry.original_file &&
              line_entry.line == rhs.line_entry.line;
     }
 
     bool operator!=(const SourceInfo &rhs) const {
       return function != rhs.function ||
-             *line_entry.original_file_sp != *rhs.line_entry.original_file_sp ||
+             line_entry.original_file != rhs.line_entry.original_file ||
              line_entry.line != rhs.line_entry.line;
     }
 
     bool operator<(const SourceInfo &rhs) const {
       if (function.GetCString() < rhs.function.GetCString())
         return true;
-      if (line_entry.GetFile().GetDirectory().GetCString() <
-          rhs.line_entry.GetFile().GetDirectory().GetCString())
+      if (line_entry.file.GetDirectory().GetCString() <
+          rhs.line_entry.file.GetDirectory().GetCString())
         return true;
-      if (line_entry.GetFile().GetFilename().GetCString() <
-          rhs.line_entry.GetFile().GetFilename().GetCString())
+      if (line_entry.file.GetFilename().GetCString() <
+          rhs.line_entry.file.GetFilename().GetCString())
         return true;
       if (line_entry.line < rhs.line_entry.line)
         return true;
@@ -799,7 +800,7 @@ protected:
         sc.function->GetEndLineSourceInfo(end_file, end_line);
       } else {
         // We have an inlined function
-        start_file = source_info.line_entry.GetFile();
+        start_file = source_info.line_entry.file;
         start_line = source_info.line_entry.line;
         end_line = start_line + m_options.num_lines;
       }
@@ -909,7 +910,7 @@ protected:
     }
   }
 
-  void DoExecute(Args &command, CommandReturnObject &result) override {
+  bool DoExecute(Args &command, CommandReturnObject &result) override {
     Target *target = m_exe_ctx.GetTargetPtr();
 
     if (!m_options.symbol_name.empty()) {
@@ -938,7 +939,7 @@ protected:
       if (sc_list.GetSize() == 0) {
         result.AppendErrorWithFormat("Could not find function named: \"%s\".\n",
                                      m_options.symbol_name.c_str());
-        return;
+        return false;
       }
 
       std::set<SourceInfo> source_match_set;
@@ -957,7 +958,7 @@ protected:
         result.SetStatus(eReturnStatusSuccessFinishResult);
       else
         result.SetStatus(eReturnStatusFailed);
-      return;
+      return result.Succeeded();
     } else if (m_options.address != LLDB_INVALID_ADDRESS) {
       Address so_addr;
       StreamString error_strm;
@@ -986,7 +987,7 @@ protected:
               "no modules have source information for file address 0x%" PRIx64
               ".\n",
               m_options.address);
-          return;
+          return false;
         }
       } else {
         // The target has some things loaded, resolve this address to a compile
@@ -1008,7 +1009,7 @@ protected:
                                            "is no line table information "
                                            "available for this address.\n",
                                            error_strm.GetData());
-              return;
+              return false;
             }
           }
         }
@@ -1017,7 +1018,7 @@ protected:
           result.AppendErrorWithFormat(
               "no modules contain load address 0x%" PRIx64 ".\n",
               m_options.address);
-          return;
+          return false;
         }
       }
       for (const SymbolContext &sc : sc_list) {
@@ -1133,7 +1134,7 @@ protected:
       if (num_matches == 0) {
         result.AppendErrorWithFormat("Could not find source file \"%s\".\n",
                                      m_options.file_name.c_str());
-        return;
+        return false;
       }
 
       if (num_matches > 1) {
@@ -1154,7 +1155,7 @@ protected:
           result.AppendErrorWithFormat(
               "Multiple source files found matching: \"%s.\"\n",
               m_options.file_name.c_str());
-          return;
+          return false;
         }
       }
 
@@ -1183,9 +1184,11 @@ protected:
         } else {
           result.AppendErrorWithFormat("No comp unit found for: \"%s.\"\n",
                                        m_options.file_name.c_str());
+          return false;
         }
       }
     }
+    return result.Succeeded();
   }
 
   const SymbolContextList *GetBreakpointLocations() {
@@ -1210,7 +1213,7 @@ public:
   ~CommandObjectSourceCacheDump() override = default;
 
 protected:
-  void DoExecute(Args &command, CommandReturnObject &result) override {
+  bool DoExecute(Args &command, CommandReturnObject &result) override {
     // Dump the debugger source cache.
     result.GetOutputStream() << "Debugger Source File Cache\n";
     SourceManager::SourceFileCache &cache = GetDebugger().GetSourceFileCache();
@@ -1224,6 +1227,7 @@ protected:
     }
 
     result.SetStatus(eReturnStatusSuccessFinishResult);
+    return result.Succeeded();
   }
 };
 
@@ -1236,7 +1240,7 @@ public:
   ~CommandObjectSourceCacheClear() override = default;
 
 protected:
-  void DoExecute(Args &command, CommandReturnObject &result) override {
+  bool DoExecute(Args &command, CommandReturnObject &result) override {
     // Clear the debugger cache.
     SourceManager::SourceFileCache &cache = GetDebugger().GetSourceFileCache();
     cache.Clear();
@@ -1246,6 +1250,7 @@ protected:
       process_sp->GetSourceFileCache().Clear();
 
     result.SetStatus(eReturnStatusSuccessFinishNoResult);
+    return result.Succeeded();
   }
 };
 

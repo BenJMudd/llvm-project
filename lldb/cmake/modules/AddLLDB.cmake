@@ -20,11 +20,6 @@ function(lldb_tablegen)
   endif()
 
   set(LLVM_TARGET_DEFINITIONS ${LTG_SOURCE})
-
-  if (LLVM_USE_SANITIZER MATCHES ".*Address.*")
-    list(APPEND LTG_UNPARSED_ARGUMENTS -DLLDB_SANITIZED)
-  endif()
-
   tablegen(LLDB ${LTG_UNPARSED_ARGUMENTS})
 
   if(LTG_TARGET)
@@ -383,7 +378,7 @@ endfunction()
 
 function(lldb_find_python_module module)
   set(MODULE_FOUND PY_${module}_FOUND)
-  if (${MODULE_FOUND})
+  if (DEFINED ${MODULE_FOUND})
     return()
   endif()
 
@@ -392,10 +387,10 @@ function(lldb_find_python_module module)
     ERROR_QUIET)
 
   if (status)
-    set(${MODULE_FOUND} OFF PARENT_SCOPE)
+    set(${MODULE_FOUND} OFF CACHE BOOL "Failed to find python module '${module}'")
     message(STATUS "Could NOT find Python module '${module}'")
   else()
-    set(${MODULE_FOUND} ON PARENT_SCOPE)
+    set(${MODULE_FOUND} ON CACHE BOOL "Found python module '${module}'")
     message(STATUS "Found Python module '${module}'")
   endif()
 endfunction()

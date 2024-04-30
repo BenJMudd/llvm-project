@@ -214,9 +214,11 @@ class FunctionDifferenceEngine {
   };
 
   unsigned getUnprocPredCount(const BasicBlock *Block) const {
-    return llvm::count_if(predecessors(Block), [&](const BasicBlock *Pred) {
-      return !Blocks.contains(Pred);
-    });
+    unsigned Count = 0;
+    for (const_pred_iterator I = pred_begin(Block), E = pred_end(Block); I != E;
+         ++I)
+      if (!Blocks.count(*I)) Count++;
+    return Count;
   }
 
   typedef std::pair<const BasicBlock *, const BasicBlock *> BlockPair;
@@ -789,9 +791,9 @@ public:
 };
 
 struct DiffEntry {
-  DiffEntry() = default;
+  DiffEntry() : Cost(0) {}
 
-  unsigned Cost = 0;
+  unsigned Cost;
   llvm::SmallVector<char, 8> Path; // actually of DifferenceEngine::DiffChange
 };
 

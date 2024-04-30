@@ -59,8 +59,7 @@ public:
     return SelectionDAGISel::runOnMachineFunction(MF);
   }
 
-  bool SelectInlineAsmMemoryOperand(const SDValue &Op,
-                                    InlineAsm::ConstraintCode ConstraintCode,
+  bool SelectInlineAsmMemoryOperand(const SDValue &Op, unsigned ConstraintCode,
                                     std::vector<SDValue> &OutOps) override;
 
 private:
@@ -213,37 +212,6 @@ bool LanaiDAGToDAGISel::selectAddrSpls(SDValue Addr, SDValue &Base,
   return selectAddrRiSpls(Addr, Base, Offset, AluOp, /*RiMode=*/false);
 }
 
-namespace llvm {
-namespace LPAC {
-static AluCode isdToLanaiAluCode(ISD::NodeType Node_type) {
-  switch (Node_type) {
-  case ISD::ADD:
-    return AluCode::ADD;
-  case ISD::ADDE:
-    return AluCode::ADDC;
-  case ISD::SUB:
-    return AluCode::SUB;
-  case ISD::SUBE:
-    return AluCode::SUBB;
-  case ISD::AND:
-    return AluCode::AND;
-  case ISD::OR:
-    return AluCode::OR;
-  case ISD::XOR:
-    return AluCode::XOR;
-  case ISD::SHL:
-    return AluCode::SHL;
-  case ISD::SRL:
-    return AluCode::SRL;
-  case ISD::SRA:
-    return AluCode::SRA;
-  default:
-    return AluCode::UNKNOWN;
-  }
-}
-} // namespace LPAC
-} // namespace llvm
-
 bool LanaiDAGToDAGISel::selectAddrRr(SDValue Addr, SDValue &R1, SDValue &R2,
                                      SDValue &AluOp) {
   // if Address is FI, get the TargetFrameIndex.
@@ -285,13 +253,12 @@ bool LanaiDAGToDAGISel::selectAddrRr(SDValue Addr, SDValue &R1, SDValue &R2,
 }
 
 bool LanaiDAGToDAGISel::SelectInlineAsmMemoryOperand(
-    const SDValue &Op, InlineAsm::ConstraintCode ConstraintCode,
-    std::vector<SDValue> &OutOps) {
+    const SDValue &Op, unsigned ConstraintCode, std::vector<SDValue> &OutOps) {
   SDValue Op0, Op1, AluOp;
   switch (ConstraintCode) {
   default:
     return true;
-  case InlineAsm::ConstraintCode::m: // memory
+  case InlineAsm::Constraint_m: // memory
     if (!selectAddrRr(Op, Op0, Op1, AluOp) &&
         !selectAddrRi(Op, Op0, Op1, AluOp))
       return true;

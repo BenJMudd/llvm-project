@@ -16,8 +16,18 @@ class LLVMTypeConverter;
 class RewritePatternSet;
 
 namespace arm_sme {
-void populateOuterProductFusionPatterns(RewritePatternSet &patterns);
+void populateVectorTransferLoweringPatterns(LLVMTypeConverter &converter,
+                                            RewritePatternSet &patterns);
 } // namespace arm_sme
+
+/// Collect a set of patterns to lower ArmSME ops to ops that map to LLVM
+/// intrinsics.
+void populateArmSMELegalizeForLLVMExportPatterns(LLVMTypeConverter &converter,
+                                                 RewritePatternSet &patterns);
+
+/// Configure the target to support lowering ArmSME ops to ops that map to LLVM
+/// intrinsics.
+void configureArmSMELegalizeForExportTarget(LLVMConversionTarget &target);
 
 } // namespace mlir
 

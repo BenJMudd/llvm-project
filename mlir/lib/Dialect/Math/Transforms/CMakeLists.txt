@@ -1,7 +1,6 @@
 add_mlir_dialect_library(MLIRMathTransforms
   AlgebraicSimplification.cpp
   ExpandPatterns.cpp
-  LegalizeToF32.cpp
   PolynomialApproximation.cpp
   UpliftToFMA.cpp
 

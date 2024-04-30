@@ -111,6 +111,7 @@ define void @use_workitem_id_yz() #1 {
 }
 
 ; GCN-LABEL: {{^}}kern_indirect_use_workitem_id_x:
+; GCN: enable_vgpr_workitem_id = 0
 
 ; FIXEDABI-NOT: v0
 ; FIXEDABI-NOT: v31
@@ -119,14 +120,13 @@ define void @use_workitem_id_yz() #1 {
 ; FIXEDABI-NOT: v31
 
 ; GCN: s_swappc_b64
-
-; GCN: .amdhsa_system_vgpr_workitem_id 0
 define amdgpu_kernel void @kern_indirect_use_workitem_id_x() #1 {
   call void @use_workitem_id_x()
   ret void
 }
 
 ; GCN-LABEL: {{^}}kern_indirect_use_workitem_id_y:
+; GCN: enable_vgpr_workitem_id = 1
 
 ; FIXEDABI-NOT: v0
 ; FIXEDABI-NOT: v1
@@ -137,14 +137,13 @@ define amdgpu_kernel void @kern_indirect_use_workitem_id_x() #1 {
 ; FIXEDABI-NOT: v2
 
 ; GCN: s_swappc_b64
-
-; GCN: .amdhsa_system_vgpr_workitem_id 1
 define amdgpu_kernel void @kern_indirect_use_workitem_id_y() #1 {
   call void @use_workitem_id_y()
   ret void
 }
 
 ; GCN-LABEL: {{^}}kern_indirect_use_workitem_id_z:
+; GCN: enable_vgpr_workitem_id = 2
 
 ; FIXEDABI-NOT: v0
 ; FIXEDABI-NOT: v1
@@ -153,8 +152,6 @@ define amdgpu_kernel void @kern_indirect_use_workitem_id_y() #1 {
 ; FIXEDABI-NOT: v1
 
 ; GCN: s_swappc_b64
-
-; GCN: .amdhsa_system_vgpr_workitem_id 2
 define amdgpu_kernel void @kern_indirect_use_workitem_id_z() #1 {
   call void @use_workitem_id_z()
   ret void
@@ -287,14 +284,13 @@ define void @other_arg_use_workitem_id_z(i32 %arg0) #1 {
 
 
 ; GCN-LABEL: {{^}}kern_indirect_other_arg_use_workitem_id_x:
+; GCN: enable_vgpr_workitem_id = 0
 
 ; FIXEDABI-NOT: v0
 ; FIXEDABI: v_mov_b32_e32 v31, v0
 ; FIXEDABI: v_mov_b32_e32 v0, 0x22b
 
 ; GCN: s_swappc_b64
-
-; GCN: .amdhsa_system_vgpr_workitem_id 0
 define amdgpu_kernel void @kern_indirect_other_arg_use_workitem_id_x() #1 {
   call void @other_arg_use_workitem_id_x(i32 555)
   ret void
@@ -302,28 +298,26 @@ define amdgpu_kernel void @kern_indirect_other_arg_use_workitem_id_x() #1 {
 
 
 ; GCN-LABEL: {{^}}kern_indirect_other_arg_use_workitem_id_y:
+; GCN: enable_vgpr_workitem_id = 1
 
 ; FIXEDABI-NOT: v0
 ; FIXEDABI-NOT: v1
 ; FIXEDABI-NOT: v2
 ; FIXEDABI: v_lshlrev_b32_e32 v31, 10, v1
 ; FIXEDABI: v_mov_b32_e32 v0, 0x22b
-
-; GCN: .amdhsa_system_vgpr_workitem_id 1
 define amdgpu_kernel void @kern_indirect_other_arg_use_workitem_id_y() #1 {
   call void @other_arg_use_workitem_id_y(i32 555)
   ret void
 }
 
 ; GCN-LABEL: {{^}}kern_indirect_other_arg_use_workitem_id_z:
+; GCN: enable_vgpr_workitem_id = 2
 
 ; FIXEDABI-NOT: v0
 ; FIXEDABI-NOT: v1
 ; FIXEDABI-NOT: v2
 ; FIXEDABI: v_lshlrev_b32_e32 v31, 20, v2
 ; FIXEDABI: v_mov_b32_e32 v0, 0x22b
-
-; GCN: .amdhsa_system_vgpr_workitem_id 2
 define amdgpu_kernel void @kern_indirect_other_arg_use_workitem_id_z() #1 {
   call void @other_arg_use_workitem_id_z(i32 555)
   ret void
@@ -380,6 +374,7 @@ define void @too_many_args_use_workitem_id_x(
 }
 
 ; GCN-LABEL: {{^}}kern_call_too_many_args_use_workitem_id_x:
+; GCN: enable_vgpr_workitem_id = 0
 
 ; FIXEDABI-NOT: v0
 ; FIXEDABI-NOT: v1
@@ -390,8 +385,6 @@ define void @too_many_args_use_workitem_id_x(
 ; FIXEDABI-DAG: v_mov_b32_e32 v31, v0
 
 ; FIXEDABI: s_swappc_b64
-
-; GCN: .amdhsa_system_vgpr_workitem_id 0
 define amdgpu_kernel void @kern_call_too_many_args_use_workitem_id_x() #1 {
   call void @too_many_args_use_workitem_id_x(
     i32 10, i32 20, i32 30, i32 40,
@@ -529,16 +522,16 @@ define void @too_many_args_use_workitem_id_x_byval(
 ; FIXEDABI: v_mov_b32_e32 v31, v0
 ; FIXEDABI: v_mov_b32_e32 [[K0:v[0-9]+]], 0x3e7
 ; FIXEDABI: s_movk_i32 s32, 0x400{{$}}
-; FIXEDABI: buffer_store_dword [[K0]], off, s[0:3], 0{{$}}
+; FIXEDABI: buffer_store_dword [[K0]], off, s[0:3], 0 offset:4{{$}}
 ; FIXEDABI: v_mov_b32_e32 [[K1:v[0-9]+]], 0x140
 
 ; FIXEDABI: buffer_store_dword [[K1]], off, s[0:3], s32{{$}}
 
 ; FIXME: Why this reload?
-; FIXEDABI: buffer_load_dword [[RELOAD:v[0-9]+]], off, s[0:3], 0{{$}}
+; FIXEDABI: buffer_load_dword [[RELOAD:v[0-9]+]], off, s[0:3], 0 offset:4{{$}}
 
 ; FIXEDABI-NOT: s32
-; FIXEDABI: buffer_store_dword [[RELOAD]], off, s[0:3], s32
+; FIXEDABI: buffer_store_dword [[RELOAD]], off, s[0:3], s32 offset:4
 ; FIXEDABI: s_swappc_b64
 define amdgpu_kernel void @kern_call_too_many_args_use_workitem_id_x_byval() #1 {
   %alloca = alloca i32, align 4, addrspace(5)
@@ -646,6 +639,7 @@ define void @too_many_args_use_workitem_id_xyz(
 }
 
 ; GCN-LABEL: {{^}}kern_call_too_many_args_use_workitem_id_xyz:
+; GCN: enable_vgpr_workitem_id = 2
 
 ; GCN-DAG: s_mov_b32 s32, 0
 
@@ -658,8 +652,6 @@ define void @too_many_args_use_workitem_id_xyz(
 ; FIXEDABI-DAG: v_or_b32_e32 v31, [[TMP2]], [[TMP0]]
 
 ; GCN: s_swappc_b64
-
-; GCN: .amdhsa_system_vgpr_workitem_id 2
 define amdgpu_kernel void @kern_call_too_many_args_use_workitem_id_xyz() #1 {
   call void @too_many_args_use_workitem_id_xyz(
     i32 10, i32 20, i32 30, i32 40,
@@ -737,6 +729,7 @@ define void @too_many_args_use_workitem_id_x_stack_yz(
 }
 
 ; GCN-LABEL: {{^}}kern_call_too_many_args_use_workitem_id_x_stack_yz:
+; GCN: enable_vgpr_workitem_id = 2
 
 ; GCN-NOT: v0
 ; GCN-DAG: v_lshlrev_b32_e32 v1, 10, v1
@@ -746,8 +739,6 @@ define void @too_many_args_use_workitem_id_x_stack_yz(
 
 ; GCN: s_mov_b32 s32, 0
 ; GCN: s_swappc_b64
-
-; GCN: .amdhsa_system_vgpr_workitem_id 2
 define amdgpu_kernel void @kern_call_too_many_args_use_workitem_id_x_stack_yz() #1 {
   call void @too_many_args_use_workitem_id_x_stack_yz(
     i32 10, i32 20, i32 30, i32 40,
@@ -813,4 +804,4 @@ attributes #1 = { nounwind noinline }
 attributes #2 = { nounwind "amdgpu-no-workitem-id-x" "amdgpu-no-workitem-id-y" "amdgpu-no-workitem-id-z" }
 
 !llvm.module.flags = !{!0}
-!0 = !{i32 1, !"amdhsa_code_object_version", i32 400}
+!0 = !{i32 1, !"amdgpu_code_object_version", i32 200}

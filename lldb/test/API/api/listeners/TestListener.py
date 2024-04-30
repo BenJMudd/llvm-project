@@ -52,6 +52,7 @@ class ListenToModuleLoadedEvents(TestBase):
         self.build()
 
         my_listener = lldb.SBListener("test_listener")
+
         my_listener.StartListeningForEventClass(
             self.dbg,
             lldb.SBTarget.GetBroadcasterClassName(),

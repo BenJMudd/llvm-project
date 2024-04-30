@@ -70,20 +70,18 @@ public:
   }
 
 protected:
-  void DoExecute(Args &command, CommandReturnObject &result) override {
+  bool DoExecute(Args &command, CommandReturnObject &result) override {
     SBCommandReturnObject sb_return(result);
     SBCommandInterpreter sb_interpreter(&m_interpreter);
     SBDebugger debugger_sb(m_interpreter.GetDebugger().shared_from_this());
-    m_backend->DoExecute(debugger_sb, command.GetArgumentVector(), sb_return);
+    bool ret = m_backend->DoExecute(debugger_sb, command.GetArgumentVector(),
+                                    sb_return);
+    return ret;
   }
   std::shared_ptr<lldb::SBCommandPluginInterface> m_backend;
   std::optional<std::string> m_auto_repeat_command;
 };
 } // namespace lldb_private
-
-SBCommandInterpreter::SBCommandInterpreter() : m_opaque_ptr() {
-  LLDB_INSTRUMENT_VA(this);
-}
 
 SBCommandInterpreter::SBCommandInterpreter(CommandInterpreter *interpreter)
     : m_opaque_ptr(interpreter) {
@@ -512,8 +510,7 @@ SBBroadcaster SBCommandInterpreter::GetBroadcaster() {
 const char *SBCommandInterpreter::GetBroadcasterClass() {
   LLDB_INSTRUMENT();
 
-  return ConstString(CommandInterpreter::GetStaticBroadcasterClass())
-      .AsCString();
+  return CommandInterpreter::GetStaticBroadcasterClass().AsCString();
 }
 
 const char *SBCommandInterpreter::GetArgumentTypeAsCString(
@@ -556,19 +553,6 @@ bool SBCommandInterpreter::SetCommandOverrideCallback(
     }
   }
   return false;
-}
-
-SBStructuredData SBCommandInterpreter::GetStatistics() {
-  LLDB_INSTRUMENT_VA(this);
-
-  SBStructuredData data;
-  if (!IsValid())
-    return data;
-
-  std::string json_str =
-      llvm::formatv("{0:2}", m_opaque_ptr->GetStatistics()).str();
-  data.m_impl_up->SetObjectSP(StructuredData::ParseJSON(json_str));
-  return data;
 }
 
 lldb::SBCommand SBCommandInterpreter::AddMultiwordCommand(const char *name,

@@ -22,7 +22,7 @@
 #include "llvm/Option/ArgList.h"
 #include "llvm/Option/Option.h"
 #include "llvm/Support/CommandLine.h"
-#include "llvm/Support/LLVMDriver.h"
+#include "llvm/Support/InitLLVM.h"
 #include "llvm/Support/ThreadPool.h"
 
 using namespace llvm;
@@ -31,7 +31,9 @@ using namespace llvm;
 namespace {
 enum ID {
   OPT_INVALID = 0, // This is not an option ID.
-#define OPTION(...) LLVM_MAKE_OPT_ID(__VA_ARGS__),
+#define OPTION(PREFIX, NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, FLAGS, PARAM,  \
+               HELPTEXT, METAVAR, VALUES)                                      \
+  OPT_##ID,
 #include "Opts.inc"
 #undef OPTION
 };
@@ -43,9 +45,14 @@ enum ID {
 #include "Opts.inc"
 #undef PREFIX
 
-using namespace llvm::opt;
 static constexpr opt::OptTable::Info InfoTable[] = {
-#define OPTION(...) LLVM_CONSTRUCT_OPT_INFO(__VA_ARGS__),
+#define OPTION(PREFIX, NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, FLAGS, PARAM,  \
+               HELPTEXT, METAVAR, VALUES)                                      \
+  {                                                                            \
+      PREFIX,      NAME,      HELPTEXT,                                        \
+      METAVAR,     OPT_##ID,  opt::Option::KIND##Class,                        \
+      PARAM,       FLAGS,     OPT_##GROUP,                                     \
+      OPT_##ALIAS, ALIASARGS, VALUES},
 #include "Opts.inc"
 #undef OPTION
 };
@@ -119,7 +126,8 @@ static void parseArgs(int argc, char **argv) {
   HostInterface = Args.getLastArgValue(OPT_host_interface, "0.0.0.0");
 }
 
-int llvm_debuginfod_main(int argc, char **argv, const llvm::ToolContext &) {
+int main(int argc, char **argv) {
+  InitLLVM X(argc, argv);
   HTTPClient::initialize();
   parseArgs(argc, argv);
 
@@ -127,7 +135,7 @@ int llvm_debuginfod_main(int argc, char **argv, const llvm::ToolContext &) {
   for (const std::string &Path : ScanPaths)
     Paths.push_back(Path);
 
-  DefaultThreadPool Pool(hardware_concurrency(MaxConcurrency));
+  ThreadPool Pool(hardware_concurrency(MaxConcurrency));
   DebuginfodLog Log;
   DebuginfodCollection Collection(Paths, Log, Pool, MinInterval);
   DebuginfodServer Server(Log, Collection);

@@ -96,4 +96,5 @@ Remarks Tools
 .. toctree::
    :maxdepth: 1
 
+   llvm-remark-size-diff
    llvm-remarkutil

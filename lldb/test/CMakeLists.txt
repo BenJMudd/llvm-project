@@ -11,14 +11,9 @@ endif()
 
 if(LLDB_ENFORCE_STRICT_TEST_REQUIREMENTS)
   message(STATUS "Enforcing strict test requirements for LLDB")
-  # Lit uses psutil to do per-test timeouts.
-  set(useful_python_modules psutil)
-
-  if(NOT WIN32)
-    # We no longer vendor pexpect and it is not used on Windows.
-    list(APPEND pexpect)
-  endif()
-
+  set(useful_python_modules
+    psutil # Lit uses psutil to do per-test timeouts.
+  )
   foreach(module ${useful_python_modules})
     lldb_find_python_module(${module})
     if (NOT PY_${module}_FOUND)
@@ -119,8 +114,8 @@ if(TARGET lldb-server)
   add_lldb_test_dependency(lldb-server)
 endif()
 
-if(TARGET lldb-dap)
-  add_lldb_test_dependency(lldb-dap)
+if(TARGET lldb-vscode)
+  add_lldb_test_dependency(lldb-vscode)
 endif()
 
 if(TARGET liblldb)
@@ -144,10 +139,6 @@ if(NOT LLDB_BUILT_STANDALONE)
   )
 endif()
 
-if (LLVM_ENABLE_RUNTIMES)
-  add_lldb_test_dependency(runtimes)
-endif()
-
 # Add dependencies if we test with the in-tree clang.
 # This works with standalone builds as they import the clang target.
 if(TARGET clang)
@@ -166,10 +157,12 @@ if(TARGET clang)
       set(LIBCXX_LIBRARY_DIR ${CMAKE_BINARY_DIR}/lib${LIBCXX_LIBDIR_SUFFIX})
       set(LIBCXX_GENERATED_INCLUDE_DIR "${CMAKE_BINARY_DIR}/include/c++/v1")
     endif()
+    add_lldb_test_dependency(cxx)
   endif()
 
   if (TARGET compiler-rt OR "compiler-rt" IN_LIST LLVM_ENABLE_RUNTIMES)
     set(LLDB_HAS_COMPILER_RT ON)
+    add_lldb_test_dependency(compiler-rt)
   endif()
 
   if(APPLE AND NOT LLVM_TARGET_IS_CROSSCOMPILE_HOST)

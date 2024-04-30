@@ -10,13 +10,12 @@
 
 #include "src/string/string_utils.h"
 
-namespace LIBC_NAMESPACE {
+namespace __llvm_libc {
 
-LLVM_LIBC_FUNCTION(char *, strsep,
-                   (char **__restrict stringp, const char *__restrict delim)) {
+LLVM_LIBC_FUNCTION(char *, strsep, (char **stringp, const char *delim)) {
   if (!*stringp)
     return nullptr;
   return internal::string_token<false>(*stringp, delim, stringp);
 }
 
-} // namespace LIBC_NAMESPACE
+} // namespace __llvm_libc

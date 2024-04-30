@@ -57,7 +57,7 @@ genrule(
     srcs = ["misc/ConfusableTable/confusables.txt"],
     outs = ["Confusables.inc"],
     cmd = "$(location :confusable_table_builder) $(SRCS) $(OUTS)",
-    tools = [":confusable_table_builder"],
+    exec_tools = [":confusable_table_builder"],
     visibility = ["//visibility:private"],
 )
 
@@ -267,7 +267,6 @@ clang_tidy_library(
         ":performance",
         ":readability",
         ":utils",
-        "//clang:analysis",
     ],
 )
 

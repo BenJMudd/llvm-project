@@ -34,7 +34,7 @@
 #include "llvm/Support/FileUtilities.h"
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/FormattedStream.h"
-#include "llvm/Support/LLVMDriver.h"
+#include "llvm/Support/InitLLVM.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/Process.h"
@@ -53,7 +53,9 @@ namespace {
 
 enum ID {
   OPT_INVALID = 0, // This is not an option ID.
-#define OPTION(...) LLVM_MAKE_OPT_ID(__VA_ARGS__),
+#define OPTION(PREFIX, NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, FLAGS, PARAM,  \
+               HELPTEXT, METAVAR, VALUES)                                      \
+  OPT_##ID,
 #include "Opts.inc"
 #undef OPTION
 };
@@ -66,7 +68,13 @@ enum ID {
 #undef PREFIX
 
 static constexpr opt::OptTable::Info InfoTable[] = {
-#define OPTION(...) LLVM_CONSTRUCT_OPT_INFO(__VA_ARGS__),
+#define OPTION(PREFIX, NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, FLAGS, PARAM,  \
+               HELPTEXT, METAVAR, VALUES)                                      \
+  {                                                                            \
+      PREFIX,      NAME,      HELPTEXT,                                        \
+      METAVAR,     OPT_##ID,  opt::Option::KIND##Class,                        \
+      PARAM,       FLAGS,     OPT_##GROUP,                                     \
+      OPT_##ALIAS, ALIASARGS, VALUES},
 #include "Opts.inc"
 #undef OPTION
 };
@@ -82,7 +90,7 @@ static Triple GetTriple(StringRef ProgName, opt::InputArgList &Args) {
   StringRef DefaultBitness = "32";
   SmallString<255> Program = ProgName;
   sys::path::replace_extension(Program, "");
-  if (Program.ends_with("ml64"))
+  if (Program.endswith("ml64"))
     DefaultBitness = "64";
 
   StringRef TripleName =
@@ -185,7 +193,8 @@ static int AssembleInput(StringRef ProgName, const Target *TheTarget,
   return Res;
 }
 
-int llvm_ml_main(int Argc, char **Argv, const llvm::ToolContext &) {
+int main(int Argc, char **Argv) {
+  InitLLVM X(Argc, Argv);
   StringRef ProgName = sys::path::filename(Argv[0]);
 
   // Initialize targets and assembly printers/parsers.

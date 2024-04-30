@@ -302,11 +302,6 @@ static bool findModulesAndOffsets(void **StackTrace, int Depth,
   return true;
 }
 
-static bool printMarkupContext(llvm::raw_ostream &OS,
-                               const char *MainExecutableName) {
-  return false;
-}
-
 static void PrintStackTraceForThread(llvm::raw_ostream &OS, HANDLE hProcess,
                                      HANDLE hThread, STACKFRAME64 &StackFrame,
                                      CONTEXT *Context) {

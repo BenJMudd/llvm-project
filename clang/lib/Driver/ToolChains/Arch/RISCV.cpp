@@ -15,9 +15,9 @@
 #include "clang/Driver/Options.h"
 #include "llvm/Option/ArgList.h"
 #include "llvm/Support/Error.h"
+#include "llvm/Support/RISCVISAInfo.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/TargetParser/Host.h"
-#include "llvm/TargetParser/RISCVISAInfo.h"
 #include "llvm/TargetParser/RISCVTargetParser.h"
 
 using namespace clang::driver;
@@ -42,13 +42,9 @@ static bool getArchFeatures(const Driver &D, StringRef Arch,
     return false;
   }
 
-  for (const std::string &Str : (*ISAInfo)->toFeatures(/*AddAllExtension=*/true,
-                                                       /*IgnoreUnknown=*/false))
-    Features.push_back(Args.MakeArgString(Str));
-
-  if (EnableExperimentalExtensions)
-    Features.push_back(Args.MakeArgString("+experimental"));
-
+  (*ISAInfo)->toFeatures(
+      Features, [&Args](const Twine &Str) { return Args.MakeArgString(Str); },
+      /*AddAllExtensions=*/true);
   return true;
 }
 
@@ -66,11 +62,6 @@ static void getRISCFeaturesFromMcpu(const Driver &D, const Arg *A,
     else
       D.Diag(clang::diag::err_drv_unsupported_option_argument)
           << A->getSpelling() << Mcpu;
-  }
-
-  if (llvm::RISCV::hasFastUnalignedAccess(Mcpu)) {
-    Features.push_back("+unaligned-scalar-mem");
-    Features.push_back("+unaligned-vector-mem");
   }
 }
 
@@ -169,17 +160,12 @@ void riscv::getRISCVTargetFeatures(const Driver &D, const llvm::Triple &Triple,
     Features.push_back("-relax");
   }
 
-  // Android requires fast unaligned access on RISCV64.
-  if (Triple.isAndroid()) {
-    Features.push_back("+unaligned-scalar-mem");
-    Features.push_back("+unaligned-vector-mem");
-  }
-
-  // -mstrict-align is default, unless -mno-strict-align is specified.
-  AddTargetFeature(Args, Features, options::OPT_mno_strict_align,
-                   options::OPT_mstrict_align, "unaligned-scalar-mem");
-  AddTargetFeature(Args, Features, options::OPT_mno_strict_align,
-                   options::OPT_mstrict_align, "unaligned-vector-mem");
+  // GCC Compatibility: -mno-save-restore is default, unless -msave-restore is
+  // specified.
+  if (Args.hasFlag(options::OPT_msave_restore, options::OPT_mno_save_restore, false))
+    Features.push_back("+save-restore");
+  else
+    Features.push_back("-save-restore");
 
   // Now add any that the user explicitly requested on the command line,
   // which may override the defaults.
@@ -220,14 +206,15 @@ StringRef riscv::getRISCVABI(const ArgList &Args, const llvm::Triple &Triple) {
   // rv32e -> ilp32e
   // rv32* -> ilp32
   // rv64g | rv64*d -> lp64d
-  // rv64e -> lp64e
   // rv64* -> lp64
   StringRef Arch = getRISCVArch(Args, Triple);
 
   auto ParseResult = llvm::RISCVISAInfo::parseArchString(
       Arch, /* EnableExperimentalExtension */ true);
-  // Ignore parsing error, just go 3rd step.
-  if (!llvm::errorToBool(ParseResult.takeError()))
+  if (!ParseResult)
+    // Ignore parsing error, just go 3rd step.
+    consumeError(ParseResult.takeError());
+  else
     return (*ParseResult)->computeDefaultABI();
 
   // 3. Choose a default based on the triple
@@ -296,7 +283,6 @@ StringRef riscv::getRISCVArch(const llvm::opt::ArgList &Args,
   // 3. Choose a default based on `-mabi=`
   //
   // ilp32e -> rv32e
-  // lp64e -> rv64e
   // ilp32 | ilp32f | ilp32d -> rv32imafdc
   // lp64 | lp64f | lp64d -> rv64imafdc
   if (const Arg *A = Args.getLastArg(options::OPT_mabi_EQ)) {
@@ -304,13 +290,11 @@ StringRef riscv::getRISCVArch(const llvm::opt::ArgList &Args,
 
     if (MABI.equals_insensitive("ilp32e"))
       return "rv32e";
-    else if (MABI.equals_insensitive("lp64e"))
-      return "rv64e";
     else if (MABI.starts_with_insensitive("ilp32"))
       return "rv32imafdc";
     else if (MABI.starts_with_insensitive("lp64")) {
       if (Triple.isAndroid())
-        return "rv64imafdcv_zba_zbb_zbs";
+        return "rv64imafdc_zba_zbb_zbs";
 
       return "rv64imafdc";
     }
@@ -330,7 +314,7 @@ StringRef riscv::getRISCVArch(const llvm::opt::ArgList &Args,
     if (Triple.getOS() == llvm::Triple::UnknownOS)
       return "rv64imac";
     else if (Triple.isAndroid())
-      return "rv64imafdcv_zba_zbb_zbs";
+      return "rv64imafdc_zba_zbb_zbs";
     else
       return "rv64imafdc";
   }

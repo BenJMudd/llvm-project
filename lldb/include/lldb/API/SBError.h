@@ -80,7 +80,6 @@ protected:
   friend class SBData;
   friend class SBDebugger;
   friend class SBFile;
-  friend class SBFormat;
   friend class SBHostOS;
   friend class SBPlatform;
   friend class SBProcess;

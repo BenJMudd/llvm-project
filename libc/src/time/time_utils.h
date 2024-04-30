@@ -17,7 +17,7 @@
 
 #include <stdint.h>
 
-namespace LIBC_NAMESPACE {
+namespace __llvm_libc {
 namespace time_utils {
 
 enum Month : int {
@@ -92,7 +92,7 @@ extern int64_t update_from_seconds(int64_t total_seconds, struct tm *tm);
 // POSIX.1-2017 requires this.
 LIBC_INLINE time_t out_of_range() {
   libc_errno = EOVERFLOW;
-  return TimeConstants::OUT_OF_RANGE_RETURN_VALUE;
+  return static_cast<time_t>(-1);
 }
 
 LIBC_INLINE void invalid_value() { libc_errno = EINVAL; }
@@ -151,6 +151,6 @@ LIBC_INLINE struct tm *gmtime_internal(const time_t *timer, struct tm *result) {
 }
 
 } // namespace time_utils
-} // namespace LIBC_NAMESPACE
+} // namespace __llvm_libc
 
 #endif // LLVM_LIBC_SRC_TIME_TIME_UTILS_H

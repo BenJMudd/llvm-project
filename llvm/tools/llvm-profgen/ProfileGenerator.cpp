@@ -196,48 +196,6 @@ void ProfileGeneratorBase::showDensitySuggestion(double Density) {
            << "% total samples: " << format("%.1f", Density) << "\n";
 }
 
-bool ProfileGeneratorBase::filterAmbiguousProfile(FunctionSamples &FS) {
-  for (const auto &Prefix : FuncPrefixsToFilter) {
-    if (FS.getFuncName().starts_with(Prefix))
-      return true;
-  }
-
-  // Filter the function profiles for the inlinees. It's useful for fuzzy
-  // profile matching which flattens the profile and inlinees' samples are
-  // merged into top-level function.
-  for (auto &Callees :
-       const_cast<CallsiteSampleMap &>(FS.getCallsiteSamples())) {
-    auto &CalleesMap = Callees.second;
-    for (auto I = CalleesMap.begin(); I != CalleesMap.end();) {
-      auto FS = I++;
-      if (filterAmbiguousProfile(FS->second))
-        CalleesMap.erase(FS);
-    }
-  }
-  return false;
-}
-
-// For built-in local initialization function such as __cxx_global_var_init,
-// __tls_init prefix function, there could be multiple versions of the functions
-// in the final binary. However, in the profile generation, we call
-// getCanonicalFnName to canonicalize the names which strips the suffixes.
-// Therefore, samples from different functions queries the same profile and the
-// samples are merged. As the functions are essentially different, entries of
-// the merged profile are ambiguous. In sample loader, the IR from one version
-// would be attributed towards a merged entries, which is inaccurate. Especially
-// for fuzzy profile matching, it gets multiple callsites(from different
-// function) but used to match one callsite, which misleads the matching and
-// causes a lot of false positives report. Hence, we want to filter them out
-// from the profile map during the profile generation time. The profiles are all
-// cold functions, it won't have perf impact.
-void ProfileGeneratorBase::filterAmbiguousProfile(SampleProfileMap &Profiles) {
-  for (auto I = ProfileMap.begin(); I != ProfileMap.end();) {
-    auto FS = I++;
-    if (filterAmbiguousProfile(FS->second))
-      ProfileMap.erase(FS);
-  }
-}
-
 double ProfileGeneratorBase::calculateDensity(const SampleProfileMap &Profiles,
                                               uint64_t HotCntThreshold) {
   double Density = DBL_MAX;
@@ -250,7 +208,7 @@ double ProfileGeneratorBase::calculateDensity(const SampleProfileMap &Profiles,
   }
 
   for (auto *FuncSamples : HotFuncs) {
-    auto *Func = Binary->getBinaryFunction(FuncSamples->getFunction());
+    auto *Func = Binary->getBinaryFunction(FuncSamples->getName());
     if (!Func)
       continue;
     uint64_t FuncSize = Func->getFuncSize();
@@ -491,7 +449,7 @@ bool ProfileGeneratorBase::collectFunctionsFromRawProfile(
 bool ProfileGenerator::collectFunctionsFromLLVMProfile(
     std::unordered_set<const BinaryFunction *> &ProfiledFunctions) {
   for (const auto &FS : ProfileMap) {
-    if (auto *Func = Binary->getBinaryFunction(FS.second.getFunction()))
+    if (auto *Func = Binary->getBinaryFunction(FS.first.getName()))
       ProfiledFunctions.insert(Func);
   }
   return true;
@@ -508,9 +466,14 @@ bool CSProfileGenerator::collectFunctionsFromLLVMProfile(
 }
 
 FunctionSamples &
-ProfileGenerator::getTopLevelFunctionProfile(FunctionId FuncName) {
+ProfileGenerator::getTopLevelFunctionProfile(StringRef FuncName) {
   SampleContext Context(FuncName);
-  return ProfileMap.Create(Context);
+  auto Ret = ProfileMap.emplace(Context, FunctionSamples());
+  if (Ret.second) {
+    FunctionSamples &FProfile = Ret.first->second;
+    FProfile.setContext(Context);
+  }
+  return Ret.first->second;
 }
 
 void ProfileGenerator::generateProfile() {
@@ -533,7 +496,6 @@ void ProfileGenerator::generateProfile() {
 void ProfileGenerator::postProcessProfiles() {
   computeSummaryAndThreshold(ProfileMap);
   trimColdProfiles(ProfileMap, ColdCountThreshold);
-  filterAmbiguousProfile(ProfileMap);
   calculateAndShowDensity(ProfileMap);
 }
 
@@ -543,14 +505,14 @@ void ProfileGenerator::trimColdProfiles(const SampleProfileMap &Profiles,
     return;
 
   // Move cold profiles into a tmp container.
-  std::vector<hash_code> ColdProfileHashes;
+  std::vector<SampleContext> ColdProfiles;
   for (const auto &I : ProfileMap) {
     if (I.second.getTotalSamples() < ColdCntThreshold)
-      ColdProfileHashes.emplace_back(I.first);
+      ColdProfiles.emplace_back(I.first);
   }
 
   // Remove the cold profile from ProfileMap.
-  for (const auto &I : ColdProfileHashes)
+  for (const auto &I : ColdProfiles)
     ProfileMap.erase(I);
 }
 
@@ -629,7 +591,7 @@ void ProfileGenerator::populateBoundarySamplesWithProbesForAllFunctions(
       FunctionProfile.addCalledTargetSamples(
           FrameVec.back().Location.LineOffset,
           FrameVec.back().Location.Discriminator,
-          FunctionId(CalleeName), Count);
+          CalleeName, Count);
     }
   }
 }
@@ -638,11 +600,11 @@ FunctionSamples &ProfileGenerator::getLeafProfileAndAddTotalSamples(
     const SampleContextFrameVector &FrameVec, uint64_t Count) {
   // Get top level profile
   FunctionSamples *FunctionProfile =
-      &getTopLevelFunctionProfile(FrameVec[0].Func);
+      &getTopLevelFunctionProfile(FrameVec[0].FuncName);
   FunctionProfile->addTotalSamples(Count);
   if (Binary->usePseudoProbes()) {
     const auto *FuncDesc = Binary->getFuncDescForGUID(
-        FunctionProfile->getFunction().getHashCode());
+        Function::getGUID(FunctionProfile->getName()));
     FunctionProfile->setFunctionHash(FuncDesc->FuncHash);
   }
 
@@ -653,16 +615,16 @@ FunctionSamples &ProfileGenerator::getLeafProfileAndAddTotalSamples(
     FunctionSamplesMap &SamplesMap =
         FunctionProfile->functionSamplesAt(Callsite);
     auto Ret =
-        SamplesMap.emplace(FrameVec[I].Func, FunctionSamples());
+        SamplesMap.emplace(FrameVec[I].FuncName.str(), FunctionSamples());
     if (Ret.second) {
-      SampleContext Context(FrameVec[I].Func);
+      SampleContext Context(FrameVec[I].FuncName);
       Ret.first->second.setContext(Context);
     }
     FunctionProfile = &Ret.first->second;
     FunctionProfile->addTotalSamples(Count);
     if (Binary->usePseudoProbes()) {
       const auto *FuncDesc = Binary->getFuncDescForGUID(
-          FunctionProfile->getFunction().getHashCode());
+          Function::getGUID(FunctionProfile->getName()));
       FunctionProfile->setFunctionHash(FuncDesc->FuncHash);
     }
   }
@@ -759,11 +721,10 @@ void ProfileGenerator::populateBoundarySamplesForAllFunctions(
       FunctionProfile.addCalledTargetSamples(
           FrameVec.back().Location.LineOffset,
           getBaseDiscriminator(FrameVec.back().Location.Discriminator),
-          FunctionId(CalleeName), Count);
+          CalleeName, Count);
     }
     // Add head samples for callee.
-    FunctionSamples &CalleeProfile =
-        getTopLevelFunctionProfile(FunctionId(CalleeName));
+    FunctionSamples &CalleeProfile = getTopLevelFunctionProfile(CalleeName);
     CalleeProfile.addHeadSamples(Count);
   }
 }
@@ -781,7 +742,7 @@ CSProfileGenerator::getOrCreateFunctionSamples(ContextTrieNode *ContextNode,
   if (!FProfile) {
     FSamplesList.emplace_back();
     FProfile = &FSamplesList.back();
-    FProfile->setFunction(ContextNode->getFuncName());
+    FProfile->setName(ContextNode->getFuncName());
     ContextNode->setFunctionSamples(FProfile);
   }
   // Update ContextWasInlined attribute for existing contexts.
@@ -943,8 +904,7 @@ void CSProfileGenerator::populateBoundarySamplesForFunction(
       if (LeafLoc) {
         CallerNode->getFunctionSamples()->addCalledTargetSamples(
             LeafLoc->Location.LineOffset,
-            getBaseDiscriminator(LeafLoc->Location.Discriminator),
-            FunctionId(CalleeName),
+            getBaseDiscriminator(LeafLoc->Location.Discriminator), CalleeName,
             Count);
         // Record head sample for called target(callee)
         CalleeCallSite = LeafLoc->Location;
@@ -952,8 +912,7 @@ void CSProfileGenerator::populateBoundarySamplesForFunction(
     }
 
     ContextTrieNode *CalleeNode =
-        CallerNode->getOrCreateChildContext(CalleeCallSite,
-                                            FunctionId(CalleeName));
+        CallerNode->getOrCreateChildContext(CalleeCallSite, CalleeName);
     FunctionSamples *CalleeProfile = getOrCreateFunctionSamples(CalleeNode);
     CalleeProfile->addHeadSamples(Count);
   }
@@ -1059,7 +1018,9 @@ void CSProfileGenerator::postProcessProfiles() {
 
   // Merge function samples of CS profile to calculate profile density.
   sampleprof::SampleProfileMap ContextLessProfiles;
-  ProfileConverter::flattenProfile(ProfileMap, ContextLessProfiles, true);
+  for (const auto &I : ProfileMap) {
+    ContextLessProfiles[I.second.getName()].merge(I.second);
+  }
 
   calculateAndShowDensity(ContextLessProfiles);
   if (GenCSNestedProfile) {
@@ -1067,7 +1028,6 @@ void CSProfileGenerator::postProcessProfiles() {
     CSConverter.convertCSProfiles();
     FunctionSamples::ProfileIsCS = false;
   }
-  filterAmbiguousProfile(ProfileMap);
 }
 
 void ProfileGeneratorBase::computeSummaryAndThreshold(
@@ -1259,7 +1219,7 @@ void CSProfileGenerator::populateBoundarySamplesWithProbes(
       continue;
     FunctionProfile.addCalledTargetSamples(CallProbe->getIndex(),
                                            CallProbe->getDiscriminator(),
-                                           FunctionId(CalleeName), Count);
+                                           CalleeName, Count);
   }
 }
 

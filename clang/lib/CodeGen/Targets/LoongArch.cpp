@@ -146,7 +146,7 @@ bool LoongArchABIInfo::detectFARsEligibleStructHelper(
   }
 
   if (const ConstantArrayType *ATy = getContext().getAsConstantArrayType(Ty)) {
-    uint64_t ArraySize = ATy->getZExtSize();
+    uint64_t ArraySize = ATy->getSize().getZExtValue();
     QualType EltTy = ATy->getElementType();
     // Non-zero-length arrays of empty records make the struct ineligible to be
     // passed via FARs in C++.
@@ -170,11 +170,10 @@ bool LoongArchABIInfo::detectFARsEligibleStructHelper(
     // copy constructor are not eligible for the FP calling convention.
     if (getRecordArgABI(Ty, CGT.getCXXABI()))
       return false;
-    const RecordDecl *RD = RTy->getDecl();
-    if (isEmptyRecord(getContext(), Ty, true, true) &&
-        (!RD->isUnion() || !isa<CXXRecordDecl>(RD)))
+    if (isEmptyRecord(getContext(), Ty, true, true))
       return true;
-    // Unions aren't eligible unless they're empty in C (which is caught above).
+    const RecordDecl *RD = RTy->getDecl();
+    // Unions aren't eligible unless they're empty (which is caught above).
     if (RD->isUnion())
       return false;
     const ASTRecordLayout &Layout = getContext().getASTRecordLayout(RD);
@@ -309,13 +308,11 @@ ABIArgInfo LoongArchABIInfo::classifyArgumentType(QualType Ty, bool IsFixed,
                                            CGCXXABI::RAA_DirectInMemory);
   }
 
-  uint64_t Size = getContext().getTypeSize(Ty);
-
-  // Ignore empty struct or union whose size is zero, e.g. `struct { }` in C or
-  // `struct { int a[0]; }` in C++. In C++, `struct { }` is empty but it's size
-  // is 1 byte and g++ doesn't ignore it; clang++ matches this behaviour.
-  if (isEmptyRecord(getContext(), Ty, true) && Size == 0)
+  // Ignore empty structs/unions.
+  if (isEmptyRecord(getContext(), Ty, true))
     return ABIArgInfo::getIgnore();
+
+  uint64_t Size = getContext().getTypeSize(Ty);
 
   // Pass floating point values via FARs if possible.
   if (IsFixed && Ty->isFloatingType() && !Ty->isComplexType() &&

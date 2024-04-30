@@ -26,6 +26,7 @@
 #include "llvm/IR/DataLayout.h"
 #include "llvm/MC/MCInstrItineraries.h"
 #include "llvm/Support/ErrorHandling.h"
+#include <string>
 
 #define GET_SUBTARGETINFO_HEADER
 #include "MipsGenSubtargetInfo.inc"
@@ -200,9 +201,6 @@ class MipsSubtarget : public MipsGenSubtargetInfo {
   // Assume 32-bit GOT.
   bool UseXGOT = false;
 
-  // Disable unaligned load store for r6.
-  bool StrictAlign;
-
   /// The minimum alignment known to hold of the stack frame on
   /// entry to the function and which must be maintained by every function.
   Align stackAlignment;
@@ -230,7 +228,7 @@ public:
   /// This overrides the PostRAScheduler bit in the SchedModel for each CPU.
   bool enablePostRAScheduler() const override;
   void getCriticalPathRCs(RegClassVector &CriticalPathRCs) const override;
-  CodeGenOptLevel getOptLevelToEnablePostRAScheduler() const override;
+  CodeGenOpt::Level getOptLevelToEnablePostRAScheduler() const override;
 
   bool isABI_N64() const;
   bool isABI_N32() const;
@@ -375,9 +373,7 @@ public:
   /// MIPS32r6/MIPS64r6 require full unaligned access support but does not
   /// specify which component of the system provides it. Hardware, software, and
   /// hybrid implementations are all valid.
-  bool systemSupportsUnalignedAccess() const {
-    return hasMips32r6() && !StrictAlign;
-  }
+  bool systemSupportsUnalignedAccess() const { return hasMips32r6(); }
 
   // Set helper classes
   void setHelperClassesMips16();

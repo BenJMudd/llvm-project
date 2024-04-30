@@ -43,7 +43,6 @@ static_library("MacOSX") {
     "PlatformRemoteAppleBridge.cpp",
     "PlatformRemoteAppleTV.cpp",
     "PlatformRemoteAppleWatch.cpp",
-    "PlatformRemoteAppleXR.cpp",
     "PlatformRemoteDarwinDevice.cpp",
     "PlatformRemoteMacOSX.cpp",
     "PlatformRemoteiOS.cpp",

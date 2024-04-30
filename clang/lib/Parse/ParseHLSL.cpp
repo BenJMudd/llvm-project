@@ -15,7 +15,6 @@
 #include "clang/Parse/ParseDiagnostic.h"
 #include "clang/Parse/Parser.h"
 #include "clang/Parse/RAIIObjectsForParser.h"
-#include "clang/Sema/SemaHLSL.h"
 
 using namespace clang;
 
@@ -63,7 +62,7 @@ Decl *Parser::ParseHLSLBuffer(SourceLocation &DeclEnd) {
   SourceLocation IdentifierLoc = ConsumeToken();
 
   ParsedAttributes Attrs(AttrFactory);
-  MaybeParseHLSLAnnotations(Attrs, nullptr);
+  MaybeParseHLSLSemantics(Attrs, nullptr);
 
   ParseScope BufferScope(this, Scope::DeclScope);
   BalancedDelimiterTracker T(*this, tok::l_brace);
@@ -72,9 +71,9 @@ Decl *Parser::ParseHLSLBuffer(SourceLocation &DeclEnd) {
     return nullptr;
   }
 
-  Decl *D = Actions.HLSL().ActOnStartBuffer(getCurScope(), IsCBuffer, BufferLoc,
-                                            Identifier, IdentifierLoc,
-                                            T.getOpenLocation());
+  Decl *D = Actions.ActOnStartHLSLBuffer(getCurScope(), IsCBuffer, BufferLoc,
+                                         Identifier, IdentifierLoc,
+                                         T.getOpenLocation());
 
   while (Tok.isNot(tok::r_brace) && Tok.isNot(tok::eof)) {
     // FIXME: support attribute on constants inside cbuffer/tbuffer.
@@ -88,7 +87,7 @@ Decl *Parser::ParseHLSLBuffer(SourceLocation &DeclEnd) {
       T.skipToEnd();
       DeclEnd = T.getCloseLocation();
       BufferScope.Exit();
-      Actions.HLSL().ActOnFinishBuffer(D, DeclEnd);
+      Actions.ActOnFinishHLSLBuffer(D, DeclEnd);
       return nullptr;
     }
   }
@@ -96,7 +95,7 @@ Decl *Parser::ParseHLSLBuffer(SourceLocation &DeclEnd) {
   T.consumeClose();
   DeclEnd = T.getCloseLocation();
   BufferScope.Exit();
-  Actions.HLSL().ActOnFinishBuffer(D, DeclEnd);
+  Actions.ActOnFinishHLSLBuffer(D, DeclEnd);
 
   Actions.ProcessDeclAttributeList(Actions.CurScope, D, Attrs);
   return D;
@@ -118,10 +117,12 @@ static void fixSeparateAttrArgAndNumber(StringRef ArgStr, SourceLocation ArgLoc,
   Slot = IdentifierLoc::create(Ctx, ArgLoc, PP.getIdentifierInfo(FixedArg));
 }
 
-void Parser::ParseHLSLAnnotations(ParsedAttributes &Attrs,
-                                  SourceLocation *EndLoc) {
-
-  assert(Tok.is(tok::colon) && "Not a HLSL Annotation");
+void Parser::ParseHLSLSemantics(ParsedAttributes &Attrs,
+                                SourceLocation *EndLoc) {
+  // FIXME: HLSLSemantic is shared for Semantic and resource binding which is
+  // confusing. Need a better name to avoid misunderstanding. Issue
+  // https://github.com/llvm/llvm-project/issues/57882
+  assert(Tok.is(tok::colon) && "Not a HLSL Semantic");
   ConsumeToken();
 
   IdentifierInfo *II = nullptr;
@@ -139,7 +140,7 @@ void Parser::ParseHLSLAnnotations(ParsedAttributes &Attrs,
   if (EndLoc)
     *EndLoc = Tok.getLocation();
   ParsedAttr::Kind AttrKind =
-      ParsedAttr::getParsedKind(II, nullptr, ParsedAttr::AS_HLSLAnnotation);
+      ParsedAttr::getParsedKind(II, nullptr, ParsedAttr::AS_HLSLSemantic);
 
   ArgsVector ArgExprs;
   switch (AttrKind) {
@@ -190,10 +191,10 @@ void Parser::ParseHLSLAnnotations(ParsedAttributes &Attrs,
   case ParsedAttr::AT_HLSLSV_DispatchThreadID:
     break;
   default:
-    llvm_unreachable("invalid HLSL Annotation");
+    llvm_unreachable("invalid HLSL Semantic");
     break;
   }
 
   Attrs.addNew(II, Loc, nullptr, SourceLocation(), ArgExprs.data(),
-               ArgExprs.size(), ParsedAttr::Form::HLSLAnnotation());
+               ArgExprs.size(), ParsedAttr::Form::HLSLSemantic());
 }

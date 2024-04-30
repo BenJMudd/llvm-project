@@ -24,13 +24,29 @@ public:
     Message.vappend(Format, Args);
     va_end(Args);
   }
-  NORETURN ~ScopedErrorReport() { reportRawError(Message.data()); }
+  NORETURN ~ScopedErrorReport() {
+    outputRaw(Message.data());
+    setAbortMessage(Message.data());
+    die();
+  }
 
 private:
   ScopedString Message;
 };
 
 inline void NORETURN trap() { __builtin_trap(); }
+
+void NORETURN reportSoftRSSLimit(uptr RssLimitMb) {
+  ScopedErrorReport Report;
+  Report.append("Soft RSS limit of %zu MB exhausted, current RSS is %zu MB\n",
+                RssLimitMb, GetRSS() >> 20);
+}
+
+void NORETURN reportHardRSSLimit(uptr RssLimitMb) {
+  ScopedErrorReport Report;
+  Report.append("Hard RSS limit of %zu MB exhausted, current RSS is %zu MB\n",
+                RssLimitMb, GetRSS() >> 20);
+}
 
 // This could potentially be called recursively if a CHECK fails in the reports.
 void NORETURN reportCheckFailed(const char *File, int Line,
@@ -51,13 +67,6 @@ void NORETURN reportError(const char *Message) {
   Report.append("%s\n", Message);
 }
 
-// Generic fatal error message without ScopedString.
-void NORETURN reportRawError(const char *Message) {
-  outputRaw(Message);
-  setAbortMessage(Message);
-  die();
-}
-
 void NORETURN reportInvalidFlag(const char *FlagType, const char *Value) {
   ScopedErrorReport Report;
   Report.append("invalid value for %s option: '%s'\n", FlagType, Value);
@@ -68,6 +77,14 @@ void NORETURN reportInvalidFlag(const char *FlagType, const char *Value) {
 void NORETURN reportHeaderCorruption(void *Ptr) {
   ScopedErrorReport Report;
   Report.append("corrupted chunk header at address %p\n", Ptr);
+}
+
+// Two threads have attempted to modify a chunk header at the same time. This is
+// symptomatic of a race-condition in the application code, or general lack of
+// proper locking.
+void NORETURN reportHeaderRace(void *Ptr) {
+  ScopedErrorReport Report;
+  Report.append("race on chunk header at address %p\n", Ptr);
 }
 
 // The allocator was compiled with parameters that conflict with field size

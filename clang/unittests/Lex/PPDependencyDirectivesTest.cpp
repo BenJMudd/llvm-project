@@ -133,16 +133,17 @@ TEST_F(PPDependencyDirectivesTest, MacroGuard) {
   SmallVector<StringRef> IncludedFiles;
   PP.addPPCallbacks(std::make_unique<IncludeCollector>(PP, IncludedFiles));
   PP.EnterMainSourceFile();
-  PP.LexTokensUntilEOF();
+  while (true) {
+    Token tok;
+    PP.Lex(tok);
+    if (tok.is(tok::eof))
+      break;
+  }
 
-  SmallVector<std::string> IncludedFilesSlash;
-  for (StringRef IncludedFile : IncludedFiles)
-    IncludedFilesSlash.push_back(
-        llvm::sys::path::convert_to_slash(IncludedFile));
-  SmallVector<std::string> ExpectedIncludes{
+  SmallVector<StringRef> ExpectedIncludes{
       "main.c", "./head1.h", "./head2.h", "./head2.h", "./head3.h", "./head3.h",
   };
-  EXPECT_EQ(IncludedFilesSlash, ExpectedIncludes);
+  EXPECT_EQ(IncludedFiles, ExpectedIncludes);
 }
 
 } // anonymous namespace

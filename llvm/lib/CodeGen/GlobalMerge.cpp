@@ -60,10 +60,10 @@
 //
 // ===---------------------------------------------------------------------===//
 
-#include "llvm/CodeGen/GlobalMerge.h"
 #include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SetVector.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/ADT/StringRef.h"
@@ -138,99 +138,88 @@ STATISTIC(NumMerged, "Number of globals merged");
 
 namespace {
 
-class GlobalMergeImpl {
-  const TargetMachine *TM = nullptr;
-  GlobalMergeOptions Opt;
-  bool IsMachO = false;
+  class GlobalMerge : public FunctionPass {
+    const TargetMachine *TM = nullptr;
 
-private:
-  bool doMerge(SmallVectorImpl<GlobalVariable *> &Globals, Module &M,
-               bool isConst, unsigned AddrSpace) const;
+    // FIXME: Infer the maximum possible offset depending on the actual users
+    // (these max offsets are different for the users inside Thumb or ARM
+    // functions), see the code that passes in the offset in the ARM backend
+    // for more information.
+    unsigned MaxOffset;
 
-  /// Merge everything in \p Globals for which the corresponding bit
-  /// in \p GlobalSet is set.
-  bool doMerge(const SmallVectorImpl<GlobalVariable *> &Globals,
-               const BitVector &GlobalSet, Module &M, bool isConst,
-               unsigned AddrSpace) const;
+    /// Whether we should try to optimize for size only.
+    /// Currently, this applies a dead simple heuristic: only consider globals
+    /// used in minsize functions for merging.
+    /// FIXME: This could learn about optsize, and be used in the cost model.
+    bool OnlyOptimizeForSize = false;
 
-  /// Check if the given variable has been identified as must keep
-  /// \pre setMustKeepGlobalVariables must have been called on the Module that
-  ///      contains GV
-  bool isMustKeepGlobalVariable(const GlobalVariable *GV) const {
-    return MustKeepGlobalVariables.count(GV);
-  }
+    /// Whether we should merge global variables that have external linkage.
+    bool MergeExternalGlobals = false;
 
-  /// Collect every variables marked as "used" or used in a landing pad
-  /// instruction for this Module.
-  void setMustKeepGlobalVariables(Module &M);
+    bool IsMachO = false;
 
-  /// Collect every variables marked as "used"
-  void collectUsedGlobalVariables(Module &M, StringRef Name);
+    bool doMerge(SmallVectorImpl<GlobalVariable*> &Globals,
+                 Module &M, bool isConst, unsigned AddrSpace) const;
 
-  /// Keep track of the GlobalVariable that must not be merged away
-  SmallSetVector<const GlobalVariable *, 16> MustKeepGlobalVariables;
+    /// Merge everything in \p Globals for which the corresponding bit
+    /// in \p GlobalSet is set.
+    bool doMerge(const SmallVectorImpl<GlobalVariable *> &Globals,
+                 const BitVector &GlobalSet, Module &M, bool isConst,
+                 unsigned AddrSpace) const;
 
-public:
-  GlobalMergeImpl(const TargetMachine *TM, GlobalMergeOptions Opt)
-      : TM(TM), Opt(Opt) {}
-  bool run(Module &M);
-};
+    /// Check if the given variable has been identified as must keep
+    /// \pre setMustKeepGlobalVariables must have been called on the Module that
+    ///      contains GV
+    bool isMustKeepGlobalVariable(const GlobalVariable *GV) const {
+      return MustKeepGlobalVariables.count(GV);
+    }
 
-class GlobalMerge : public FunctionPass {
-  const TargetMachine *TM = nullptr;
-  GlobalMergeOptions Opt;
+    /// Collect every variables marked as "used" or used in a landing pad
+    /// instruction for this Module.
+    void setMustKeepGlobalVariables(Module &M);
 
-public:
-  static char ID; // Pass identification, replacement for typeid.
+    /// Collect every variables marked as "used"
+    void collectUsedGlobalVariables(Module &M, StringRef Name);
 
-  explicit GlobalMerge() : FunctionPass(ID) {
-    Opt.MaxOffset = GlobalMergeMaxOffset;
-    initializeGlobalMergePass(*PassRegistry::getPassRegistry());
-  }
+    /// Keep track of the GlobalVariable that must not be merged away
+    SmallSetVector<const GlobalVariable *, 16> MustKeepGlobalVariables;
 
-  explicit GlobalMerge(const TargetMachine *TM, unsigned MaximalOffset,
-                       bool OnlyOptimizeForSize, bool MergeExternalGlobals)
-      : FunctionPass(ID), TM(TM) {
-    Opt.MaxOffset = MaximalOffset;
-    Opt.SizeOnly = OnlyOptimizeForSize;
-    Opt.MergeExternal = MergeExternalGlobals;
-    initializeGlobalMergePass(*PassRegistry::getPassRegistry());
-  }
+  public:
+    static char ID;             // Pass identification, replacement for typeid.
 
-  bool doInitialization(Module &M) override {
-    GlobalMergeImpl P(TM, Opt);
-    return P.run(M);
-  }
-  bool runOnFunction(Function &F) override { return false; }
+    explicit GlobalMerge()
+        : FunctionPass(ID), MaxOffset(GlobalMergeMaxOffset) {
+      initializeGlobalMergePass(*PassRegistry::getPassRegistry());
+    }
 
-  StringRef getPassName() const override { return "Merge internal globals"; }
+    explicit GlobalMerge(const TargetMachine *TM, unsigned MaximalOffset,
+                         bool OnlyOptimizeForSize, bool MergeExternalGlobals)
+        : FunctionPass(ID), TM(TM), MaxOffset(MaximalOffset),
+          OnlyOptimizeForSize(OnlyOptimizeForSize),
+          MergeExternalGlobals(MergeExternalGlobals) {
+      initializeGlobalMergePass(*PassRegistry::getPassRegistry());
+    }
 
-  void getAnalysisUsage(AnalysisUsage &AU) const override {
-    AU.setPreservesCFG();
-    FunctionPass::getAnalysisUsage(AU);
-  }
-};
+    bool doInitialization(Module &M) override;
+    bool runOnFunction(Function &F) override;
+    bool doFinalization(Module &M) override;
+
+    StringRef getPassName() const override { return "Merge internal globals"; }
+
+    void getAnalysisUsage(AnalysisUsage &AU) const override {
+      AU.setPreservesCFG();
+      FunctionPass::getAnalysisUsage(AU);
+    }
+  };
 
 } // end anonymous namespace
-
-PreservedAnalyses GlobalMergePass::run(Module &M, ModuleAnalysisManager &) {
-  GlobalMergeImpl P(TM, Options);
-  bool Changed = P.run(M);
-  if (!Changed)
-    return PreservedAnalyses::all();
-
-  PreservedAnalyses PA;
-  PA.preserveSet<CFGAnalyses>();
-  return PA;
-}
 
 char GlobalMerge::ID = 0;
 
 INITIALIZE_PASS(GlobalMerge, DEBUG_TYPE, "Merge global variables", false, false)
 
-bool GlobalMergeImpl::doMerge(SmallVectorImpl<GlobalVariable *> &Globals,
-                              Module &M, bool isConst,
-                              unsigned AddrSpace) const {
+bool GlobalMerge::doMerge(SmallVectorImpl<GlobalVariable*> &Globals,
+                          Module &M, bool isConst, unsigned AddrSpace) const {
   auto &DL = M.getDataLayout();
   // FIXME: Find better heuristics
   llvm::stable_sort(
@@ -309,9 +298,10 @@ bool GlobalMergeImpl::doMerge(SmallVectorImpl<GlobalVariable *> &Globals,
   for (size_t GI = 0, GE = Globals.size(); GI != GE; ++GI) {
     GlobalVariable *GV = Globals[GI];
 
-    // Reset the encountered sets for this global and grow it in case we created
-    // new sets for the previous global.
-    EncounteredUGS.assign(UsedGlobalSets.size(), 0);
+    // Reset the encountered sets for this global...
+    std::fill(EncounteredUGS.begin(), EncounteredUGS.end(), 0);
+    // ...and grow it in case we created new sets for the previous global.
+    EncounteredUGS.resize(UsedGlobalSets.size());
 
     // We might need to create a set that only consists of the current global.
     // Keep track of its index into UsedGlobalSets.
@@ -344,7 +334,7 @@ bool GlobalMergeImpl::doMerge(SmallVectorImpl<GlobalVariable *> &Globals,
         Function *ParentFn = I->getParent()->getParent();
 
         // If we're only optimizing for size, ignore non-minsize functions.
-        if (Opt.SizeOnly && !ParentFn->hasMinSize())
+        if (OnlyOptimizeForSize && !ParentFn->hasMinSize())
           continue;
 
         size_t UGSIdx = GlobalUsesByFunction[ParentFn];
@@ -445,9 +435,9 @@ bool GlobalMergeImpl::doMerge(SmallVectorImpl<GlobalVariable *> &Globals,
   return Changed;
 }
 
-bool GlobalMergeImpl::doMerge(const SmallVectorImpl<GlobalVariable *> &Globals,
-                              const BitVector &GlobalSet, Module &M,
-                              bool isConst, unsigned AddrSpace) const {
+bool GlobalMerge::doMerge(const SmallVectorImpl<GlobalVariable *> &Globals,
+                          const BitVector &GlobalSet, Module &M, bool isConst,
+                          unsigned AddrSpace) const {
   assert(Globals.size() > 1);
 
   Type *Int32Ty = Type::getInt32Ty(M.getContext());
@@ -478,7 +468,7 @@ bool GlobalMergeImpl::doMerge(const SmallVectorImpl<GlobalVariable *> &Globals,
       unsigned Padding = alignTo(MergedSize, Alignment) - MergedSize;
       MergedSize += Padding;
       MergedSize += DL.getTypeAllocSize(Ty);
-      if (MergedSize > Opt.MaxOffset) {
+      if (MergedSize > MaxOffset) {
         break;
       }
       if (Padding) {
@@ -574,7 +564,7 @@ bool GlobalMergeImpl::doMerge(const SmallVectorImpl<GlobalVariable *> &Globals,
   return Changed;
 }
 
-void GlobalMergeImpl::collectUsedGlobalVariables(Module &M, StringRef Name) {
+void GlobalMerge::collectUsedGlobalVariables(Module &M, StringRef Name) {
   // Extract global variables from llvm.used array
   const GlobalVariable *GV = M.getGlobalVariable(Name);
   if (!GV || !GV->hasInitializer()) return;
@@ -588,7 +578,7 @@ void GlobalMergeImpl::collectUsedGlobalVariables(Module &M, StringRef Name) {
       MustKeepGlobalVariables.insert(G);
 }
 
-void GlobalMergeImpl::setMustKeepGlobalVariables(Module &M) {
+void GlobalMerge::setMustKeepGlobalVariables(Module &M) {
   collectUsedGlobalVariables(M, "llvm.used");
   collectUsedGlobalVariables(M, "llvm.compiler.used");
 
@@ -615,7 +605,7 @@ void GlobalMergeImpl::setMustKeepGlobalVariables(Module &M) {
   }
 }
 
-bool GlobalMergeImpl::run(Module &M) {
+bool GlobalMerge::doInitialization(Module &M) {
   if (!EnableGlobalMerge)
     return false;
 
@@ -640,10 +630,10 @@ bool GlobalMergeImpl::run(Module &M) {
       continue;
 
     // It's not safe to merge globals that may be preempted
-    if (TM && !TM->shouldAssumeDSOLocal(&GV))
+    if (TM && !TM->shouldAssumeDSOLocal(M, &GV))
       continue;
 
-    if (!(Opt.MergeExternal && GV.hasExternalLinkage()) &&
+    if (!(MergeExternalGlobals && GV.hasExternalLinkage()) &&
         !GV.hasInternalLinkage())
       continue;
 
@@ -654,7 +644,8 @@ bool GlobalMergeImpl::run(Module &M) {
     StringRef Section = GV.getSection();
 
     // Ignore all 'special' globals.
-    if (GV.getName().starts_with("llvm.") || GV.getName().starts_with(".llvm."))
+    if (GV.getName().startswith("llvm.") ||
+        GV.getName().startswith(".llvm."))
       continue;
 
     // Ignore all "required" globals:
@@ -670,7 +661,7 @@ bool GlobalMergeImpl::run(Module &M) {
       continue;
 
     Type *Ty = GV.getValueType();
-    if (DL.getTypeAllocSize(Ty) < Opt.MaxOffset) {
+    if (DL.getTypeAllocSize(Ty) < MaxOffset) {
       if (TM &&
           TargetLoweringObjectFile::getKindForGlobal(&GV, *TM).isBSS())
         BSSGlobals[{AddressSpace, Section}].push_back(&GV);
@@ -695,6 +686,15 @@ bool GlobalMergeImpl::run(Module &M) {
         Changed |= doMerge(P.second, M, true, P.first.first);
 
   return Changed;
+}
+
+bool GlobalMerge::runOnFunction(Function &F) {
+  return false;
+}
+
+bool GlobalMerge::doFinalization(Module &M) {
+  MustKeepGlobalVariables.clear();
+  return false;
 }
 
 Pass *llvm::createGlobalMergePass(const TargetMachine *TM, unsigned Offset,

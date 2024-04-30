@@ -43,7 +43,7 @@ void dumpCFI(const BinaryFunction &BF, const MCInst &Instr, AsmPrinter &MAP) {
   case MCCFIInstruction::OpRememberState:
   case MCCFIInstruction::OpRestoreState:
     if (opts::Verbosity >= 2)
-      BF.getBinaryContext().errs()
+      errs()
           << "BOLT-WARNING: AsmDump: skipping unsupported CFI instruction in "
           << BF << ".\n";
 
@@ -102,9 +102,9 @@ void dumpFunction(const BinaryFunction &BF) {
   // Make sure the new directory exists, creating it if necessary.
   if (!opts::AsmDump.empty()) {
     if (std::error_code EC = sys::fs::create_directories(opts::AsmDump)) {
-      BC.errs() << "BOLT-ERROR: could not create directory '" << opts::AsmDump
-                << "': " << EC.message() << '\n';
-      return;
+      errs() << "BOLT-ERROR: could not create directory '" << opts::AsmDump
+             << "': " << EC.message() << '\n';
+      exit(1);
     }
   }
 
@@ -115,14 +115,14 @@ void dumpFunction(const BinaryFunction &BF) {
           ? (PrintName + ".s")
           : (opts::AsmDump + sys::path::get_separator() + PrintName + ".s")
                 .str();
-  BC.outs() << "BOLT-INFO: Dumping function assembly to " << Filename << "\n";
+  outs() << "BOLT-INFO: Dumping function assembly to " << Filename << "\n";
 
   std::error_code EC;
   raw_fd_ostream OS(Filename, EC, sys::fs::OF_None);
   if (EC) {
-    BC.errs() << "BOLT-ERROR: " << EC.message() << ", unable to open "
-              << Filename << " for output.\n";
-    return;
+    errs() << "BOLT-ERROR: " << EC.message() << ", unable to open " << Filename
+           << " for output.\n";
+    exit(1);
   }
   OS.SetUnbuffered();
 
@@ -237,10 +237,9 @@ void dumpFunction(const BinaryFunction &BF) {
     dumpBinaryDataSymbols(OS, BD, LastSection);
 }
 
-Error AsmDumpPass::runOnFunctions(BinaryContext &BC) {
+void AsmDumpPass::runOnFunctions(BinaryContext &BC) {
   for (const auto &BFIt : BC.getBinaryFunctions())
     dumpFunction(BFIt.second);
-  return Error::success();
 }
 
 } // namespace bolt

@@ -14,15 +14,16 @@
 #include "test/UnitTest/RoundingModeUtils.h"
 #include "test/UnitTest/Test.h"
 
+#include <limits.h>
 #include <stddef.h>
 
-using LIBC_NAMESPACE::fputil::testing::ForceRoundingModeTest;
-using LIBC_NAMESPACE::fputil::testing::RoundingMode;
+using __llvm_libc::fputil::testing::ForceRoundingModeTest;
+using __llvm_libc::fputil::testing::RoundingMode;
 
-using LIBC_NAMESPACE::testing::ErrnoSetterMatcher::Fails;
-using LIBC_NAMESPACE::testing::ErrnoSetterMatcher::Succeeds;
+using __llvm_libc::testing::ErrnoSetterMatcher::Fails;
+using __llvm_libc::testing::ErrnoSetterMatcher::Succeeds;
 
-class LlvmLibcStrToDTest : public LIBC_NAMESPACE::testing::Test,
+class LlvmLibcStrToDTest : public __llvm_libc::testing::Test,
                            ForceRoundingModeTest<RoundingMode::Nearest> {
 public:
   void run_test(const char *inputString, const ptrdiff_t expectedStrLen,
@@ -43,15 +44,16 @@ public:
     //  This is so that the result can be compared in parts.
     char *str_end = nullptr;
 
-    LIBC_NAMESPACE::fputil::FPBits<double> expected_fp =
-        LIBC_NAMESPACE::fputil::FPBits<double>(expectedRawData);
+    __llvm_libc::fputil::FPBits<double> expected_fp =
+        __llvm_libc::fputil::FPBits<double>(expectedRawData);
 
-    LIBC_NAMESPACE::libc_errno = 0;
-    double result = LIBC_NAMESPACE::strtod(inputString, &str_end);
+    libc_errno = 0;
+    double result = __llvm_libc::strtod(inputString, &str_end);
     if (expectedErrno == 0)
-      EXPECT_THAT(result, Succeeds<double>(expected_fp.get_val()));
+      EXPECT_THAT(result, Succeeds<double>(static_cast<double>(expected_fp)));
     else
-      EXPECT_THAT(result, Fails<double>(expectedErrno, expected_fp.get_val()));
+      EXPECT_THAT(result, Fails<double>(expectedErrno,
+                                        static_cast<double>(expected_fp)));
     EXPECT_EQ(str_end - inputString, expectedStrLen);
   }
 };

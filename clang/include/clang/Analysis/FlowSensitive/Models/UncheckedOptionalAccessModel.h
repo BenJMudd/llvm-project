@@ -21,7 +21,7 @@
 #include "clang/Analysis/FlowSensitive/DataflowEnvironment.h"
 #include "clang/Analysis/FlowSensitive/NoopLattice.h"
 #include "clang/Basic/SourceLocation.h"
-#include "llvm/ADT/SmallVector.h"
+#include <vector>
 
 namespace clang {
 namespace dataflow {
@@ -45,7 +45,7 @@ struct UncheckedOptionalAccessModelOptions {
 class UncheckedOptionalAccessModel
     : public DataflowAnalysis<UncheckedOptionalAccessModel, NoopLattice> {
 public:
-  UncheckedOptionalAccessModel(ASTContext &Ctx, dataflow::Environment &Env);
+  UncheckedOptionalAccessModel(ASTContext &Ctx);
 
   /// Returns a matcher for the optional classes covered by this model.
   static ast_matchers::DeclarationMatcher optionalClassDecl();
@@ -53,6 +53,17 @@ public:
   static NoopLattice initialElement() { return {}; }
 
   void transfer(const CFGElement &Elt, NoopLattice &L, Environment &Env);
+
+  ComparisonResult compare(QualType Type, const Value &Val1,
+                           const Environment &Env1, const Value &Val2,
+                           const Environment &Env2) override;
+
+  bool merge(QualType Type, const Value &Val1, const Environment &Env1,
+             const Value &Val2, const Environment &Env2, Value &MergedVal,
+             Environment &MergedEnv) override;
+
+  Value *widen(QualType Type, Value &Prev, const Environment &PrevEnv,
+               Value &Current, Environment &CurrentEnv) override;
 
 private:
   CFGMatchSwitch<TransferState<NoopLattice>> TransferMatchSwitch;
@@ -63,14 +74,11 @@ public:
   UncheckedOptionalAccessDiagnoser(
       UncheckedOptionalAccessModelOptions Options = {});
 
-  llvm::SmallVector<SourceLocation>
-  operator()(const CFGElement &Elt, ASTContext &Ctx,
-             const TransferStateForDiagnostics<NoopLattice> &State) {
-    return DiagnoseMatchSwitch(Elt, Ctx, State.Env);
-  }
+  std::vector<SourceLocation> diagnose(ASTContext &Ctx, const CFGElement *Elt,
+                                       const Environment &Env);
 
 private:
-  CFGMatchSwitch<const Environment, llvm::SmallVector<SourceLocation>>
+  CFGMatchSwitch<const Environment, std::vector<SourceLocation>>
       DiagnoseMatchSwitch;
 };
 

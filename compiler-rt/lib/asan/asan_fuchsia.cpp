@@ -57,6 +57,8 @@ void AsanCheckDynamicRTPrereqs() {}
 void AsanCheckIncompatibleRT() {}
 void InitializeAsanInterceptors() {}
 
+void *AsanDoesNotSupportStaticLinkage() { return nullptr; }
+
 void InitializePlatformExceptionHandlers() {}
 void AsanOnDeadlySignal(int signo, void *siginfo, void *context) {
   UNIMPLEMENTED();
@@ -237,8 +239,6 @@ void FlushUnneededASanShadowMemory(uptr p, uptr size) {
 // On Fuchsia, leak detection is done by a special hook after atexit hooks.
 // So this doesn't install any atexit hook like on other platforms.
 void InstallAtExitCheckLeaks() {}
-
-void InstallAtForkHandler() {}
 
 }  // namespace __asan
 

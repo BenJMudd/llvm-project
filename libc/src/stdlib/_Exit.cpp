@@ -11,10 +11,11 @@
 
 #include "src/stdlib/_Exit.h"
 
-namespace LIBC_NAMESPACE {
+namespace __llvm_libc {
 
-[[noreturn]] LLVM_LIBC_FUNCTION(void, _Exit, (int status)) {
+LLVM_LIBC_FUNCTION(void, _Exit, (int status)) {
   quick_exit(status);
+  __builtin_unreachable();
 }
 
-} // namespace LIBC_NAMESPACE
+} // namespace __llvm_libc

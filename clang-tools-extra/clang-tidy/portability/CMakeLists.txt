@@ -16,7 +16,6 @@ add_clang_library(clangTidyPortabilityModule
 
   DEPENDS
   omp_gen
-  ClangDriverOptions
   )
 
 clang_target_link_libraries(clangTidyPortabilityModule

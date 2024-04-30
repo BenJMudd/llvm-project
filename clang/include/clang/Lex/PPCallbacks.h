@@ -22,11 +22,11 @@
 #include "llvm/ADT/StringRef.h"
 
 namespace clang {
-class Token;
-class IdentifierInfo;
-class MacroDefinition;
-class MacroDirective;
-class MacroArgs;
+  class Token;
+  class IdentifierInfo;
+  class MacroDefinition;
+  class MacroDirective;
+  class MacroArgs;
 
 /// This interface provides a way to observe the actions of the
 /// preprocessor as it does its thing.
@@ -127,10 +127,8 @@ public:
   /// \param RelativePath The path relative to SearchPath, at which the include
   /// file was found. This is equal to FileName except for framework includes.
   ///
-  /// \param SuggestedModule The module suggested for this header, if any.
-  ///
-  /// \param ModuleImported Whether this include was translated into import of
-  /// \p SuggestedModule.
+  /// \param Imported The module, whenever an inclusion directive was
+  /// automatically turned into a module import or null otherwise.
   ///
   /// \param FileType The characteristic kind, indicates whether a file or
   /// directory holds normal user code, system code, or system code which is
@@ -141,8 +139,7 @@ public:
                                   bool IsAngled, CharSourceRange FilenameRange,
                                   OptionalFileEntryRef File,
                                   StringRef SearchPath, StringRef RelativePath,
-                                  const Module *SuggestedModule,
-                                  bool ModuleImported,
+                                  const Module *Imported,
                                   SrcMgr::CharacteristicKind FileType) {}
 
   /// Callback invoked whenever a submodule was entered.
@@ -476,15 +473,14 @@ public:
                           StringRef FileName, bool IsAngled,
                           CharSourceRange FilenameRange,
                           OptionalFileEntryRef File, StringRef SearchPath,
-                          StringRef RelativePath, const Module *SuggestedModule,
-                          bool ModuleImported,
+                          StringRef RelativePath, const Module *Imported,
                           SrcMgr::CharacteristicKind FileType) override {
     First->InclusionDirective(HashLoc, IncludeTok, FileName, IsAngled,
                               FilenameRange, File, SearchPath, RelativePath,
-                              SuggestedModule, ModuleImported, FileType);
+                              Imported, FileType);
     Second->InclusionDirective(HashLoc, IncludeTok, FileName, IsAngled,
                                FilenameRange, File, SearchPath, RelativePath,
-                               SuggestedModule, ModuleImported, FileType);
+                               Imported, FileType);
   }
 
   void EnteredSubmodule(Module *M, SourceLocation ImportLoc,

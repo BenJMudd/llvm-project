@@ -13,6 +13,7 @@ add_llvm_component_library(LLVMOrcJIT
   CompileUtils.cpp
   Core.cpp
   DebugObjectManagerPlugin.cpp
+  DebuggerSupportPlugin.cpp
   DebugUtils.cpp
   EPCDynamicLibrarySearchGenerator.cpp
   EPCDebugObjectRegistrar.cpp
@@ -41,7 +42,6 @@ add_llvm_component_library(LLVMOrcJIT
   OrcABISupport.cpp
   OrcV2CBindings.cpp
   RTDyldObjectLinkingLayer.cpp
-  SectCreate.cpp
   SimpleRemoteEPC.cpp
   Speculation.cpp
   SpeculateAnalyses.cpp
@@ -76,7 +76,6 @@ add_llvm_component_library(LLVMOrcJIT
   TransformUtils
   )
 
-add_subdirectory(Debugging)
 add_subdirectory(Shared)
 add_subdirectory(TargetProcess)
 

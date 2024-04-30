@@ -10,7 +10,7 @@
 //  declaration of 'lerp' must be imported from module 'std.compat.cmath'
 //  before it is required
 // therefore disable the test in this configuration.
-// UNSUPPORTED: clang-modules-build
+// UNSUPPORTED: modules-build
 
 // <math.h>
 

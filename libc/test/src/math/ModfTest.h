@@ -8,17 +8,15 @@
 
 #include "src/__support/FPUtil/BasicOperations.h"
 #include "src/__support/FPUtil/NearestIntegerOperations.h"
-#include "test/UnitTest/FEnvSafeTest.h"
 #include "test/UnitTest/FPMatcher.h"
 #include "test/UnitTest/Test.h"
 #include "utils/MPFRWrapper/MPFRUtils.h"
 
-#include "hdr/math_macros.h"
+#include <math.h>
 
-namespace mpfr = LIBC_NAMESPACE::testing::mpfr;
+namespace mpfr = __llvm_libc::testing::mpfr;
 
-template <typename T>
-class ModfTest : public LIBC_NAMESPACE::testing::FEnvSafeTest {
+template <typename T> class ModfTest : public __llvm_libc::testing::Test {
 
   DECLARE_SPECIAL_CONSTANTS(T)
 
@@ -86,17 +84,17 @@ public:
   }
 
   void testRange(ModfFunc func) {
-    constexpr StorageType COUNT = 100'000;
-    constexpr StorageType STEP = STORAGE_MAX / COUNT;
-    for (StorageType i = 0, v = 0; i <= COUNT; ++i, v += STEP) {
-      T x = FPBits(v).get_val();
+    constexpr UIntType COUNT = 100'000;
+    constexpr UIntType STEP = UIntType(-1) / COUNT;
+    for (UIntType i = 0, v = 0; i <= COUNT; ++i, v += STEP) {
+      T x = T(FPBits(v));
       if (isnan(x) || isinf(x) || x == T(0.0))
         continue;
 
       T integral;
       T frac = func(x, &integral);
-      ASSERT_TRUE(LIBC_NAMESPACE::fputil::abs(frac) < 1.0l);
-      ASSERT_TRUE(LIBC_NAMESPACE::fputil::trunc(x) == integral);
+      ASSERT_TRUE(__llvm_libc::fputil::abs(frac) < 1.0l);
+      ASSERT_TRUE(__llvm_libc::fputil::trunc(x) == integral);
       ASSERT_TRUE(integral + frac == x);
     }
   }

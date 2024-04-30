@@ -34,7 +34,3 @@ void ConvertVectorToArmSMEPass::runOnOperation() {
 
   (void)applyPatternsAndFoldGreedily(getOperation(), std::move(patterns));
 }
-
-std::unique_ptr<Pass> mlir::createConvertVectorToArmSMEPass() {
-  return std::make_unique<ConvertVectorToArmSMEPass>();
-}

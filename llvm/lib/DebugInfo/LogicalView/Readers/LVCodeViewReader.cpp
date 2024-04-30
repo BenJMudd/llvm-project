@@ -217,9 +217,11 @@ Error LVCodeViewReader::resolveSymbolName(const coff_section *CoffSection,
 // and they are printed only if the command line option 'internal=system'.
 bool LVCodeViewReader::isSystemEntry(LVElement *Element, StringRef Name) const {
   Name = Name.empty() ? Element->getName() : Name;
-  auto Find = [=](const char *String) -> bool { return Name.contains(String); };
+  auto Find = [=](const char *String) -> bool {
+    return StringRef::npos != Name.find(String);
+  };
   auto Starts = [=](const char *Pattern) -> bool {
-    return Name.starts_with(Pattern);
+    return Name.startswith(Pattern);
   };
   auto CheckExclude = [&]() -> bool {
     if (Starts("__") || Starts("_PMD") || Starts("_PMFN"))
@@ -274,7 +276,7 @@ Error LVCodeViewReader::collectInlineeInfo(
 }
 
 Error LVCodeViewReader::traverseInlineeLines(StringRef Subsection) {
-  BinaryStreamReader SR(Subsection, llvm::endianness::little);
+  BinaryStreamReader SR(Subsection, llvm::support::little);
   DebugInlineeLinesSubsectionRef Lines;
   if (Error E = Lines.initialize(SR))
     return createStringError(errorToErrorCode(std::move(E)), getFileName());
@@ -347,7 +349,7 @@ Error LVCodeViewReader::initializeFileAndStringTables(
     if (Error E = Reader.readFixedString(Contents, SubSectionSize))
       return createStringError(errorToErrorCode(std::move(E)), getFileName());
 
-    BinaryStreamRef ST(Contents, llvm::endianness::little);
+    BinaryStreamRef ST(Contents, support::little);
     switch (DebugSubsectionKind(SubType)) {
     case DebugSubsectionKind::FileChecksums:
       if (Error E = CVFileChecksumTable.initialize(ST))
@@ -476,8 +478,8 @@ Error LVCodeViewReader::loadPrecompiledObject(PrecompRecord &Precomp,
       if (Magic != COFF::DEBUG_SECTION_MAGIC)
         return errorCodeToError(object_error::parse_failed);
 
-      ReaderPrecomp = std::make_unique<BinaryStreamReader>(
-          *DataOrErr, llvm::endianness::little);
+      ReaderPrecomp =
+          std::make_unique<BinaryStreamReader>(*DataOrErr, support::little);
       cantFail(
           ReaderPrecomp->readArray(CVTypesPrecomp, ReaderPrecomp->getLength()));
 
@@ -512,7 +514,7 @@ Error LVCodeViewReader::loadPrecompiledObject(PrecompRecord &Precomp,
       [&](TypeIndex TI, const CVType &Type) { TypeArray.push_back(Type); });
 
   ItemStream =
-      std::make_unique<BinaryItemStream<CVType>>(llvm::endianness::little);
+      std::make_unique<BinaryItemStream<CVType>>(llvm::support::little);
   ItemStream->setItems(TypeArray);
   TypeStream.setUnderlyingStream(*ItemStream);
 
@@ -548,7 +550,7 @@ Error LVCodeViewReader::traverseTypeSection(StringRef SectionName,
   // Get the first type record. It will indicate if this object uses a type
   // server (/Zi) or a PCH file (/Yu).
   CVTypeArray CVTypes;
-  BinaryStreamReader Reader(*DataOrErr, llvm::endianness::little);
+  BinaryStreamReader Reader(*DataOrErr, support::little);
   cantFail(Reader.readArray(CVTypes, Reader.getLength()));
   CVTypeArray::Iterator FirstType = CVTypes.begin();
 
@@ -619,7 +621,7 @@ Error LVCodeViewReader::traverseSymbolsSubsection(StringRef Subsection,
   LVSymbolVisitorDelegate VisitorDelegate(this, Section, &getObj(),
                                           SectionContents);
   CVSymbolArray Symbols;
-  BinaryStreamReader Reader(BinaryData, llvm::endianness::little);
+  BinaryStreamReader Reader(BinaryData, llvm::support::little);
   if (Error E = Reader.readArray(Symbols, Reader.getLength()))
     return createStringError(errorToErrorCode(std::move(E)), getFileName());
 
@@ -662,7 +664,7 @@ Error LVCodeViewReader::traverseSymbolSection(StringRef SectionName,
   if (Magic != COFF::DEBUG_SECTION_MAGIC)
     return createStringError(object_error::parse_failed, getFileName());
 
-  BinaryStreamReader FSReader(Data, llvm::endianness::little);
+  BinaryStreamReader FSReader(Data, support::little);
   if (Error Err = initializeFileAndStringTables(FSReader))
     return Err;
 
@@ -750,8 +752,7 @@ Error LVCodeViewReader::traverseSymbolSection(StringRef SectionName,
       W.printString("Symbol Name", SymbolName);
     });
 
-    BinaryStreamReader Reader(FunctionLineTables[SymbolName],
-                              llvm::endianness::little);
+    BinaryStreamReader Reader(FunctionLineTables[SymbolName], support::little);
 
     DebugLinesSubsectionRef Lines;
     if (Error E = Lines.initialize(Reader))

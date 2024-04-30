@@ -15,7 +15,6 @@
 #include "lldb/Core/Debugger.h"
 #include "lldb/Core/Module.h"
 #include "lldb/Target/Process.h"
-#include "lldb/Target/ProcessTrace.h"
 #include "lldb/Target/Target.h"
 #include <optional>
 
@@ -104,7 +103,6 @@ TraceIntelPTBundleLoader::CreateEmptyProcess(lldb::pid_t pid,
   ParsedProcess parsed_process;
   parsed_process.target_sp = target_sp;
 
-  ProcessTrace::Initialize();
   ProcessSP process_sp = target_sp->CreateProcess(
       /*listener*/ nullptr, "trace",
       /*crash_file*/ nullptr,
@@ -287,7 +285,7 @@ StringRef TraceIntelPTBundleLoader::GetSchema() {
   "tscPerfZeroConversion"?: {
     // Values used to convert between TSCs and nanoseconds. See the time_zero
     // section in https://man7.org/linux/man-pages/man2/perf_event_open.2.html
-    // for information.
+    // for for information.
 
     "timeMult": integer,
     "timeShift": integer,
@@ -345,7 +343,7 @@ Error TraceIntelPTBundleLoader::AugmentThreadsFromContextSwitches(
     if (indexed_threads[proc->second].count(tid))
       return;
     indexed_threads[proc->second].insert(tid);
-    proc->second->threads.push_back({tid, /*ipt_trace=*/std::nullopt});
+    proc->second->threads.push_back({tid, /*ipt_trace=*/None});
   };
 
   for (const JSONCpu &cpu : *bundle_description.cpus) {

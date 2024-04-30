@@ -84,7 +84,7 @@ public:
           newOperands[idx] = operands[idx];
       }
     }
-    rewriter.modifyOpInPlace(
+    rewriter.updateRootInPlace(
         op, [newOperands, op]() { op->setOperands(newOperands); });
     return success();
   }
@@ -107,8 +107,8 @@ public:
                   ConversionPatternRewriter &rewriter) const final {
     // For a return, all operands go to the results of the parent, so
     // rewrite them all.
-    rewriter.modifyOpInPlace(op,
-                             [&] { op->setOperands(adaptor.getOperands()); });
+    rewriter.updateRootInPlace(op,
+                               [&] { op->setOperands(adaptor.getOperands()); });
     return success();
   }
 };
@@ -146,7 +146,7 @@ bool mlir::isLegalForReturnOpTypeConversionPattern(Operation *op,
                                                    TypeConverter &converter,
                                                    bool returnOpAlwaysLegal) {
   // If this is a `return` and the user pass wants to convert/transform across
-  // function boundaries, then `converter` is invoked to check whether the
+  // function boundaries, then `converter` is invoked to check whether the the
   // `return` op is legal.
   if (isa<ReturnOp>(op) && !returnOpAlwaysLegal)
     return converter.isLegal(op);

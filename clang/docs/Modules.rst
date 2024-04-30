@@ -588,9 +588,6 @@ c11
 c17
   C17 support is available.
 
-c23
-  C23 support is available.
-
 freestanding
   A freestanding environment is available.
 

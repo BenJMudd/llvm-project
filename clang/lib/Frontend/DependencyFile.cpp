@@ -66,8 +66,7 @@ struct DepCollectorPPCallbacks : public PPCallbacks {
                           StringRef FileName, bool IsAngled,
                           CharSourceRange FilenameRange,
                           OptionalFileEntryRef File, StringRef SearchPath,
-                          StringRef RelativePath, const Module *SuggestedModule,
-                          bool ModuleImported,
+                          StringRef RelativePath, const Module *Imported,
                           SrcMgr::CharacteristicKind FileType) override {
     if (!File)
       DepCollector.maybeAddDependency(FileName, /*FromModule*/ false,
@@ -99,7 +98,7 @@ struct DepCollectorMMCallbacks : public ModuleMapCallbacks {
   DependencyCollector &DepCollector;
   DepCollectorMMCallbacks(DependencyCollector &DC) : DepCollector(DC) {}
 
-  void moduleMapFileRead(SourceLocation Loc, FileEntryRef Entry,
+  void moduleMapFileRead(SourceLocation Loc, const FileEntry &Entry,
                          bool IsSystem) override {
     StringRef Filename = Entry.getName();
     DepCollector.maybeAddDependency(Filename, /*FromModule*/ false,

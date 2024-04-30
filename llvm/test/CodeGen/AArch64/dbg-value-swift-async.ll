@@ -1,15 +1,13 @@
-; RUN: llc --mtriple="aarch64-" -O0 -global-isel -stop-after=irtranslator -verify-machineinstrs %s -o - | FileCheck %s --check-prefix=AARCH
-; RUN: llc --mtriple="aarch64-" -O0 -fast-isel=false -global-isel=false -stop-after=finalize-isel %s -o - | FileCheck %s --check-prefix=AARCH
-; RUN: llc --mtriple="aarch64-" -O0 -fast-isel -stop-after=finalize-isel %s -o - | FileCheck %s --check-prefix=AARCH
+; RUN: llc -O0 -global-isel -stop-after=irtranslator -verify-machineinstrs %s -o - | FileCheck %s
+; RUN: llc -O0 -fast-isel=false -global-isel=false -stop-after=finalize-isel %s -o - | FileCheck %s
+; RUN: llc -O0 -fast-isel -stop-after=finalize-isel %s -o - | FileCheck %s
 
-; RUN: llc --mtriple="aarch64-" -O0 -global-isel -stop-after=irtranslator -verify-machineinstrs %s -o - --try-experimental-debuginfo-iterators | FileCheck %s --check-prefix=AARCH
-; RUN: llc --mtriple="aarch64-" -O0 -fast-isel=false -global-isel=false -stop-after=finalize-isel %s -o - --try-experimental-debuginfo-iterators | FileCheck %s --check-prefix=AARCH
-; RUN: llc --mtriple="aarch64-" -O0 -fast-isel -stop-after=finalize-isel %s -o - --try-experimental-debuginfo-iterators | FileCheck %s --check-prefix=AARCH
+; CHECK-NOT:  DBG_VALUE
+; CHECK:      DBG_VALUE $x22, $noreg, !{{.*}}, !DIExpression(DW_OP_LLVM_entry_value, 1)
+; CHECK-NEXT: DBG_VALUE $x22, $noreg, !{{.*}}, !DIExpression(DW_OP_LLVM_entry_value, 1)
+; CHECK-NOT:  DBG_VALUE
 
-; AARCH-NOT:  DBG_VALUE
-; AARCH:      DBG_VALUE $x22, $noreg, !{{.*}}, !DIExpression(DW_OP_LLVM_entry_value, 1)
-; AARCH-NEXT: DBG_VALUE $x22, $noreg, !{{.*}}, !DIExpression(DW_OP_LLVM_entry_value, 1)
-; AARCH-NOT:  DBG_VALUE
+target triple="aarch64--"
 
 define void @foo(ptr %unused_arg, ptr swiftasync %async_arg) !dbg !6 {
   call void @llvm.dbg.value(metadata ptr %async_arg, metadata !12, metadata !DIExpression(DW_OP_LLVM_entry_value, 1)), !dbg !14

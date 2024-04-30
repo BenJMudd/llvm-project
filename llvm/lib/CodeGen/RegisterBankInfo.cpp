@@ -61,8 +61,7 @@ RegisterBankInfo::RegisterBankInfo(const RegisterBank **RegBanks,
 #ifndef NDEBUG
   for (unsigned Idx = 0, End = getNumRegBanks(); Idx != End; ++Idx) {
     assert(RegBanks[Idx] != nullptr && "Invalid RegisterBank");
-    assert(RegBanks[Idx]->getID() == Idx &&
-           "RegisterBank ID should match index");
+    assert(RegBanks[Idx]->isValid() && "RegisterBank should be valid");
   }
 #endif // NDEBUG
 }
@@ -484,10 +483,9 @@ void RegisterBankInfo::applyDefaultMapping(const OperandsMapper &OpdMapper) {
       // the storage. However, right now we don't necessarily bump all
       // the types to storage size. For instance, we can consider
       // s16 G_AND legal whereas the storage size is going to be 32.
-      assert(
-          TypeSize::isKnownLE(OrigTy.getSizeInBits(), NewTy.getSizeInBits()) &&
-          "Types with difference size cannot be handled by the default "
-          "mapping");
+      assert(OrigTy.getSizeInBits() <= NewTy.getSizeInBits() &&
+             "Types with difference size cannot be handled by the default "
+             "mapping");
       LLVM_DEBUG(dbgs() << "\nChange type of new opd from " << NewTy << " to "
                         << OrigTy);
       MRI.setType(NewReg, OrigTy);
@@ -496,7 +494,7 @@ void RegisterBankInfo::applyDefaultMapping(const OperandsMapper &OpdMapper) {
   }
 }
 
-TypeSize RegisterBankInfo::getSizeInBits(Register Reg,
+unsigned RegisterBankInfo::getSizeInBits(Register Reg,
                                          const MachineRegisterInfo &MRI,
                                          const TargetRegisterInfo &TRI) const {
   if (Reg.isPhysical()) {
@@ -554,7 +552,7 @@ bool RegisterBankInfo::ValueMapping::partsAllUniform() const {
 }
 
 bool RegisterBankInfo::ValueMapping::verify(const RegisterBankInfo &RBI,
-                                            TypeSize MeaningfulBitWidth) const {
+                                            unsigned MeaningfulBitWidth) const {
   assert(NumBreakDowns && "Value mapped nowhere?!");
   unsigned OrigValueBitWidth = 0;
   for (const RegisterBankInfo::PartialMapping &PartMap : *this) {
@@ -566,8 +564,7 @@ bool RegisterBankInfo::ValueMapping::verify(const RegisterBankInfo &RBI,
     OrigValueBitWidth =
         std::max(OrigValueBitWidth, PartMap.getHighBitIdx() + 1);
   }
-  assert((MeaningfulBitWidth.isScalable() ||
-          OrigValueBitWidth >= MeaningfulBitWidth) &&
+  assert(OrigValueBitWidth >= MeaningfulBitWidth &&
          "Meaningful bits not covered by the mapping");
   APInt ValueMask(OrigValueBitWidth, 0);
   for (const RegisterBankInfo::PartialMapping &PartMap : *this) {

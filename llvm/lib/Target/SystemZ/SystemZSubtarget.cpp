@@ -59,8 +59,10 @@ SystemZSubtarget::initializeSpecialRegisters() {
     return new SystemZXPLINK64Registers;
   else if (isTargetELF())
     return new SystemZELFRegisters;
-  llvm_unreachable("Invalid Calling Convention. Cannot initialize Special "
-                   "Call Registers!");
+  else {
+    llvm_unreachable("Invalid Calling Convention. Cannot initialize Special "
+                     "Call Registers!");
+  }
 }
 
 SystemZSubtarget::SystemZSubtarget(const Triple &TT, const std::string &CPU,
@@ -122,7 +124,7 @@ bool SystemZSubtarget::isPC32DBLSymbol(const GlobalValue *GV,
 
   // For the small model, all locally-binding symbols are in range.
   if (CM == CodeModel::Small)
-    return TLInfo.getTargetMachine().shouldAssumeDSOLocal(GV);
+    return TLInfo.getTargetMachine().shouldAssumeDSOLocal(*GV->getParent(), GV);
 
   // For Medium and above, assume that the symbol is not within the 4GB range.
   // Taking the address of locally-defined text would be OK, but that

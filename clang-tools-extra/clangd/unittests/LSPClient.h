@@ -9,14 +9,12 @@
 #ifndef LLVM_CLANG_TOOLS_EXTRA_CLANGD_UNITTESTS_LSPCLIENT_H
 #define LLVM_CLANG_TOOLS_EXTRA_CLANGD_UNITTESTS_LSPCLIENT_H
 
-#include "llvm/ADT/StringRef.h"
-#include <condition_variable>
 #include <llvm/Support/Error.h>
 #include <llvm/Support/JSON.h>
-#include <memory>
+#include <condition_variable>
+#include <deque>
 #include <mutex>
 #include <optional>
-#include <vector>
 
 namespace clang {
 namespace clangd {
@@ -34,7 +32,7 @@ public:
   class CallResult {
   public:
     ~CallResult();
-    // Blocks up to 60 seconds for the result to be ready.
+    // Blocks up to 10 seconds for the result to be ready.
     // Records a test failure if there was no reply.
     llvm::Expected<llvm::json::Value> take();
     // Like take(), but records a test failure if the result was an error.
@@ -58,16 +56,10 @@ public:
 
   // Enqueue an LSP method call, returns a promise for the reply. Threadsafe.
   CallResult &call(llvm::StringRef Method, llvm::json::Value Params);
-  // Normally, any call from the server to the client will be marked as a test
-  // failure. Use this to allow a call to pass through, use takeCallParams() to
-  // retrieve it.
-  void expectServerCall(llvm::StringRef Method);
   // Enqueue an LSP notification. Threadsafe.
   void notify(llvm::StringRef Method, llvm::json::Value Params);
   // Returns matching notifications since the last call to takeNotifications.
   std::vector<llvm::json::Value> takeNotifications(llvm::StringRef Method);
-  // Returns matching parameters since the last call to takeCallParams.
-  std::vector<llvm::json::Value> takeCallParams(llvm::StringRef Method);
   // The transport is shut down after all pending messages are sent.
   void stop();
 

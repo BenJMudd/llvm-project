@@ -52,10 +52,6 @@ static bool useCompactUnwind(const Triple &T) {
   if (T.isSimulatorEnvironment())
     return true;
 
-  // XROS always has it.
-  if (T.isXROS())
-    return true;
-
   return false;
 }
 
@@ -551,18 +547,8 @@ void MCObjectFileInfo::initGOFFMCObjectFileInfo(const Triple &T) {
   PPA1Section =
       Ctx->getGOFFSection(".ppa1", SectionKind::getMetadata(), TextSection,
                           MCConstantExpr::create(GOFF::SK_PPA1, *Ctx));
-  PPA2Section =
-      Ctx->getGOFFSection(".ppa2", SectionKind::getMetadata(), TextSection,
-                          MCConstantExpr::create(GOFF::SK_PPA2, *Ctx));
-
-  PPA2ListSection =
-      Ctx->getGOFFSection(".ppa2list", SectionKind::getData(),
-                          nullptr, nullptr);
-
   ADASection =
       Ctx->getGOFFSection(".ada", SectionKind::getData(), nullptr, nullptr);
-  IDRLSection =
-      Ctx->getGOFFSection("B_IDRL", SectionKind::getData(), nullptr, nullptr);
 }
 
 void MCObjectFileInfo::initCOFFMCObjectFileInfo(const Triple &T) {
@@ -942,15 +928,9 @@ void MCObjectFileInfo::initXCOFFMCObjectFileInfo(const Triple &T) {
   // the ABI or object file format, but various tools rely on the section
   // name being empty (considering named symbols to be "user symbol names").
   TextSection = Ctx->getXCOFFSection(
-      "..text..", // Use a non-null name to work around an AIX assembler bug...
-      SectionKind::getText(),
+      "", SectionKind::getText(),
       XCOFF::CsectProperties(XCOFF::StorageMappingClass::XMC_PR, XCOFF::XTY_SD),
       /* MultiSymbolsAllowed*/ true);
-
-  // ... but use a null name when generating the symbol table.
-  MCSectionXCOFF *TS = static_cast<MCSectionXCOFF *>(TextSection);
-  TS->getQualNameSymbol()->setSymbolTableName("");
-  TS->setSymbolTableName("");
 
   DataSection = Ctx->getXCOFFSection(
       ".data", SectionKind::getData(),

@@ -1,4 +1,4 @@
-; RUN: opt < %s -passes=asan -asan-use-after-scope -asan-use-stack-safety=1 -S | FileCheck %s
+; RUN: opt < %s -passes=asan -S | FileCheck %s
 
 ; Source (-O0 -fsanitize=address -fsanitize-address-use-after-scope):
 ;; struct S { int x, y; };
@@ -18,16 +18,15 @@ target triple = "x86_64-apple-macosx10.14.0"
 ; CHECK-LABEL: define {{.*}} @_Z4swapP1SS0_b(
 
 ; First come the argument allocas.
-; CHECK:      %a.addr = alloca ptr, align 8
-; CHECK-NEXT: %b.addr = alloca ptr, align 8
-; CHECK-NEXT: %doit.addr = alloca i8, align 1
+; CHECK:      [[argA:%.*]] = alloca ptr,
+; CHECK-NEXT: [[argB:%.*]] = alloca ptr,
+; CHECK-NEXT: [[argDoit:%.*]] = alloca i8,
 
 ; Next, the stores into the argument allocas.
-; CHECK-NEXT: store ptr {{.*}}, ptr %a.addr
-; CHECK-NEXT: store ptr {{.*}}, ptr %b.addr
+; CHECK-NEXT: store ptr {{.*}}, ptr [[argA]]
+; CHECK-NEXT: store ptr {{.*}}, ptr [[argB]]
 ; CHECK-NEXT: [[frombool:%.*]] = zext i1 {{.*}} to i8
-; CHECK-NEXT: store i8 %frombool, ptr %doit.addr, align 1
-; CHECK-NEXT: [[stack_base:%.*]] = alloca i64, align 8
+; CHECK-NEXT: store i8 [[frombool]], ptr [[argDoit]]
 
 define void @_Z4swapP1SS0_b(ptr %a, ptr %b, i1 zeroext %doit) sanitize_address {
 entry:
@@ -66,12 +65,9 @@ return:                                           ; preds = %if.end, %if.then
 ; CHECK:      [[argA:%.*]] = alloca ptr,
 ; CHECK-NEXT: [[argB:%.*]] = alloca ptr,
 ; CHECK-NEXT: [[argDoit:%.*]] = alloca i8,
-; CHECK-NEXT: %tmp = alloca %struct.S, align 4
 ; CHECK-NEXT: store ptr {{.*}}, ptr [[argA]]
 ; CHECK-NEXT: store ptr {{.*}}, ptr [[argB]]
-; CHECK-NEXT: %0 = load i8, ptr %doit.addr, align 1
-; CHECK-NEXT: %frombool = zext i1 %doit to i8
-; CHECK-NEXT: store i8 %frombool, ptr %doit.addr, align 1
+; CHECK-NEXT: [[stack_base:%.*]] = alloca i64
 define void @func_with_load_in_arginit_sequence(ptr %a, ptr %b, i1 zeroext %doit) sanitize_address {
 entry:
   %a.addr = alloca ptr, align 8
@@ -112,13 +108,10 @@ return:                                           ; preds = %if.end, %if.then
 ; CHECK:      [[argA:%.*]] = alloca ptr,
 ; CHECK-NEXT: [[argB:%.*]] = alloca ptr,
 ; CHECK-NEXT: [[argDoit:%.*]] = alloca i8,
-; CHECK-NEXT: %tmp = alloca %struct.S, align 4
-; CHECK-NEXT: %tmp2 = alloca %struct.S, align 4
 ; CHECK-NEXT: store ptr {{.*}}, ptr [[argA]]
 ; CHECK-NEXT: store ptr {{.*}}, ptr [[argB]]
 ; CHECK-NEXT: [[frombool:%.*]] = zext i1 {{.*}} to i8
 ; CHECK-NEXT: store i8 [[frombool]], ptr [[argDoit]]
-; CHECK-NEXT: %0 = load i8, ptr %doit.addr, align 1
 define void @func_with_multiple_interesting_allocas(ptr %a, ptr %b, i1 zeroext %doit) sanitize_address {
 entry:
   %a.addr = alloca ptr, align 8

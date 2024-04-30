@@ -132,16 +132,6 @@ const Expr *bugreporter::getDerefExpr(const Stmt *S) {
     }
     // Pattern match for a few useful cases: a[0], p->f, *p etc.
     else if (const auto *ME = dyn_cast<MemberExpr>(E)) {
-      // This handles the case when the dereferencing of a member reference
-      // happens. This is needed, because the AST for dereferencing a
-      // member reference looks like the following:
-      // |-MemberExpr
-      //  `-DeclRefExpr
-      // Without this special case the notes would refer to the whole object
-      // (struct, class or union variable) instead of just the relevant member.
-
-      if (ME->getMemberDecl()->getType()->isReferenceType())
-        break;
       E = ME->getBase();
     } else if (const auto *IvarRef = dyn_cast<ObjCIvarRefExpr>(E)) {
       E = IvarRef->getBase();
@@ -167,42 +157,26 @@ const Expr *bugreporter::getDerefExpr(const Stmt *S) {
   return E;
 }
 
-static const VarDecl *getVarDeclForExpression(const Expr *E) {
-  if (const auto *DR = dyn_cast<DeclRefExpr>(E))
-    return dyn_cast<VarDecl>(DR->getDecl());
-  return nullptr;
-}
-
 static const MemRegion *
 getLocationRegionIfReference(const Expr *E, const ExplodedNode *N,
                              bool LookingForReference = true) {
-  if (const auto *ME = dyn_cast<MemberExpr>(E)) {
-    // This handles null references from FieldRegions, for example:
-    //   struct Wrapper { int &ref; };
-    //   Wrapper w = { *(int *)0 };
-    //   w.ref = 1;
-    const Expr *Base = ME->getBase();
-    const VarDecl *VD = getVarDeclForExpression(Base);
-    if (!VD)
-      return nullptr;
-
-    const auto *FD = dyn_cast<FieldDecl>(ME->getMemberDecl());
-    if (!FD)
-      return nullptr;
-
-    if (FD->getType()->isReferenceType()) {
-      SVal StructSVal = N->getState()->getLValue(VD, N->getLocationContext());
-      return N->getState()->getLValue(FD, StructSVal).getAsRegion();
+  if (const auto *DR = dyn_cast<DeclRefExpr>(E)) {
+    if (const auto *VD = dyn_cast<VarDecl>(DR->getDecl())) {
+      if (LookingForReference && !VD->getType()->isReferenceType())
+        return nullptr;
+      return N->getState()
+          ->getLValue(VD, N->getLocationContext())
+          .getAsRegion();
     }
-    return nullptr;
   }
 
-  const VarDecl *VD = getVarDeclForExpression(E);
-  if (!VD)
-    return nullptr;
-  if (LookingForReference && !VD->getType()->isReferenceType())
-    return nullptr;
-  return N->getState()->getLValue(VD, N->getLocationContext()).getAsRegion();
+  // FIXME: This does not handle other kinds of null references,
+  // for example, references from FieldRegions:
+  //   struct Wrapper { int &ref; };
+  //   Wrapper w = { *(int *)0 };
+  //   w.ref = 1;
+
+  return nullptr;
 }
 
 /// Comparing internal representations of symbolic values (via
@@ -632,7 +606,7 @@ static bool potentiallyWritesIntoIvar(const Decl *Parent,
 
     if (const auto *DRE = dyn_cast<DeclRefExpr>(Base))
       if (const auto *ID = dyn_cast<ImplicitParamDecl>(DRE->getDecl()))
-        if (ID->getParameterKind() == ImplicitParamKind::ObjCSelf)
+        if (ID->getParameterKind() == ImplicitParamDecl::ObjCSelf)
           return true;
 
     return false;
@@ -1238,7 +1212,7 @@ public:
   ///        changes to its value in a nested stackframe could be pruned, and
   ///        this visitor can prevent that without polluting the bugpath too
   ///        much.
-  StoreSiteFinder(bugreporter::TrackerRef ParentTracker, SVal V,
+  StoreSiteFinder(bugreporter::TrackerRef ParentTracker, KnownSVal V,
                   const MemRegion *R, TrackingOptions Options,
                   const StackFrameContext *OriginSFC = nullptr)
       : TrackingBugReporterVisitor(ParentTracker), R(R), V(V), Options(Options),
@@ -1394,7 +1368,8 @@ static void showBRParamDiagnostics(llvm::raw_svector_ostream &OS,
       VR->printPretty(OS);
     }
   } else if (const auto *ImplParam = dyn_cast<ImplicitParamDecl>(D)) {
-    if (ImplParam->getParameterKind() == ImplicitParamKind::ObjCSelf) {
+    if (ImplParam->getParameterKind() ==
+        ImplicitParamDecl::ImplicitParamKind::ObjCSelf) {
       OS << " via implicit parameter 'self'";
     }
   }
@@ -2539,9 +2514,9 @@ public:
         Report.addVisitor<UndefOrNullArgVisitor>(L->getRegion());
         Result.FoundSomethingToTrack = true;
 
-        if (!RVal.isUnknown())
+        if (auto KV = RVal.getAs<KnownSVal>())
           Result.combineWith(
-              getParentTracker().track(RVal, L->getRegion(), Opts, SFC));
+              getParentTracker().track(*KV, L->getRegion(), Opts, SFC));
       }
 
       const MemRegion *RegionRVal = RVal.getAsRegion();
@@ -2663,8 +2638,8 @@ Tracker::Result Tracker::track(const Expr *E, const ExplodedNode *N,
 
 Tracker::Result Tracker::track(SVal V, const MemRegion *R, TrackingOptions Opts,
                                const StackFrameContext *Origin) {
-  if (!V.isUnknown()) {
-    Report.addVisitor<StoreSiteFinder>(this, V, R, Opts, Origin);
+  if (auto KV = V.getAs<KnownSVal>()) {
+    Report.addVisitor<StoreSiteFinder>(this, *KV, R, Opts, Origin);
     return {true};
   }
   return {};
@@ -2692,7 +2667,7 @@ bool bugreporter::trackExpressionValue(const ExplodedNode *InputNode,
       .FoundSomethingToTrack;
 }
 
-void bugreporter::trackStoredValue(SVal V, const MemRegion *R,
+void bugreporter::trackStoredValue(KnownSVal V, const MemRegion *R,
                                    PathSensitiveBugReport &Report,
                                    TrackingOptions Opts,
                                    const StackFrameContext *Origin) {
@@ -2883,16 +2858,6 @@ ConditionBRVisitor::VisitTrueTest(const Expr *Cond, BugReporterContext &BRC,
   // previous program state we assuming the newly seen constraint information.
   // If we cannot evaluate the condition (and the constraints are the same)
   // the analyzer has no information about the value and just assuming it.
-  // FIXME: This logic is not entirely correct, because e.g. in code like
-  //   void f(unsigned arg) {
-  //     if (arg >= 0) {
-  //       // ...
-  //     }
-  //   }
-  // it will say that the "arg >= 0" check is _assuming_ something new because
-  // the constraint that "$arg >= 0" is 1 was added to the list of known
-  // constraints. However, the unsigned value is always >= 0 so semantically
-  // this is not a "real" assumption.
   bool IsAssuming =
       !BRC.getStateManager().haveEqualConstraints(CurrentState, PrevState) ||
       CurrentState->getSVal(Cond, LCtx).isUnknownOrUndef();
@@ -3382,7 +3347,7 @@ void LikelyFalsePositiveSuppressionBRVisitor::finalizeVisitor(
   FullSourceLoc Loc = BR.getLocation().asLocation();
   while (Loc.isMacroID()) {
     Loc = Loc.getSpellingLoc();
-    if (SM.getFilename(Loc).ends_with("sys/queue.h")) {
+    if (SM.getFilename(Loc).endswith("sys/queue.h")) {
       BR.markInvalid(getTag(), nullptr);
       return;
     }

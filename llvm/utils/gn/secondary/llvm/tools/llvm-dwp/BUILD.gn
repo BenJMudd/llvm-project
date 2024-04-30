@@ -1,5 +1,4 @@
 import("//llvm/tools/binutils_symlinks.gni")
-import("//llvm/utils/gn/build/driver_executable.gni")
 import("//llvm/utils/gn/build/symlink_or_copy.gni")
 import("//llvm/utils/TableGen/tablegen.gni")
 
@@ -24,7 +23,7 @@ group("symlinks") {
   }
 }
 
-driver_executable("llvm-dwp") {
+executable("llvm-dwp") {
   deps = [
     ":Opts",
     "//llvm/lib/DWP",

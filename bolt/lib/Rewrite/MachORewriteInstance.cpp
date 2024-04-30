@@ -18,9 +18,9 @@
 #include "bolt/Rewrite/BinaryPassManager.h"
 #include "bolt/Rewrite/ExecutableFileMemoryManager.h"
 #include "bolt/Rewrite/JITLinkLinker.h"
-#include "bolt/Rewrite/RewriteInstance.h"
 #include "bolt/RuntimeLibs/InstrumentationRuntimeLibrary.h"
 #include "bolt/Utils/Utils.h"
+#include "llvm/MC/MCAsmLayout.h"
 #include "llvm/MC/MCObjectStreamer.h"
 #include "llvm/Support/Errc.h"
 #include "llvm/Support/FileSystem.h"
@@ -55,6 +55,34 @@ extern cl::opt<unsigned> Verbosity;
 namespace llvm {
 namespace bolt {
 
+extern MCPlusBuilder *createX86MCPlusBuilder(const MCInstrAnalysis *,
+                                             const MCInstrInfo *,
+                                             const MCRegisterInfo *);
+extern MCPlusBuilder *createAArch64MCPlusBuilder(const MCInstrAnalysis *,
+                                                 const MCInstrInfo *,
+                                                 const MCRegisterInfo *);
+
+namespace {
+
+MCPlusBuilder *createMCPlusBuilder(const Triple::ArchType Arch,
+                                   const MCInstrAnalysis *Analysis,
+                                   const MCInstrInfo *Info,
+                                   const MCRegisterInfo *RegInfo) {
+#ifdef X86_AVAILABLE
+  if (Arch == Triple::x86_64)
+    return createX86MCPlusBuilder(Analysis, Info, RegInfo);
+#endif
+
+#ifdef AARCH64_AVAILABLE
+  if (Arch == Triple::aarch64)
+    return createAArch64MCPlusBuilder(Analysis, Info, RegInfo);
+#endif
+
+  llvm_unreachable("architecture unsupported by MCPlusBuilder");
+}
+
+} // anonymous namespace
+
 #define DEBUG_TYPE "bolt"
 
 Expected<std::unique_ptr<MachORewriteInstance>>
@@ -73,17 +101,14 @@ MachORewriteInstance::MachORewriteInstance(object::MachOObjectFile *InputFile,
     : InputFile(InputFile), ToolPath(ToolPath) {
   ErrorAsOutParameter EAO(&Err);
   auto BCOrErr = BinaryContext::createBinaryContext(
-      InputFile->makeTriple(), InputFile->getFileName(), nullptr,
-      /* IsPIC */ true, DWARFContext::create(*InputFile),
-      {llvm::outs(), llvm::errs()});
+      InputFile, /* IsPIC */ true, DWARFContext::create(*InputFile));
   if (Error E = BCOrErr.takeError()) {
     Err = std::move(E);
     return;
   }
   BC = std::move(BCOrErr.get());
-  BC->initializeTarget(std::unique_ptr<MCPlusBuilder>(
-      createMCPlusBuilder(BC->TheTriple->getArch(), BC->MIA.get(),
-                          BC->MII.get(), BC->MRI.get(), BC->STI.get())));
+  BC->initializeTarget(std::unique_ptr<MCPlusBuilder>(createMCPlusBuilder(
+      BC->TheTriple->getArch(), BC->MIA.get(), BC->MII.get(), BC->MRI.get())));
   if (opts::Instrument)
     BC->setRuntimeLibrary(std::make_unique<InstrumentationRuntimeLibrary>());
 }
@@ -309,7 +334,7 @@ void MachORewriteInstance::disassembleFunctions() {
     BinaryFunction &Function = BFI.second;
     if (!Function.isSimple())
       continue;
-    BC->logBOLTErrorsAndQuitOnFatal(Function.disassemble());
+    Function.disassemble();
     if (opts::PrintDisasm)
       Function.print(outs(), "after disassembly");
   }
@@ -320,7 +345,10 @@ void MachORewriteInstance::buildFunctionsCFG() {
     BinaryFunction &Function = BFI.second;
     if (!Function.isSimple())
       continue;
-    BC->logBOLTErrorsAndQuitOnFatal(Function.buildCFG(/*AllocId*/ 0));
+    if (!Function.buildCFG(/*AllocId*/ 0)) {
+      errs() << "BOLT-WARNING: failed to build CFG for the function "
+             << Function << "\n";
+    }
   }
 }
 
@@ -356,7 +384,7 @@ void MachORewriteInstance::runOptimizationPasses() {
   Manager.registerPass(
       std::make_unique<FinalizeFunctions>(opts::PrintFinalized));
 
-  BC->logBOLTErrorsAndQuitOnFatal(Manager.runPasses());
+  Manager.runPasses();
 }
 
 void MachORewriteInstance::mapInstrumentationSection(
@@ -448,6 +476,9 @@ void MachORewriteInstance::emitAndLink() {
       "error creating in-memory object");
   assert(Obj && "createObjectFile cannot return nullptr");
 
+  MCAsmLayout FinalLayout(
+      static_cast<MCObjectStreamer *>(Streamer.get())->getAssembler());
+
   auto EFMM = std::make_unique<ExecutableFileMemoryManager>(*BC);
   EFMM->setNewSecPrefix(getNewSecPrefix());
   EFMM->setOrgSecPrefix(getOrgSecPrefix());
@@ -537,10 +568,8 @@ void MachORewriteInstance::rewriteFile() {
   writeInstrumentationSection("I__literal16", OS);
 
   Out->keep();
-  EC = sys::fs::setPermissions(
-      opts::OutputFilename,
-      static_cast<sys::fs::perms>(sys::fs::perms::all_all &
-                                  ~sys::fs::getUmask()));
+  EC = sys::fs::setPermissions(opts::OutputFilename,
+                               sys::fs::perms::all_all);
   check_error(EC, "cannot set permissions of output file");
 }
 

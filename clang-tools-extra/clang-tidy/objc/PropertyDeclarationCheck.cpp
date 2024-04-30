@@ -52,7 +52,7 @@ FixItHint generateFixItHint(const ObjCPropertyDecl *Decl, NamingStyle Style) {
           llvm::StringRef(NewName));
     }
   }
-  return {};
+  return FixItHint();
 }
 
 std::string validPropertyNameRegex(bool UsedInMatcher) {

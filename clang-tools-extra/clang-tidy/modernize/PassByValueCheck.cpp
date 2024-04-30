@@ -75,9 +75,9 @@ static bool paramReferredExactlyOnce(const CXXConstructorDecl *Ctor,
     /// the
     /// given constructor.
     bool hasExactlyOneUsageIn(const CXXConstructorDecl *Ctor) {
-      Count = 0U;
+      Count = 0;
       TraverseDecl(const_cast<CXXConstructorDecl *>(Ctor));
-      return Count == 1U;
+      return Count == 1;
     }
 
   private:
@@ -88,7 +88,7 @@ static bool paramReferredExactlyOnce(const CXXConstructorDecl *Ctor,
       if (const ParmVarDecl *To = dyn_cast<ParmVarDecl>(D->getDecl())) {
         if (To == ParamDecl) {
           ++Count;
-          if (Count > 1U) {
+          if (Count > 1) {
             // No need to look further, used more than once.
             return false;
           }
@@ -98,7 +98,7 @@ static bool paramReferredExactlyOnce(const CXXConstructorDecl *Ctor,
     }
 
     const ParmVarDecl *ParamDecl;
-    unsigned Count = 0U;
+    unsigned Count;
   };
 
   return ExactlyOneUsageVisitor(ParamDecl).hasExactlyOneUsageIn(Ctor);
@@ -269,7 +269,7 @@ void PassByValueCheck::check(const MatchFinder::MatchResult &Result) {
     // Check if we can succesfully rewrite all declarations of the constructor.
     for (const ParmVarDecl *ParmDecl : collectParamDecls(Ctor, ParamDecl)) {
       TypeLoc ParamTL = ParmDecl->getTypeSourceInfo()->getTypeLoc();
-      auto RefTL = ParamTL.getAs<ReferenceTypeLoc>();
+      ReferenceTypeLoc RefTL = ParamTL.getAs<ReferenceTypeLoc>();
       if (RefTL.isNull()) {
         // We cannot rewrite this instance. The type is probably hidden behind
         // some `typedef`. Do not offer a fix-it in this case.
@@ -279,7 +279,7 @@ void PassByValueCheck::check(const MatchFinder::MatchResult &Result) {
     // Rewrite all declarations.
     for (const ParmVarDecl *ParmDecl : collectParamDecls(Ctor, ParamDecl)) {
       TypeLoc ParamTL = ParmDecl->getTypeSourceInfo()->getTypeLoc();
-      auto RefTL = ParamTL.getAs<ReferenceTypeLoc>();
+      ReferenceTypeLoc RefTL = ParamTL.getAs<ReferenceTypeLoc>();
 
       TypeLoc ValueTL = RefTL.getPointeeLoc();
       CharSourceRange TypeRange = CharSourceRange::getTokenRange(

@@ -7,7 +7,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "Record.h"
-#include "clang/AST/ASTContext.h"
 
 using namespace clang;
 using namespace clang::interp;
@@ -26,14 +25,6 @@ Record::Record(const RecordDecl *Decl, BaseList &&SrcBases,
     FieldMap[F.Decl] = &F;
   for (Base &V : VirtualBases)
     VirtualBaseMap[V.Decl] = &V;
-}
-
-const std::string Record::getName() const {
-  std::string Ret;
-  llvm::raw_string_ostream OS(Ret);
-  Decl->getNameForDiagnostic(OS, Decl->getASTContext().getPrintingPolicy(),
-                             /*Qualified=*/true);
-  return Ret;
 }
 
 const Record::Field *Record::getField(const FieldDecl *FD) const {

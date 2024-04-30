@@ -2,25 +2,18 @@
 
 #include "mock-types.h"
 
-RefCountable* provide();
-void consume_refcntbl(RefCountable*);
-void some_function();
+RefCountable* provide() { return nullptr; }
+void consume_refcntbl(RefCountable*) {}
 
 namespace simple {
   void foo() {
     consume_refcntbl(provide());
     // expected-warning@-1{{Call argument is uncounted and unsafe}}
   }
-
-  // Test that the checker works with [[clang::suppress]].
-  void foo_suppressed() {
-    [[clang::suppress]]
-    consume_refcntbl(provide()); // no-warning
-  }
 }
 
 namespace multi_arg {
-  void consume_refcntbl(int, RefCountable* foo, bool);
+  void consume_refcntbl(int, RefCountable* foo, bool) {}
   void foo() {
     consume_refcntbl(42, provide(), true);
     // expected-warning@-1{{Call argument for parameter 'foo' is uncounted and unsafe}}
@@ -32,15 +25,15 @@ namespace ref_counted {
   void consume_ref_counted(Ref<RefCountable>) {}
 
   void foo() {
-    consume_refcntbl(provide_ref_counted().ptr());
+    consume_refcntbl(provide_ref_counted().get());
     // no warning
   }
 }
 
 namespace methods {
   struct Consumer {
-    void consume_ptr(RefCountable* ptr);
-    void consume_ref(const RefCountable& ref);
+    void consume_ptr(RefCountable* ptr) {}
+    void consume_ref(const RefCountable& ref) {}
   };
 
   void foo() {
@@ -54,7 +47,7 @@ namespace methods {
 
   void foo2() {
     struct Consumer {
-      void consume(RefCountable*) { some_function(); }
+      void consume(RefCountable*) { }
       void whatever() {
         consume(provide());
         // expected-warning@-1{{Call argument is uncounted and unsafe}}
@@ -64,7 +57,7 @@ namespace methods {
 
   void foo3() {
     struct Consumer {
-      void consume(RefCountable*) { some_function(); }
+      void consume(RefCountable*) { }
       void whatever() {
         this->consume(provide());
         // expected-warning@-1{{Call argument is uncounted and unsafe}}
@@ -74,7 +67,7 @@ namespace methods {
 }
 
 namespace casts {
-  RefCountable* downcast(RefCountable*);
+  RefCountable* downcast(RefCountable*) { return nullptr; }
 
   void foo() {
     consume_refcntbl(provide());
@@ -146,8 +139,8 @@ namespace Ref_to_reference_conversion_operator {
 }
 
 namespace param_formarding_function {
-  void consume_ref_countable_ref(RefCountable&);
-  void consume_ref_countable_ptr(RefCountable*);
+  void consume_ref_countable_ref(RefCountable&) {}
+  void consume_ref_countable_ptr(RefCountable*) {}
 
   namespace ptr {
     void foo(RefCountable* param) {
@@ -186,8 +179,8 @@ namespace param_formarding_function {
 }
 
 namespace param_formarding_lambda {
-  auto consume_ref_countable_ref = [](RefCountable&) { some_function(); };
-  auto consume_ref_countable_ptr = [](RefCountable*) { some_function(); };
+  auto consume_ref_countable_ref = [](RefCountable&) {};
+  auto consume_ref_countable_ptr = [](RefCountable*) {};
 
   namespace ptr {
     void foo(RefCountable* param) {
@@ -269,6 +262,22 @@ namespace param_forwarding_method {
   }
 }
 
+namespace make_ref {
+  void makeRef(RefCountable*) {}
+  void makeRefPtr(RefCountable*) {}
+  void makeWeakPtr(RefCountable*) {}
+  void makeWeakPtr(RefCountable&) {}
+
+  void foo() {
+    makeRef(provide());
+    makeRefPtr(provide());
+    RefPtr<RefCountable> a(provide());
+    Ref<RefCountable> b(provide());
+    makeWeakPtr(provide());
+    makeWeakPtr(*provide());
+  }
+}
+
 namespace downcast {
   void consume_ref_countable(RefCountable*) {}
   RefCountable* downcast(RefCountable*) { return nullptr; }
@@ -305,7 +314,7 @@ namespace string_impl {
 namespace default_arg {
   RefCountable* global;
 
-  void function_with_default_arg(RefCountable* param = global);
+  void function_with_default_arg(RefCountable* param = global) {}
   // expected-warning@-1{{Call argument for parameter 'param' is uncounted and unsafe}}
 
   void foo() {
@@ -316,9 +325,9 @@ namespace default_arg {
 namespace cxx_member_operator_call {
   // The hidden this-pointer argument without a corresponding parameter caused couple bugs in parameter <-> argument attribution.
   struct Foo {
-    Foo& operator+(RefCountable* bad);
-    friend Foo& operator-(Foo& lhs, RefCountable* bad);
-    void operator()(RefCountable* bad);
+    Foo& operator+(RefCountable* bad) { return *this; }
+    friend Foo& operator-(Foo& lhs, RefCountable* bad) { return lhs; }
+    void operator()(RefCountable* bad) { }
   };
 
   RefCountable* global;

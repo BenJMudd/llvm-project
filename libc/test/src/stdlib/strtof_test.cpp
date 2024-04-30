@@ -14,12 +14,13 @@
 #include "test/UnitTest/RoundingModeUtils.h"
 #include "test/UnitTest/Test.h"
 
+#include <limits.h>
 #include <stddef.h>
 
-using LIBC_NAMESPACE::fputil::testing::ForceRoundingModeTest;
-using LIBC_NAMESPACE::fputil::testing::RoundingMode;
+using __llvm_libc::fputil::testing::ForceRoundingModeTest;
+using __llvm_libc::fputil::testing::RoundingMode;
 
-class LlvmLibcStrToFTest : public LIBC_NAMESPACE::testing::Test,
+class LlvmLibcStrToFTest : public __llvm_libc::testing::Test,
                            ForceRoundingModeTest<RoundingMode::Nearest> {
 public:
   void run_test(const char *inputString, const ptrdiff_t expectedStrLen,
@@ -40,15 +41,15 @@ public:
     //  This is so that the result can be compared in parts.
     char *str_end = nullptr;
 
-    LIBC_NAMESPACE::fputil::FPBits<float> expected_fp =
-        LIBC_NAMESPACE::fputil::FPBits<float>(expectedRawData);
+    __llvm_libc::fputil::FPBits<float> expected_fp =
+        __llvm_libc::fputil::FPBits<float>(expectedRawData);
 
-    LIBC_NAMESPACE::libc_errno = 0;
-    float result = LIBC_NAMESPACE::strtof(inputString, &str_end);
+    libc_errno = 0;
+    float result = __llvm_libc::strtof(inputString, &str_end);
 
     EXPECT_EQ(str_end - inputString, expectedStrLen);
-    EXPECT_FP_EQ(result, expected_fp.get_val());
-    ASSERT_ERRNO_EQ(expectedErrno);
+    EXPECT_FP_EQ(result, static_cast<float>(expected_fp));
+    EXPECT_EQ(libc_errno, expectedErrno);
   }
 };
 
@@ -200,8 +201,4 @@ TEST_F(LlvmLibcStrToFTest, NaNWithParenthesesValidSequenceInvalidNumberTests) {
   run_test("NaN(1a)", 7, 0x7fc00000);
   run_test("NaN(asdf)", 9, 0x7fc00000);
   run_test("NaN(1A1)", 8, 0x7fc00000);
-  run_test("NaN(why_does_this_work)", 23, 0x7fc00000);
-  run_test(
-      "NaN(1234567890qwertyuiopasdfghjklzxcvbnmQWERTYUIOPASDFGHJKLZXCVBNM_)",
-      68, 0x7fc00000);
 }

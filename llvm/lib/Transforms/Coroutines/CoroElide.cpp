@@ -141,9 +141,8 @@ static std::unique_ptr<raw_fd_ostream> getOrCreateLogFile() {
 void Lowerer::elideHeapAllocations(Function *F, uint64_t FrameSize,
                                    Align FrameAlign, AAResults &AA) {
   LLVMContext &C = F->getContext();
-  BasicBlock::iterator InsertPt =
-      getFirstNonAllocaInTheEntryBlock(CoroIds.front()->getFunction())
-          ->getIterator();
+  auto *InsertPt =
+      getFirstNonAllocaInTheEntryBlock(CoroIds.front()->getFunction());
 
   // Replacing llvm.coro.alloc with false will suppress dynamic
   // allocation as it is expected for the frontend to generate the code that
@@ -166,7 +165,7 @@ void Lowerer::elideHeapAllocations(Function *F, uint64_t FrameSize,
   auto *Frame = new AllocaInst(FrameTy, DL.getAllocaAddrSpace(), "", InsertPt);
   Frame->setAlignment(FrameAlign);
   auto *FrameVoidPtr =
-      new BitCastInst(Frame, PointerType::getUnqual(C), "vFrame", InsertPt);
+      new BitCastInst(Frame, Type::getInt8PtrTy(C), "vFrame", InsertPt);
 
   for (auto *CB : CoroBegins) {
     CB->replaceAllUsesWith(FrameVoidPtr);
@@ -228,7 +227,7 @@ bool Lowerer::hasEscapePath(const CoroBeginInst *CB,
     PotentiallyEscaped |= EscapingBBs.count(BB);
 
     if (TIs.count(BB)) {
-      if (isa<ReturnInst>(BB->getTerminator()) || PotentiallyEscaped)
+      if (!BB->getTerminator()->isExceptionalTerminator() || PotentiallyEscaped)
         return true;
 
       // If the function ends with the exceptional terminator, the memory used

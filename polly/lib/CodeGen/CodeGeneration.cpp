@@ -47,7 +47,6 @@
 using namespace llvm;
 using namespace polly;
 
-#include "polly/Support/PollyDebug.h"
 #define DEBUG_TYPE "polly-codegen"
 
 static cl::opt<bool> Verify("polly-codegen-verify",
@@ -87,7 +86,7 @@ static void verifyGeneratedFunction(Scop &S, Function &F, IslAstInfo &AI) {
   if (!Verify || !verifyFunction(F, &errs()))
     return;
 
-  POLLY_DEBUG({
+  LLVM_DEBUG({
     errs() << "== ISL Codegen created an invalid function ==\n\n== The "
               "SCoP ==\n";
     errs() << S;
@@ -184,7 +183,7 @@ static bool generateCode(Scop &S, IslAstInfo &AI, LoopInfo &LI,
   // DependenceInfo or IslAstInfo around.
   IslAst &Ast = AI.getIslAst();
   if (Ast.getSharedIslCtx() != S.getSharedIslCtx()) {
-    POLLY_DEBUG(dbgs() << "Got an IstAst for a different Scop/isl_ctx\n");
+    LLVM_DEBUG(dbgs() << "Got an IstAst for a different Scop/isl_ctx\n");
     return false;
   }
 

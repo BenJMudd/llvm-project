@@ -33,14 +33,12 @@ public:
   }
 
   bool MightHaveChildren() override { return true; }
-  lldb::ChildCacheState Update() override;
-  llvm::Expected<uint32_t> CalculateNumChildren() override {
-    return m_elements.size();
-  }
-  ValueObjectSP GetChildAtIndex(uint32_t idx) override;
+  bool Update() override;
+  size_t CalculateNumChildren() override { return m_elements.size(); }
+  ValueObjectSP GetChildAtIndex(size_t idx) override;
 
 private:
-  llvm::StringRef GetDataContainerMemberName();
+  ConstString GetDataContainerMemberName();
 
   // The lifetime of a ValueObject and all its derivative ValueObjects
   // (children, clones, etc.) is managed by a ClusterManager. These
@@ -68,25 +66,23 @@ GenericBitsetFrontEnd::GenericBitsetFrontEnd(ValueObject &valobj, StdLib stdlib)
   }
 }
 
-llvm::StringRef GenericBitsetFrontEnd::GetDataContainerMemberName() {
-  static constexpr llvm::StringLiteral s_libcxx_case("__first_");
-  static constexpr llvm::StringLiteral s_libstdcpp_case("_M_w");
+ConstString GenericBitsetFrontEnd::GetDataContainerMemberName() {
   switch (m_stdlib) {
   case StdLib::LibCxx:
-    return s_libcxx_case;
+    return ConstString("__first_");
   case StdLib::LibStdcpp:
-    return s_libstdcpp_case;
+    return ConstString("_M_w");
   }
   llvm_unreachable("Unknown StdLib enum");
 }
 
-lldb::ChildCacheState GenericBitsetFrontEnd::Update() {
+bool GenericBitsetFrontEnd::Update() {
   m_elements.clear();
   m_first = nullptr;
 
   TargetSP target_sp = m_backend.GetTargetSP();
   if (!target_sp)
-    return lldb::ChildCacheState::eRefetch;
+    return false;
 
   size_t size = 0;
 
@@ -96,10 +92,10 @@ lldb::ChildCacheState GenericBitsetFrontEnd::Update() {
   m_elements.assign(size, ValueObjectSP());
   m_first =
       m_backend.GetChildMemberWithName(GetDataContainerMemberName()).get();
-  return lldb::ChildCacheState::eRefetch;
+  return false;
 }
 
-ValueObjectSP GenericBitsetFrontEnd::GetChildAtIndex(uint32_t idx) {
+ValueObjectSP GenericBitsetFrontEnd::GetChildAtIndex(size_t idx) {
   if (idx >= m_elements.size() || !m_first)
     return ValueObjectSP();
 

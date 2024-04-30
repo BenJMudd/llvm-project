@@ -10,9 +10,6 @@
 
 #include "gtest/gtest.h"
 
-#define GET_COMPUTE_FEATURES
-#include "AArch64GenInstrInfo.inc"
-
 using namespace llvm;
 namespace {
 std::unique_ptr<LLVMTargetMachine> createTargetMachine(const std::string &CPU) {
@@ -27,7 +24,7 @@ std::unique_ptr<LLVMTargetMachine> createTargetMachine(const std::string &CPU) {
 
   return std::unique_ptr<LLVMTargetMachine>(static_cast<LLVMTargetMachine *>(
       TheTarget->createTargetMachine(TT, CPU, "", TargetOptions(), std::nullopt,
-                                     std::nullopt, CodeGenOptLevel::Default)));
+                                     std::nullopt, CodeGenOpt::Default)));
 }
 
 std::unique_ptr<AArch64InstrInfo> createInstrInfo(TargetMachine *TM) {
@@ -36,6 +33,9 @@ std::unique_ptr<AArch64InstrInfo> createInstrInfo(TargetMachine *TM) {
                       std::string(TM->getTargetFeatureString()), *TM, true);
   return std::make_unique<AArch64InstrInfo>(ST);
 }
+
+#define GET_COMPUTE_FEATURES
+#include "AArch64GenInstrInfo.inc"
 
 /// Returns true if the instruction is enabled under a feature that the
 /// CPU supports.
@@ -105,14 +105,6 @@ void runSVEPseudoTestForCPU(const std::string &CPU) {
 // TODO : Add more CPUs that support SVE/SVE2
 TEST(AArch64SVESchedPseudoTesta510, IsCorrect) {
   runSVEPseudoTestForCPU("cortex-a510");
-}
-
-TEST(AArch64SVESchedPseudoTestn1, IsCorrect) {
-  runSVEPseudoTestForCPU("neoverse-n2");
-}
-
-TEST(AArch64SVESchedPseudoTestv1, IsCorrect) {
-  runSVEPseudoTestForCPU("neoverse-v1");
 }
 
 TEST(AArch64SVESchedPseudoTestv2, IsCorrect) {

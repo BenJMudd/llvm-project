@@ -6,8 +6,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-// REQUIRES: can-create-symlinks
-// UNSUPPORTED: c++03, c++11, c++14
+// UNSUPPORTED: c++03
 // UNSUPPORTED: no-filesystem
 // UNSUPPORTED: availability-filesystem-missing
 
@@ -16,7 +15,7 @@
 // path canonical(const path& p);
 // path canonical(const path& p, error_code& ec);
 
-#include <filesystem>
+#include "filesystem_include.h"
 #include <type_traits>
 #include <cassert>
 
@@ -24,7 +23,7 @@
 #include "test_macros.h"
 #include "filesystem_test_helper.h"
 #include "../../class.path/path_helper.h"
-namespace fs = std::filesystem;
+
 using namespace fs;
 
 static void signature_test()
@@ -105,7 +104,7 @@ static void test_exception_contains_paths()
     } catch (filesystem_error const& err) {
         assert(err.path1() == p);
         // libc++ provides the current path as the second path in the exception
-        LIBCPP_ASSERT(err.path2() == current_path());
+        LIBCPP_ONLY(assert(err.path2() == current_path()));
     }
     fs::current_path(static_env.Dir);
     try {
@@ -113,7 +112,7 @@ static void test_exception_contains_paths()
         assert(false);
     } catch (filesystem_error const& err) {
         assert(err.path1() == p);
-        LIBCPP_ASSERT(err.path2() == static_env.Dir);
+        LIBCPP_ONLY(assert(err.path2() == static_env.Dir));
     }
 #endif
 }

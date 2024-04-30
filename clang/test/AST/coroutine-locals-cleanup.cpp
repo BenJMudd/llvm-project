@@ -85,19 +85,25 @@ Task bar() {
 // CHECK:           CaseStmt
 // CHECK:             ExprWithCleanups {{.*}} 'void'
 // CHECK-NEXT:          CoawaitExpr
-// CHECK-NEXT:            CXXBindTemporaryExpr {{.*}} 'Task' (CXXTemporary {{.*}})
+// CHECK-NEXT:            CXXBindTemporaryExpr {{.*}} 'Task':'Task' (CXXTemporary {{.*}})
 // CHECK:                 MaterializeTemporaryExpr {{.*}} 'Awaiter':'Task::Awaiter'
 // CHECK:                 ExprWithCleanups {{.*}} 'bool'
 // CHECK-NEXT:              CXXMemberCallExpr {{.*}} 'bool'
 // CHECK-NEXT:                MemberExpr {{.*}} .await_ready
-// CHECK:                 ExprWithCleanups {{.*}} 'void *'
+// CHECK:                 CallExpr {{.*}} 'void'
+// CHECK-NEXT:              ImplicitCastExpr {{.*}} 'void (*)(void *)'
+// CHECK-NEXT:                DeclRefExpr {{.*}} '__builtin_coro_resume' 'void (void *)'
+// CHECK-NEXT:              ExprWithCleanups {{.*}} 'void *'
 
 // CHECK:           CaseStmt
 // CHECK:             ExprWithCleanups {{.*}} 'void'
 // CHECK-NEXT:          CoawaitExpr
-// CHECK-NEXT:            CXXBindTemporaryExpr {{.*}} 'Task' (CXXTemporary {{.*}})
+// CHECK-NEXT:            CXXBindTemporaryExpr {{.*}} 'Task':'Task' (CXXTemporary {{.*}})
 // CHECK:                 MaterializeTemporaryExpr {{.*}} 'Awaiter':'Task::Awaiter'
 // CHECK:                 ExprWithCleanups {{.*}} 'bool'
 // CHECK-NEXT:              CXXMemberCallExpr {{.*}} 'bool'
 // CHECK-NEXT:                MemberExpr {{.*}} .await_ready
-// CHECK:                 ExprWithCleanups {{.*}} 'void *'
+// CHECK:                 CallExpr {{.*}} 'void'
+// CHECK-NEXT:              ImplicitCastExpr {{.*}} 'void (*)(void *)'
+// CHECK-NEXT:                DeclRefExpr {{.*}} '__builtin_coro_resume' 'void (void *)'
+// CHECK-NEXT:              ExprWithCleanups {{.*}} 'void *'

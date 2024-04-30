@@ -10,19 +10,17 @@
 #include "clang/AST/AST.h"
 #include "clang/Basic/SourceManager.h"
 #include <optional>
-#include <utility>
 
 namespace clang::tidy::utils::lexer {
 
-std::pair<Token, SourceLocation>
-getPreviousTokenAndStart(SourceLocation Location, const SourceManager &SM,
-                         const LangOptions &LangOpts, bool SkipComments) {
+Token getPreviousToken(SourceLocation Location, const SourceManager &SM,
+                       const LangOptions &LangOpts, bool SkipComments) {
   Token Token;
   Token.setKind(tok::unknown);
 
   Location = Location.getLocWithOffset(-1);
   if (Location.isInvalid())
-    return {Token, Location};
+    return Token;
 
   auto StartOfFile = SM.getLocForStartOfFile(SM.getFileID(Location));
   while (Location != StartOfFile) {
@@ -33,13 +31,6 @@ getPreviousTokenAndStart(SourceLocation Location, const SourceManager &SM,
     }
     Location = Location.getLocWithOffset(-1);
   }
-  return {Token, Location};
-}
-
-Token getPreviousToken(SourceLocation Location, const SourceManager &SM,
-                       const LangOptions &LangOpts, bool SkipComments) {
-  auto [Token, Start] =
-      getPreviousTokenAndStart(Location, SM, LangOpts, SkipComments);
   return Token;
 }
 
@@ -47,11 +38,11 @@ SourceLocation findPreviousTokenStart(SourceLocation Start,
                                       const SourceManager &SM,
                                       const LangOptions &LangOpts) {
   if (Start.isInvalid() || Start.isMacroID())
-    return {};
+    return SourceLocation();
 
   SourceLocation BeforeStart = Start.getLocWithOffset(-1);
   if (BeforeStart.isInvalid() || BeforeStart.isMacroID())
-    return {};
+    return SourceLocation();
 
   return Lexer::GetBeginningOfToken(BeforeStart, SM, LangOpts);
 }
@@ -61,16 +52,16 @@ SourceLocation findPreviousTokenKind(SourceLocation Start,
                                      const LangOptions &LangOpts,
                                      tok::TokenKind TK) {
   if (Start.isInvalid() || Start.isMacroID())
-    return {};
+    return SourceLocation();
 
   while (true) {
     SourceLocation L = findPreviousTokenStart(Start, SM, LangOpts);
     if (L.isInvalid() || L.isMacroID())
-      return {};
+      return SourceLocation();
 
     Token T;
     if (Lexer::getRawToken(L, T, SM, LangOpts, /*IgnoreWhiteSpace=*/true))
-      return {};
+      return SourceLocation();
 
     if (T.is(TK))
       return T.getLocation();
@@ -230,7 +221,7 @@ static SourceLocation getSemicolonAfterStmtEndLoc(const SourceLocation &EndLoc,
   if (NextTok && NextTok->is(tok::TokenKind::semi))
     return NextTok->getLocation();
 
-  return {};
+  return SourceLocation();
 }
 
 SourceLocation getUnifiedEndLoc(const Stmt &S, const SourceManager &SM,

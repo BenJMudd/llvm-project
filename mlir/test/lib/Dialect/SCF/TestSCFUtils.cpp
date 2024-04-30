@@ -50,22 +50,19 @@ struct TestSCFForUtilsPass
         auto newInitValues = forOp.getInitArgs();
         if (newInitValues.empty())
           return;
-        SmallVector<Value> oldYieldValues =
-            llvm::to_vector(forOp.getYieldedValues());
-        NewYieldValuesFn fn = [&](OpBuilder &b, Location loc,
-                                  ArrayRef<BlockArgument> newBBArgs) {
+        NewYieldValueFn fn = [&](OpBuilder &b, Location loc,
+                                 ArrayRef<BlockArgument> newBBArgs) {
+          Block *block = newBBArgs.front().getOwner();
           SmallVector<Value> newYieldValues;
-          for (auto yieldVal : oldYieldValues) {
+          for (auto yieldVal :
+               cast<scf::YieldOp>(block->getTerminator()).getResults()) {
             newYieldValues.push_back(
                 b.create<arith::AddFOp>(loc, yieldVal, yieldVal));
           }
           return newYieldValues;
         };
-        IRRewriter rewriter(forOp.getContext());
-        if (failed(forOp.replaceWithAdditionalYields(
-                rewriter, newInitValues, /*replaceInitOperandUsesInLoop=*/true,
-                fn)))
-          signalPassFailure();
+        OpBuilder b(forOp);
+        replaceLoopWithNewYields(b, forOp, newInitValues, fn);
       });
     }
   }
@@ -159,8 +156,8 @@ struct TestSCFPipeliningPass
     auto ifOp =
         rewriter.create<scf::IfOp>(loc, op->getResultTypes(), pred, true);
     // True branch.
-    rewriter.moveOpBefore(op, &ifOp.getThenRegion().front(),
-                          ifOp.getThenRegion().front().begin());
+    op->moveBefore(&ifOp.getThenRegion().front(),
+                   ifOp.getThenRegion().front().begin());
     rewriter.setInsertionPointAfter(op);
     if (op->getNumResults() > 0)
       rewriter.create<scf::YieldOp>(loc, op->getResults());
@@ -217,7 +214,6 @@ struct TestSCFPipeliningPass
     if (annotatePipeline)
       options.annotateFn = annotate;
     if (noEpiloguePeeling) {
-      options.supportDynamicLoops = true;
       options.peelEpilogue = false;
       options.predicateFn = predicateOp;
     }

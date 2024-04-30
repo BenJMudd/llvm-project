@@ -9,6 +9,7 @@
 #include "llvm/Support/Memory.h"
 #include "llvm/Support/Process.h"
 #include "gtest/gtest.h"
+#include <cassert>
 #include <cstdlib>
 
 #if defined(__NetBSD__)
@@ -40,7 +41,7 @@ bool IsMPROTECT() {
     err(EXIT_FAILURE, "sysctl");
 
   return !!(paxflags & CTL_PROC_PAXFLAGS_MPROTECT);
-#elif (defined(__APPLE__) && defined(__aarch64__)) || defined(__OpenBSD__)
+#elif defined(__APPLE__) && defined(__aarch64__)
   return true;
 #else
   return false;

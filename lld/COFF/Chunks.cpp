@@ -437,17 +437,19 @@ void SectionChunk::applyRelocation(uint8_t *off,
   // Compute the RVA of the relocation for relative relocations.
   uint64_t p = rva + rel.VirtualAddress;
   uint64_t imageBase = file->ctx.config.imageBase;
-  switch (getArch()) {
-  case Triple::x86_64:
+  switch (file->ctx.config.machine) {
+  case AMD64:
     applyRelX64(off, rel.Type, os, s, p, imageBase);
     break;
-  case Triple::x86:
+  case I386:
     applyRelX86(off, rel.Type, os, s, p, imageBase);
     break;
-  case Triple::thumb:
+  case ARMNT:
     applyRelARM(off, rel.Type, os, s, p, imageBase);
     break;
-  case Triple::aarch64:
+  case ARM64:
+  case ARM64EC:
+  case ARM64X:
     applyRelARM64(off, rel.Type, os, s, p, imageBase);
     break;
   default:
@@ -514,25 +516,27 @@ void SectionChunk::addAssociative(SectionChunk *child) {
 }
 
 static uint8_t getBaserelType(const coff_relocation &rel,
-                              Triple::ArchType arch) {
-  switch (arch) {
-  case Triple::x86_64:
+                              llvm::COFF::MachineTypes machine) {
+  switch (machine) {
+  case AMD64:
     if (rel.Type == IMAGE_REL_AMD64_ADDR64)
       return IMAGE_REL_BASED_DIR64;
     if (rel.Type == IMAGE_REL_AMD64_ADDR32)
       return IMAGE_REL_BASED_HIGHLOW;
     return IMAGE_REL_BASED_ABSOLUTE;
-  case Triple::x86:
+  case I386:
     if (rel.Type == IMAGE_REL_I386_DIR32)
       return IMAGE_REL_BASED_HIGHLOW;
     return IMAGE_REL_BASED_ABSOLUTE;
-  case Triple::thumb:
+  case ARMNT:
     if (rel.Type == IMAGE_REL_ARM_ADDR32)
       return IMAGE_REL_BASED_HIGHLOW;
     if (rel.Type == IMAGE_REL_ARM_MOV32T)
       return IMAGE_REL_BASED_ARM_MOV32T;
     return IMAGE_REL_BASED_ABSOLUTE;
-  case Triple::aarch64:
+  case ARM64:
+  case ARM64EC:
+  case ARM64X:
     if (rel.Type == IMAGE_REL_ARM64_ADDR64)
       return IMAGE_REL_BASED_DIR64;
     return IMAGE_REL_BASED_ABSOLUTE;
@@ -547,7 +551,7 @@ static uint8_t getBaserelType(const coff_relocation &rel,
 // Only called when base relocation is enabled.
 void SectionChunk::getBaserels(std::vector<Baserel> *res) {
   for (const coff_relocation &rel : getRelocs()) {
-    uint8_t ty = getBaserelType(rel, getArch());
+    uint8_t ty = getBaserelType(rel, file->ctx.config.machine);
     if (ty == IMAGE_REL_BASED_ABSOLUTE)
       continue;
     Symbol *target = file->getSymbol(rel.SymbolTableIndex);
@@ -647,13 +651,6 @@ void SectionChunk::getRuntimePseudoRelocs(
     auto *target =
         dyn_cast_or_null<Defined>(file->getSymbol(rel.SymbolTableIndex));
     if (!target || !target->isRuntimePseudoReloc)
-      continue;
-    // If the target doesn't have a chunk allocated, it may be a
-    // DefinedImportData symbol which ended up unnecessary after GC.
-    // Normally we wouldn't eliminate section chunks that are referenced, but
-    // references within DWARF sections don't count for keeping section chunks
-    // alive. Thus such dangling references in DWARF sections are expected.
-    if (!target->getChunk())
       continue;
     int sizeInBits =
         getRuntimePseudoRelocSize(rel.Type, file->ctx.config.machine);
@@ -897,20 +894,6 @@ void RVAFlagTableChunk::writeTo(uint8_t *buf) const {
                                 const RVAFlag &b) { return a.rva == b.rva; }) ==
              flags.end() &&
          "RVA tables should be de-duplicated");
-}
-
-size_t ECCodeMapChunk::getSize() const {
-  return map.size() * sizeof(chpe_range_entry);
-}
-
-void ECCodeMapChunk::writeTo(uint8_t *buf) const {
-  auto table = reinterpret_cast<chpe_range_entry *>(buf);
-  for (uint32_t i = 0; i < map.size(); i++) {
-    const ECCodeMapEntry &entry = map[i];
-    uint32_t start = entry.first->getRVA();
-    table[i].StartOffset = start | entry.type;
-    table[i].Length = entry.last->getRVA() + entry.last->getSize() - start;
-  }
 }
 
 // MinGW specific, for the "automatic import of variables from DLLs" feature.

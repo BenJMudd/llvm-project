@@ -10,7 +10,6 @@
 #define MLIR_BINDINGS_PYTHON_PYBINDUTILS_H
 
 #include "mlir-c/Support.h"
-#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/DataTypes.h"
 
@@ -229,11 +228,6 @@ protected:
     return linearIndex;
   }
 
-  /// Trait to check if T provides a `maybeDownCast` method.
-  /// Note, you need the & to detect inherited members.
-  template <typename T, typename... Args>
-  using has_maybe_downcast = decltype(&T::maybeDownCast);
-
   /// Returns the element at the given slice index. Supports negative indices
   /// by taking elements in inverse order. Returns a nullptr object if out
   /// of bounds.
@@ -245,13 +239,8 @@ protected:
       return {};
     }
 
-    if constexpr (llvm::is_detected<has_maybe_downcast, ElementTy>::value)
-      return static_cast<Derived *>(this)
-          ->getRawElement(linearizeIndex(index))
-          .maybeDownCast();
-    else
-      return pybind11::cast(
-          static_cast<Derived *>(this)->getRawElement(linearizeIndex(index)));
+    return pybind11::cast(
+        static_cast<Derived *>(this)->getRawElement(linearizeIndex(index)));
   }
 
   /// Returns a new instance of the pseudo-container restricted to the given

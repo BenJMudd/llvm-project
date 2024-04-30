@@ -114,12 +114,6 @@ class FileManager : public RefCountedBase<FileManager> {
   ///
   unsigned NextFileUID;
 
-  /// Statistics gathered during the lifetime of the FileManager.
-  unsigned NumDirLookups = 0;
-  unsigned NumFileLookups = 0;
-  unsigned NumDirCacheMisses = 0;
-  unsigned NumFileCacheMisses = 0;
-
   // Caching.
   std::unique_ptr<FileSystemStatCache> StatCache;
 
@@ -254,10 +248,6 @@ public:
     return FS;
   }
 
-  /// Enable or disable tracking of VFS usage. Used to not track full header
-  /// search and implicit modulemap lookup.
-  void trackVFSUsage(bool Active);
-
   void setVirtualFileSystem(IntrusiveRefCntPtr<llvm::vfs::FileSystem> FS) {
     this->FS = std::move(FS);
   }
@@ -285,11 +275,11 @@ public:
   /// Open the specified file as a MemoryBuffer, returning a new
   /// MemoryBuffer if successful, otherwise returning null.
   llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>>
-  getBufferForFile(FileEntryRef Entry, bool isVolatile = false,
+  getBufferForFile(const FileEntry *Entry, bool isVolatile = false,
                    bool RequiresNullTerminator = true);
   llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>>
   getBufferForFile(StringRef Filename, bool isVolatile = false,
-                   bool RequiresNullTerminator = true) const {
+                   bool RequiresNullTerminator = true) {
     return getBufferForFileImpl(Filename, /*FileSize=*/-1, isVolatile,
                                 RequiresNullTerminator);
   }
@@ -297,7 +287,7 @@ public:
 private:
   llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>>
   getBufferForFileImpl(StringRef Filename, int64_t FileSize, bool isVolatile,
-                       bool RequiresNullTerminator) const;
+                       bool RequiresNullTerminator);
 
 public:
   /// Get the 'stat' information for the given \p Path.
@@ -321,9 +311,9 @@ public:
   bool makeAbsolutePath(SmallVectorImpl<char> &Path) const;
 
   /// Produce an array mapping from the unique IDs assigned to each
-  /// file to the corresponding FileEntryRef.
-  void
-  GetUniqueIDMapping(SmallVectorImpl<OptionalFileEntryRef> &UIDToFiles) const;
+  /// file to the corresponding FileEntry pointer.
+  void GetUniqueIDMapping(
+                    SmallVectorImpl<const FileEntry *> &UIDToFiles) const;
 
   /// Retrieve the canonical name for a given directory.
   ///
@@ -337,20 +327,9 @@ public:
   /// This is a very expensive operation, despite its results being cached,
   /// and should only be used when the physical layout of the file system is
   /// required, which is (almost) never.
-  StringRef getCanonicalName(FileEntryRef File);
+  StringRef getCanonicalName(const FileEntry *File);
 
-private:
-  /// Retrieve the canonical name for a given file or directory.
-  ///
-  /// The first param is a key in the CanonicalNames array.
-  StringRef getCanonicalName(const void *Entry, StringRef Name);
-
-public:
   void PrintStats() const;
-
-  /// Import statistics from a child FileManager and add them to this current
-  /// FileManager.
-  void AddStats(const FileManager &Other);
 };
 
 } // end namespace clang

@@ -39,12 +39,7 @@ bool SparcInstPrinter::isV9(const MCSubtargetInfo &STI) const {
 }
 
 void SparcInstPrinter::printRegName(raw_ostream &OS, MCRegister Reg) const {
-  OS << '%' << getRegisterName(Reg);
-}
-
-void SparcInstPrinter::printRegName(raw_ostream &OS, MCRegister Reg,
-                                    unsigned AltIdx) const {
-  OS << '%' << getRegisterName(Reg, AltIdx);
+  OS << '%' << StringRef(getRegisterName(Reg)).lower();
 }
 
 void SparcInstPrinter::printInst(const MCInst *MI, uint64_t Address,
@@ -116,11 +111,7 @@ void SparcInstPrinter::printOperand(const MCInst *MI, int opNum,
   const MCOperand &MO = MI->getOperand (opNum);
 
   if (MO.isReg()) {
-    unsigned Reg = MO.getReg();
-    if (isV9(STI))
-      printRegName(O, Reg, SP::RegNamesStateReg);
-    else
-      printRegName(O, Reg);
+    printRegName(O, MO.getReg());
     return ;
   }
 
@@ -148,7 +139,15 @@ void SparcInstPrinter::printOperand(const MCInst *MI, int opNum,
 
 void SparcInstPrinter::printMemOperand(const MCInst *MI, int opNum,
                                        const MCSubtargetInfo &STI,
-                                       raw_ostream &O) {
+                                       raw_ostream &O, const char *Modifier) {
+  // If this is an ADD operand, emit it like normal operands.
+  if (Modifier && !strcmp(Modifier, "arith")) {
+    printOperand(MI, opNum, STI, O);
+    O << ", ";
+    printOperand(MI, opNum + 1, STI, O);
+    return;
+  }
+
   const MCOperand &Op1 = MI->getOperand(opNum);
   const MCOperand &Op2 = MI->getOperand(opNum + 1);
 
@@ -242,14 +241,4 @@ void SparcInstPrinter::printMembarTag(const MCInst *MI, int opNum,
       First = false;
     }
   }
-}
-
-void SparcInstPrinter::printASITag(const MCInst *MI, int opNum,
-                                   const MCSubtargetInfo &STI, raw_ostream &O) {
-  unsigned Imm = MI->getOperand(opNum).getImm();
-  auto ASITag = SparcASITag::lookupASITagByEncoding(Imm);
-  if (isV9(STI) && ASITag)
-    O << '#' << ASITag->Name;
-  else
-    O << Imm;
 }

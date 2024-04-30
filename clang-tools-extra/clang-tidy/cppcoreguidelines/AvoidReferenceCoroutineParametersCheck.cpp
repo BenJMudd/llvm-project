@@ -16,19 +16,17 @@ namespace clang::tidy::cppcoreguidelines {
 
 void AvoidReferenceCoroutineParametersCheck::registerMatchers(
     MatchFinder *Finder) {
-  Finder->addMatcher(
-      functionDecl(unless(parameterCountIs(0)), hasBody(coroutineBodyStmt()))
-          .bind("fnt"),
-      this);
+  auto IsCoroMatcher =
+      hasDescendant(expr(anyOf(coyieldExpr(), coreturnStmt(), coawaitExpr())));
+  Finder->addMatcher(parmVarDecl(hasType(type(referenceType())),
+                                 hasAncestor(functionDecl(IsCoroMatcher)))
+                         .bind("param"),
+                     this);
 }
 
 void AvoidReferenceCoroutineParametersCheck::check(
     const MatchFinder::MatchResult &Result) {
-  const auto *Function = Result.Nodes.getNodeAs<FunctionDecl>("fnt");
-  for (const ParmVarDecl *Param : Function->parameters()) {
-    if (!Param->getType().getCanonicalType()->isReferenceType())
-      continue;
-
+  if (const auto *Param = Result.Nodes.getNodeAs<ParmVarDecl>("param")) {
     diag(Param->getBeginLoc(), "coroutine parameters should not be references");
   }
 }

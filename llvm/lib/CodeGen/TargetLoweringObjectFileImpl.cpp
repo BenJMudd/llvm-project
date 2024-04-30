@@ -472,31 +472,32 @@ static SectionKind getELFKindForNamedSection(StringRef Name, SectionKind K) {
                                       /*AddSegmentInfo=*/false) ||
       Name == getInstrProfSectionName(IPSK_covfun, Triple::ELF,
                                       /*AddSegmentInfo=*/false) ||
-      Name == getInstrProfSectionName(IPSK_covdata, Triple::ELF,
-                                      /*AddSegmentInfo=*/false) ||
-      Name == getInstrProfSectionName(IPSK_covname, Triple::ELF,
-                                      /*AddSegmentInfo=*/false) ||
       Name == ".llvmbc" || Name == ".llvmcmd")
     return SectionKind::getMetadata();
 
-  if (!Name.starts_with(".")) return K;
+  if (Name.empty() || Name[0] != '.') return K;
 
   // Default implementation based on some magic section names.
-  if (Name == ".bss" || Name.starts_with(".bss.") ||
-      Name.starts_with(".gnu.linkonce.b.") ||
-      Name.starts_with(".llvm.linkonce.b.") || Name == ".sbss" ||
-      Name.starts_with(".sbss.") || Name.starts_with(".gnu.linkonce.sb.") ||
-      Name.starts_with(".llvm.linkonce.sb."))
+  if (Name == ".bss" ||
+      Name.startswith(".bss.") ||
+      Name.startswith(".gnu.linkonce.b.") ||
+      Name.startswith(".llvm.linkonce.b.") ||
+      Name == ".sbss" ||
+      Name.startswith(".sbss.") ||
+      Name.startswith(".gnu.linkonce.sb.") ||
+      Name.startswith(".llvm.linkonce.sb."))
     return SectionKind::getBSS();
 
-  if (Name == ".tdata" || Name.starts_with(".tdata.") ||
-      Name.starts_with(".gnu.linkonce.td.") ||
-      Name.starts_with(".llvm.linkonce.td."))
+  if (Name == ".tdata" ||
+      Name.startswith(".tdata.") ||
+      Name.startswith(".gnu.linkonce.td.") ||
+      Name.startswith(".llvm.linkonce.td."))
     return SectionKind::getThreadData();
 
-  if (Name == ".tbss" || Name.starts_with(".tbss.") ||
-      Name.starts_with(".gnu.linkonce.tb.") ||
-      Name.starts_with(".llvm.linkonce.tb."))
+  if (Name == ".tbss" ||
+      Name.startswith(".tbss.") ||
+      Name.startswith(".gnu.linkonce.tb.") ||
+      Name.startswith(".llvm.linkonce.tb."))
     return SectionKind::getThreadBSS();
 
   return K;
@@ -511,7 +512,7 @@ static unsigned getELFSectionType(StringRef Name, SectionKind K) {
   // Use SHT_NOTE for section whose name starts with ".note" to allow
   // emitting ELF notes from C variable declaration.
   // See https://gcc.gnu.org/bugzilla/show_bug.cgi?id=77609
-  if (Name.starts_with(".note"))
+  if (Name.startswith(".note"))
     return ELF::SHT_NOTE;
 
   if (hasPrefix(Name, ".init_array"))
@@ -615,7 +616,7 @@ static unsigned getEntrySizeForKind(SectionKind Kind) {
 /// DataSections.
 static StringRef getSectionPrefixForGlobal(SectionKind Kind, bool IsLarge) {
   if (Kind.isText())
-    return IsLarge ? ".ltext" : ".text";
+    return ".text";
   if (Kind.isReadOnly())
     return IsLarge ? ".lrodata" : ".rodata";
   if (Kind.isBSS())
@@ -635,8 +636,7 @@ static SmallString<128>
 getELFSectionNameForGlobal(const GlobalObject *GO, SectionKind Kind,
                            Mangler &Mang, const TargetMachine &TM,
                            unsigned EntrySize, bool UniqueSectionName) {
-  SmallString<128> Name =
-      getSectionPrefixForGlobal(Kind, TM.isLargeGlobalValue(GO));
+  SmallString<128> Name;
   if (Kind.isMergeableCString()) {
     // We also need alignment here.
     // FIXME: this is getting the alignment of the character, not the
@@ -644,13 +644,16 @@ getELFSectionNameForGlobal(const GlobalObject *GO, SectionKind Kind,
     Align Alignment = GO->getParent()->getDataLayout().getPreferredAlign(
         cast<GlobalVariable>(GO));
 
-    Name += ".str";
-    Name += utostr(EntrySize);
-    Name += ".";
-    Name += utostr(Alignment.value());
+    std::string SizeSpec = ".rodata.str" + utostr(EntrySize) + ".";
+    Name = SizeSpec + utostr(Alignment.value());
   } else if (Kind.isMergeableConst()) {
-    Name += ".cst";
+    Name = ".rodata.cst";
     Name += utostr(EntrySize);
+  } else {
+    bool IsLarge = false;
+    if (isa<GlobalVariable>(GO))
+      IsLarge = TM.isLargeData();
+    Name = getSectionPrefixForGlobal(Kind, IsLarge);
   }
 
   bool HasPrefix = false;
@@ -752,27 +755,12 @@ calcUniqueIDUpdateFlagsAndSize(const GlobalObject *GO, StringRef SectionName,
       getELFSectionNameForGlobal(GO, Kind, Mang, TM, EntrySize, false);
   if (SymbolMergeable &&
       Ctx.isELFImplicitMergeableSectionNamePrefix(SectionName) &&
-      SectionName.starts_with(ImplicitSectionNameStem))
+      SectionName.startswith(ImplicitSectionNameStem))
     return MCContext::GenericSectionID;
 
   // We have seen this section name before, but with different flags or entity
   // size. Create a new unique ID.
   return NextUniqueID++;
-}
-
-static std::tuple<StringRef, bool, unsigned>
-getGlobalObjectInfo(const GlobalObject *GO, const TargetMachine &TM) {
-  StringRef Group = "";
-  bool IsComdat = false;
-  unsigned Flags = 0;
-  if (const Comdat *C = getELFComdat(GO)) {
-    Flags |= ELF::SHF_GROUP;
-    Group = C->getName();
-    IsComdat = C->getSelectionKind() == Comdat::Any;
-  }
-  if (TM.isLargeGlobalValue(GO))
-    Flags |= ELF::SHF_X86_64_LARGE;
-  return {Group, IsComdat, Flags};
 }
 
 static MCSection *selectExplicitSectionGlobal(
@@ -797,13 +785,22 @@ static MCSection *selectExplicitSectionGlobal(
       SectionName = Attrs.getAttribute("data-section").getValueAsString();
     }
   }
+  const Function *F = dyn_cast<Function>(GO);
+  if (F && F->hasFnAttribute("implicit-section-name")) {
+    SectionName = F->getFnAttribute("implicit-section-name").getValueAsString();
+  }
 
   // Infer section flags from the section name if we can.
   Kind = getELFKindForNamedSection(SectionName, Kind);
 
+  StringRef Group = "";
+  bool IsComdat = false;
   unsigned Flags = getELFSectionFlags(Kind);
-  auto [Group, IsComdat, ExtraFlags] = getGlobalObjectInfo(GO, TM);
-  Flags |= ExtraFlags;
+  if (const Comdat *C = getELFComdat(GO)) {
+    Group = C->getName();
+    IsComdat = C->getSelectionKind() == Comdat::Any;
+    Flags |= ELF::SHF_GROUP;
+  }
 
   unsigned EntrySize = getEntrySizeForKind(Kind);
   const unsigned UniqueID = calcUniqueIDUpdateFlagsAndSize(
@@ -851,8 +848,19 @@ static MCSectionELF *selectELFSectionForGlobal(
     const TargetMachine &TM, bool EmitUniqueSection, unsigned Flags,
     unsigned *NextUniqueID, const MCSymbolELF *AssociatedSymbol) {
 
-  auto [Group, IsComdat, ExtraFlags] = getGlobalObjectInfo(GO, TM);
-  Flags |= ExtraFlags;
+  StringRef Group = "";
+  bool IsComdat = false;
+  if (const Comdat *C = getELFComdat(GO)) {
+    Flags |= ELF::SHF_GROUP;
+    Group = C->getName();
+    IsComdat = C->getSelectionKind() == Comdat::Any;
+  }
+  if (isa<GlobalVariable>(GO) && !cast<GlobalVariable>(GO)->isThreadLocal()) {
+    if (TM.isLargeData()) {
+      assert(TM.getTargetTriple().getArch() == Triple::x86_64);
+      Flags |= ELF::SHF_X86_64_LARGE;
+    }
+  }
 
   // Get the section entry size based on the kind.
   unsigned EntrySize = getEntrySizeForKind(Kind);
@@ -930,7 +938,7 @@ MCSection *TargetLoweringObjectFileELF::getUniqueSectionForFunction(
   unsigned Flags = getELFSectionFlags(Kind);
   // If the function's section names is pre-determined via pragma or a
   // section attribute, call selectExplicitSectionGlobal.
-  if (F.hasSection())
+  if (F.hasSection() || F.hasFnAttribute("implicit-section-name"))
     return selectExplicitSectionGlobal(
         &F, Kind, TM, getContext(), getMangler(), NextUniqueID,
         Used.count(&F), /* ForceUnique = */true);
@@ -1030,32 +1038,21 @@ MCSection *TargetLoweringObjectFileELF::getSectionForMachineBasicBlock(
   // under the .text.eh prefix. For regular sections, we either use a unique
   // name, or a unique ID for the section.
   SmallString<128> Name;
-  StringRef FunctionSectionName = MBB.getParent()->getSection()->getName();
-  if (FunctionSectionName.equals(".text") ||
-      FunctionSectionName.starts_with(".text.")) {
-    // Function is in a regular .text section.
-    StringRef FunctionName = MBB.getParent()->getName();
-    if (MBB.getSectionID() == MBBSectionID::ColdSectionID) {
-      Name += BBSectionsColdTextPrefix;
-      Name += FunctionName;
-    } else if (MBB.getSectionID() == MBBSectionID::ExceptionSectionID) {
-      Name += ".text.eh.";
-      Name += FunctionName;
-    } else {
-      Name += FunctionSectionName;
-      if (TM.getUniqueBasicBlockSectionNames()) {
-        if (!Name.ends_with("."))
-          Name += ".";
-        Name += MBB.getSymbol()->getName();
-      } else {
-        UniqueID = NextUniqueID++;
-      }
-    }
+  if (MBB.getSectionID() == MBBSectionID::ColdSectionID) {
+    Name += BBSectionsColdTextPrefix;
+    Name += MBB.getParent()->getName();
+  } else if (MBB.getSectionID() == MBBSectionID::ExceptionSectionID) {
+    Name += ".text.eh.";
+    Name += MBB.getParent()->getName();
   } else {
-    // If the original function has a custom non-dot-text section, then emit
-    // all basic block sections into that section too, each with a unique id.
-    Name = FunctionSectionName;
-    UniqueID = NextUniqueID++;
+    Name += MBB.getParent()->getSection()->getName();
+    if (TM.getUniqueBasicBlockSectionNames()) {
+      if (!Name.endswith("."))
+        Name += ".";
+      Name += MBB.getSymbol()->getName();
+    } else {
+      UniqueID = NextUniqueID++;
+    }
   }
 
   unsigned Flags = ELF::SHF_ALLOC | ELF::SHF_EXECINSTR;
@@ -1292,6 +1289,11 @@ MCSection *TargetLoweringObjectFileMachO::getExplicitSectionGlobal(
     } else if (Attrs.hasAttribute("data-section") && Kind.isData()) {
       SectionName = Attrs.getAttribute("data-section").getValueAsString();
     }
+  }
+
+  const Function *F = dyn_cast<Function>(GO);
+  if (F && F->hasFnAttribute("implicit-section-name")) {
+    SectionName = F->getFnAttribute("implicit-section-name").getValueAsString();
   }
 
   // Parse the section specifier and create it if valid.
@@ -1661,18 +1663,9 @@ static int getSelectionForCOFF(const GlobalValue *GV) {
 
 MCSection *TargetLoweringObjectFileCOFF::getExplicitSectionGlobal(
     const GlobalObject *GO, SectionKind Kind, const TargetMachine &TM) const {
-  StringRef Name = GO->getSection();
-  if (Name == getInstrProfSectionName(IPSK_covmap, Triple::COFF,
-                                      /*AddSegmentInfo=*/false) ||
-      Name == getInstrProfSectionName(IPSK_covfun, Triple::COFF,
-                                      /*AddSegmentInfo=*/false) ||
-      Name == getInstrProfSectionName(IPSK_covdata, Triple::COFF,
-                                      /*AddSegmentInfo=*/false) ||
-      Name == getInstrProfSectionName(IPSK_covname, Triple::COFF,
-                                      /*AddSegmentInfo=*/false))
-    Kind = SectionKind::getMetadata();
   int Selection = 0;
   unsigned Characteristics = getCOFFSectionFlags(Kind, TM);
+  StringRef Name = GO->getSection();
   StringRef COMDATSymName = "";
   if (GO->hasComdat()) {
     Selection = getSelectionForCOFF(GO);
@@ -2133,7 +2126,7 @@ static const Comdat *getWasmComdat(const GlobalValue *GV) {
   return C;
 }
 
-static unsigned getWasmSectionFlags(SectionKind K, bool Retain) {
+static unsigned getWasmSectionFlags(SectionKind K) {
   unsigned Flags = 0;
 
   if (K.isThreadLocal())
@@ -2142,20 +2135,9 @@ static unsigned getWasmSectionFlags(SectionKind K, bool Retain) {
   if (K.isMergeableCString())
     Flags |= wasm::WASM_SEG_FLAG_STRINGS;
 
-  if (Retain)
-    Flags |= wasm::WASM_SEG_FLAG_RETAIN;
-
   // TODO(sbc): Add suport for K.isMergeableConst()
 
   return Flags;
-}
-
-void TargetLoweringObjectFileWasm::getModuleMetadata(Module &M) {
-  SmallVector<GlobalValue *, 4> Vec;
-  collectUsedGlobalVariables(M, Vec, false);
-  for (GlobalValue *GV : Vec)
-    if (auto *GO = dyn_cast<GlobalObject>(GV))
-      Used.insert(GO);
 }
 
 MCSection *TargetLoweringObjectFileWasm::getExplicitSectionGlobal(
@@ -2181,18 +2163,16 @@ MCSection *TargetLoweringObjectFileWasm::getExplicitSectionGlobal(
     Group = C->getName();
   }
 
-  unsigned Flags = getWasmSectionFlags(Kind, Used.count(GO));
+  unsigned Flags = getWasmSectionFlags(Kind);
   MCSectionWasm *Section = getContext().getWasmSection(
       Name, Kind, Flags, Group, MCContext::GenericSectionID);
 
   return Section;
 }
 
-static MCSectionWasm *
-selectWasmSectionForGlobal(MCContext &Ctx, const GlobalObject *GO,
-                           SectionKind Kind, Mangler &Mang,
-                           const TargetMachine &TM, bool EmitUniqueSection,
-                           unsigned *NextUniqueID, bool Retain) {
+static MCSectionWasm *selectWasmSectionForGlobal(
+    MCContext &Ctx, const GlobalObject *GO, SectionKind Kind, Mangler &Mang,
+    const TargetMachine &TM, bool EmitUniqueSection, unsigned *NextUniqueID) {
   StringRef Group = "";
   if (const Comdat *C = getWasmComdat(GO)) {
     Group = C->getName();
@@ -2217,7 +2197,7 @@ selectWasmSectionForGlobal(MCContext &Ctx, const GlobalObject *GO,
     (*NextUniqueID)++;
   }
 
-  unsigned Flags = getWasmSectionFlags(Kind, Retain);
+  unsigned Flags = getWasmSectionFlags(Kind);
   return Ctx.getWasmSection(Name, Kind, Flags, Group, UniqueID);
 }
 
@@ -2235,11 +2215,9 @@ MCSection *TargetLoweringObjectFileWasm::SelectSectionForGlobal(
   else
     EmitUniqueSection = TM.getDataSections();
   EmitUniqueSection |= GO->hasComdat();
-  bool Retain = Used.count(GO);
-  EmitUniqueSection |= Retain;
 
   return selectWasmSectionForGlobal(getContext(), GO, Kind, getMangler(), TM,
-                                    EmitUniqueSection, &NextUniqueID, Retain);
+                                    EmitUniqueSection, &NextUniqueID);
 }
 
 bool TargetLoweringObjectFileWasm::shouldPutJumpTableInFunctionSection(
@@ -2325,10 +2303,8 @@ bool TargetLoweringObjectFileXCOFF::ShouldSetSSPCanaryBitInTB(
 
 MCSymbol *
 TargetLoweringObjectFileXCOFF::getEHInfoTableSymbol(const MachineFunction *MF) {
-  MCSymbol *EHInfoSym = MF->getMMI().getContext().getOrCreateSymbol(
+  return MF->getMMI().getContext().getOrCreateSymbol(
       "__ehinfo." + Twine(MF->getFunctionNumber()));
-  cast<MCSymbolXCOFF>(EHInfoSym)->setEHInfo();
-  return EHInfoSym;
 }
 
 MCSymbol *
@@ -2409,15 +2385,6 @@ MCSection *TargetLoweringObjectFileXCOFF::getSectionForExternalReference(
   SmallString<128> Name;
   getNameWithPrefix(Name, GO, TM);
 
-  // AIX TLS local-dynamic does not need the external reference for the
-  // "_$TLSML" symbol.
-  if (GO->getThreadLocalMode() == GlobalVariable::LocalDynamicTLSModel &&
-      GO->hasName() && GO->getName() == "_$TLSML") {
-    return getContext().getXCOFFSection(
-        Name, SectionKind::getData(),
-        XCOFF::CsectProperties(XCOFF::XMC_TC, XCOFF::XTY_SD));
-  }
-
   XCOFF::StorageMappingClass SMC =
       isa<Function>(GO) ? XCOFF::XMC_DS : XCOFF::XMC_UA;
   if (GO->isThreadLocal())
@@ -2440,10 +2407,8 @@ MCSection *TargetLoweringObjectFileXCOFF::SelectSectionForGlobal(
     if (GVar->hasAttribute("toc-data")) {
       SmallString<128> Name;
       getNameWithPrefix(Name, GO, TM);
-      XCOFF::SymbolType symType =
-          GO->hasCommonLinkage() ? XCOFF::XTY_CM : XCOFF::XTY_SD;
       return getContext().getXCOFFSection(
-          Name, Kind, XCOFF::CsectProperties(XCOFF::XMC_TD, symType),
+          Name, Kind, XCOFF::CsectProperties(XCOFF::XMC_TD, XCOFF::XTY_SD),
           /* MultiSymbolsAllowed*/ true);
     }
 
@@ -2671,34 +2636,13 @@ MCSection *TargetLoweringObjectFileXCOFF::getSectionForFunctionDescriptor(
 
 MCSection *TargetLoweringObjectFileXCOFF::getSectionForTOCEntry(
     const MCSymbol *Sym, const TargetMachine &TM) const {
-  const XCOFF::StorageMappingClass SMC = [](const MCSymbol *Sym,
-                                            const TargetMachine &TM) {
-    const MCSymbolXCOFF *XSym = cast<MCSymbolXCOFF>(Sym);
-
-    // The "_$TLSML" symbol for TLS local-dynamic mode requires XMC_TC,
-    // otherwise the AIX assembler will complain.
-    if (XSym->getSymbolTableName() == "_$TLSML")
-      return XCOFF::XMC_TC;
-
-    // Use large code model toc entries for ehinfo symbols as they are
-    // never referenced directly. The runtime loads their TOC entry
-    // addresses from the trace-back table.
-    if (XSym->isEHInfo())
-      return XCOFF::XMC_TE;
-
-    // If the symbol does not have a code model specified use the module value.
-    if (!XSym->hasPerSymbolCodeModel())
-      return TM.getCodeModel() == CodeModel::Large ? XCOFF::XMC_TE
-                                                   : XCOFF::XMC_TC;
-
-    return XSym->getPerSymbolCodeModel() == MCSymbolXCOFF::CM_Large
-               ? XCOFF::XMC_TE
-               : XCOFF::XMC_TC;
-  }(Sym, TM);
-
+  // Use TE storage-mapping class when large code model is enabled so that
+  // the chance of needing -bbigtoc is decreased.
   return getContext().getXCOFFSection(
       cast<MCSymbolXCOFF>(Sym)->getSymbolTableName(), SectionKind::getData(),
-      XCOFF::CsectProperties(SMC, XCOFF::XTY_SD));
+      XCOFF::CsectProperties(
+          TM.getCodeModel() == CodeModel::Large ? XCOFF::XMC_TE : XCOFF::XMC_TC,
+          XCOFF::XTY_SD));
 }
 
 MCSection *TargetLoweringObjectFileXCOFF::getSectionForLSDA(
@@ -2723,13 +2667,6 @@ TargetLoweringObjectFileGOFF::TargetLoweringObjectFileGOFF() = default;
 MCSection *TargetLoweringObjectFileGOFF::getExplicitSectionGlobal(
     const GlobalObject *GO, SectionKind Kind, const TargetMachine &TM) const {
   return SelectSectionForGlobal(GO, Kind, TM);
-}
-
-MCSection *TargetLoweringObjectFileGOFF::getSectionForLSDA(
-    const Function &F, const MCSymbol &FnSym, const TargetMachine &TM) const {
-  std::string Name = ".gcc_exception_table." + F.getName().str();
-  return getContext().getGOFFSection(Name, SectionKind::getData(), nullptr,
-                                     nullptr);
 }
 
 MCSection *TargetLoweringObjectFileGOFF::SelectSectionForGlobal(

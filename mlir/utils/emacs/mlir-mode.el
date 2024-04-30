@@ -14,8 +14,6 @@
 ;; See the License for the specific language governing permissions and
 ;; limitations under the License.
 
-;; Version: 0.1.0
-
 ;;; Commentary:
 
 ;; Major mode for editing MLIR files.
@@ -98,4 +96,5 @@
 (add-to-list 'auto-mode-alist (cons "\\.mlirbc\\'" 'mlir-mode))
 
 (provide 'mlir-mode)
+
 ;;; mlir-mode.el ends here

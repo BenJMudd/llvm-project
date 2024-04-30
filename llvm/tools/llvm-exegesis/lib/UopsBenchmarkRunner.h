@@ -15,7 +15,6 @@
 #define LLVM_TOOLS_LLVM_EXEGESIS_UOPSBENCHMARKRUNNER_H
 
 #include "BenchmarkRunner.h"
-#include "Target.h"
 
 namespace llvm {
 namespace exegesis {
@@ -24,10 +23,9 @@ class UopsBenchmarkRunner : public BenchmarkRunner {
 public:
   UopsBenchmarkRunner(const LLVMState &State,
                       BenchmarkPhaseSelectorE BenchmarkPhaseSelector,
-                      ExecutionModeE ExecutionMode,
-                      ArrayRef<ValidationEvent> ValCounters)
+                      ExecutionModeE ExecutionMode)
       : BenchmarkRunner(State, Benchmark::Uops, BenchmarkPhaseSelector,
-                        ExecutionMode, ValCounters) {}
+                        ExecutionMode) {}
   ~UopsBenchmarkRunner() override;
 
   static constexpr const size_t kMinNumDifferentAddresses = 6;

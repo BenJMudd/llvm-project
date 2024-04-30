@@ -27,7 +27,7 @@ SingleStringMatcher::SingleStringMatcher(StringRef Pattern) {
   } else {
     Expected<GlobPattern> Glob = GlobPattern::create(Pattern);
     if (!Glob) {
-      error(toString(Glob.takeError()) + ": " + Pattern);
+      error(toString(Glob.takeError()));
       return;
     }
     ExactMatch = false;

@@ -42,12 +42,15 @@ add_clang_library(clangDriver
   ToolChains/Arch/VE.cpp
   ToolChains/Arch/X86.cpp
   ToolChains/AIX.cpp
+  ToolChains/Ananas.cpp
   ToolChains/AMDGPU.cpp
   ToolChains/AMDGPUOpenMP.cpp
   ToolChains/AVR.cpp
   ToolChains/BareMetal.cpp
   ToolChains/Clang.cpp
+  ToolChains/CloudABI.cpp
   ToolChains/CommonArgs.cpp
+  ToolChains/Contiki.cpp
   ToolChains/CrossWindows.cpp
   ToolChains/CSKYToolChain.cpp
   ToolChains/Cuda.cpp
@@ -67,8 +70,10 @@ add_clang_library(clangDriver
   ToolChains/Linux.cpp
   ToolChains/MipsLinux.cpp
   ToolChains/MinGW.cpp
+  ToolChains/Minix.cpp
   ToolChains/MSP430.cpp
   ToolChains/MSVC.cpp
+  ToolChains/Myriad.cpp
   ToolChains/NaCl.cpp
   ToolChains/NetBSD.cpp
   ToolChains/OHOS.cpp

@@ -57,8 +57,7 @@ T tmain() {
   switch (argc) {
 #pragma omp scan exclusive(argc) // expected-error {{orphaned 'omp scan' directives are prohibited; perhaps you forget to enclose the directive into a for, simd, for simd, parallel for, or parallel for simd region?}}
   case 1:
-#pragma omp scan exclusive(argc) // expected-error {{orphaned 'omp scan' directives are prohibited; perhaps you forget to enclose the directive into a for, simd, for simd, parallel for, or parallel for simd region?}} \
-                                    expected-error{{'#pragma omp scan' cannot be an immediate substatement}}
+#pragma omp scan exclusive(argc) // expected-error {{orphaned 'omp scan' directives are prohibited; perhaps you forget to enclose the directive into a for, simd, for simd, parallel for, or parallel for simd region?}}
     break;
   default: {
 #pragma omp scan exclusive(argc) // expected-error {{orphaned 'omp scan' directives are prohibited; perhaps you forget to enclose the directive into a for, simd, for simd, parallel for, or parallel for simd region?}}
@@ -74,7 +73,7 @@ T tmain() {
 #pragma omp simd reduction(inscan, +: argc)
   for (int i = 0; i < 10; ++i) {
 label:
-#pragma omp scan exclusive(argc) // expected-error{{'#pragma omp scan' cannot be an immediate substatement}}
+#pragma omp scan exclusive(argc)
   }
 #pragma omp simd reduction(inscan, +: argc)
   for (int i = 0; i < 10; ++i) {
@@ -150,8 +149,7 @@ int main() {
   switch (argc) {
 #pragma omp scan inclusive(argc) // expected-error {{orphaned 'omp scan' directives are prohibited; perhaps you forget to enclose the directive into a for, simd, for simd, parallel for, or parallel for simd region?}}
   case 1:
-#pragma omp scan inclusive(argc) // expected-error {{orphaned 'omp scan' directives are prohibited; perhaps you forget to enclose the directive into a for, simd, for simd, parallel for, or parallel for simd region?}} \
-                                    expected-error{{'#pragma omp scan' cannot be an immediate substatement}}
+#pragma omp scan inclusive(argc) // expected-error {{orphaned 'omp scan' directives are prohibited; perhaps you forget to enclose the directive into a for, simd, for simd, parallel for, or parallel for simd region?}}
     break;
   default: {
 #pragma omp scan inclusive(argc) // expected-error {{orphaned 'omp scan' directives are prohibited; perhaps you forget to enclose the directive into a for, simd, for simd, parallel for, or parallel for simd region?}}
@@ -167,7 +165,7 @@ int main() {
 #pragma omp simd reduction(inscan, +: argc)
   for (int i = 0; i < 10; ++i) {
 label:
-#pragma omp scan inclusive(argc) // expected-error{{'#pragma omp scan' cannot be an immediate substatement}}
+#pragma omp scan inclusive(argc)
   }
 #pragma omp simd reduction(inscan, +: argc)
   for (int i = 0; i < 10; ++i) {

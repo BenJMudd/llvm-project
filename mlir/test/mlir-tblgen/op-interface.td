@@ -11,11 +11,9 @@ def ExtraClassOfInterface : OpInterface<"ExtraClassOfInterface"> {
 
 // DECL: class ExtraClassOfInterface
 // DECL:   static bool classof(::mlir::Operation * base) {
-// DECL-NEXT:     auto* interface = getInterfaceFor(base);
-// DECL-NEXT:     if (!interface)
+// DECL-NEXT:     if (!getInterfaceFor(base))
 // DECL-NEXT:       return false;
-// DECL-NEXT:     ExtraClassOfInterface odsInterfaceInstance(base, interface);
-// DECL-NEXT:     return odsInterfaceInstance->someOtherMethod();
+// DECL-NEXT:     return base->someOtherMethod();
 // DECL-NEXT:   }
 
 def ExtraShardDeclsInterface : OpInterface<"ExtraShardDeclsInterface"> {
@@ -36,18 +34,7 @@ def ExtraShardDeclsInterface : OpInterface<"ExtraShardDeclsInterface"> {
 // DECL-NEXT:   return (*static_cast<ConcreteOp *>(this)).someOtherMethod();
 // DECL-NEXT: }
 
-def TestInheritanceMultiBaseInterface : OpInterface<"TestInheritanceMultiBaseInterface"> {
-  let methods = [
-    InterfaceMethod<
-      /*desc=*/[{some function comment}],
-      /*retTy=*/"int",
-      /*methodName=*/"baz",
-      /*args=*/(ins "int":$input)
-    >
-  ];
-}
-
-def TestInheritanceBaseInterface : OpInterface<"TestInheritanceBaseInterface", [TestInheritanceMultiBaseInterface]> {
+def TestInheritanceBaseInterface : OpInterface<"TestInheritanceBaseInterface"> {
   let methods = [
     InterfaceMethod<
       /*desc=*/[{some function comment}],
@@ -73,8 +60,6 @@ def TestInheritanceZDerivedInterface
 
 // DECL: class TestInheritanceZDerivedInterface
 // DECL: struct Concept {
-// DECL:     const TestInheritanceMultiBaseInterface::Concept *implTestInheritanceMultiBaseInterface = nullptr;
-// DECL-NOT: const TestInheritanceMultiBaseInterface::Concept
 // DECL:     const TestInheritanceBaseInterface::Concept *implTestInheritanceBaseInterface = nullptr;
 // DECL:     const TestInheritanceMiddleBaseInterface::Concept *implTestInheritanceMiddleBaseInterface = nullptr;
 

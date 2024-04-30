@@ -13,6 +13,7 @@
 
 #include "WebAssemblyTypeUtilities.h"
 #include "llvm/ADT/StringSwitch.h"
+#include "llvm/CodeGen/TargetRegisterInfo.h"
 
 // Get register classes enum.
 #define GET_REGINFO_ENUM
@@ -62,8 +63,13 @@ wasm::ValType WebAssembly::toValType(MVT Type) {
   }
 }
 
+wasm::ValType WebAssembly::regClassToValType(const TargetRegisterClass *RC) {
+  assert(RC != nullptr);
+  return regClassToValType(RC->getID());
+}
+
 void WebAssembly::wasmSymbolSetType(MCSymbolWasm *Sym, const Type *GlobalVT,
-                                    ArrayRef<MVT> VTs) {
+                                    const ArrayRef<MVT> &VTs) {
   assert(!Sym->getType());
 
   // Tables are represented as Arrays in LLVM IR therefore
@@ -71,7 +77,8 @@ void WebAssembly::wasmSymbolSetType(MCSymbolWasm *Sym, const Type *GlobalVT,
   // that is a reference type.
   wasm::ValType ValTy;
   bool IsTable = false;
-  if (WebAssembly::isWebAssemblyTableType(GlobalVT)) {
+  if (GlobalVT->isArrayTy() && WebAssembly::isWebAssemblyReferenceType(
+                                   GlobalVT->getArrayElementType())) {
     IsTable = true;
     const Type *ElTy = GlobalVT->getArrayElementType();
     if (WebAssembly::isWebAssemblyExternrefType(ElTy))

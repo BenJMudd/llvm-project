@@ -246,8 +246,7 @@ void ReassociatePass::canonicalizeOperands(Instruction *I) {
 }
 
 static BinaryOperator *CreateAdd(Value *S1, Value *S2, const Twine &Name,
-                                 BasicBlock::iterator InsertBefore,
-                                 Value *FlagsOp) {
+                                 Instruction *InsertBefore, Value *FlagsOp) {
   if (S1->getType()->isIntOrIntVectorTy())
     return BinaryOperator::CreateAdd(S1, S2, Name, InsertBefore);
   else {
@@ -259,8 +258,7 @@ static BinaryOperator *CreateAdd(Value *S1, Value *S2, const Twine &Name,
 }
 
 static BinaryOperator *CreateMul(Value *S1, Value *S2, const Twine &Name,
-                                 BasicBlock::iterator InsertBefore,
-                                 Value *FlagsOp) {
+                                 Instruction *InsertBefore, Value *FlagsOp) {
   if (S1->getType()->isIntOrIntVectorTy())
     return BinaryOperator::CreateMul(S1, S2, Name, InsertBefore);
   else {
@@ -272,8 +270,7 @@ static BinaryOperator *CreateMul(Value *S1, Value *S2, const Twine &Name,
 }
 
 static Instruction *CreateNeg(Value *S1, const Twine &Name,
-                              BasicBlock::iterator InsertBefore,
-                              Value *FlagsOp) {
+                              Instruction *InsertBefore, Value *FlagsOp) {
   if (S1->getType()->isIntOrIntVectorTy())
     return BinaryOperator::CreateNeg(S1, Name, InsertBefore);
 
@@ -293,8 +290,7 @@ static BinaryOperator *LowerNegateToMultiply(Instruction *Neg) {
   Constant *NegOne = Ty->isIntOrIntVectorTy() ?
     ConstantInt::getAllOnesValue(Ty) : ConstantFP::get(Ty, -1.0);
 
-  BinaryOperator *Res =
-      CreateMul(Neg->getOperand(OpNo), NegOne, "", Neg->getIterator(), Neg);
+  BinaryOperator *Res = CreateMul(Neg->getOperand(OpNo), NegOne, "", Neg, Neg);
   Neg->setOperand(OpNo, Constant::getNullValue(Ty)); // Drop use of op.
   Res->takeName(Neg);
   Neg->replaceAllUsesWith(Res);
@@ -470,8 +466,7 @@ using RepeatedValue = std::pair<Value*, APInt>;
 /// type and thus make the expression bigger.
 static bool LinearizeExprTree(Instruction *I,
                               SmallVectorImpl<RepeatedValue> &Ops,
-                              ReassociatePass::OrderedSet &ToRedo,
-                              bool &HasNUW) {
+                              ReassociatePass::OrderedSet &ToRedo) {
   assert((isa<UnaryOperator>(I) || isa<BinaryOperator>(I)) &&
          "Expected a UnaryOperator or BinaryOperator!");
   LLVM_DEBUG(dbgs() << "LINEARIZE: " << *I << '\n');
@@ -519,9 +514,6 @@ static bool LinearizeExprTree(Instruction *I,
   while (!Worklist.empty()) {
     std::pair<Instruction*, APInt> P = Worklist.pop_back_val();
     I = P.first; // We examine the operands of this binary operator.
-
-    if (isa<OverflowingBinaryOperator>(I))
-      HasNUW &= I->hasNoUnsignedWrap();
 
     for (unsigned OpIdx = 0; OpIdx < I->getNumOperands(); ++OpIdx) { // Visit operands.
       Value *Op = I->getOperand(OpIdx);
@@ -665,8 +657,7 @@ static bool LinearizeExprTree(Instruction *I,
 /// Now that the operands for this expression tree are
 /// linearized and optimized, emit them in-order.
 void ReassociatePass::RewriteExprTree(BinaryOperator *I,
-                                      SmallVectorImpl<ValueEntry> &Ops,
-                                      bool HasNUW) {
+                                      SmallVectorImpl<ValueEntry> &Ops) {
   assert(Ops.size() > 1 && "Single values should be used directly!");
 
   // Since our optimizations should never increase the number of operations, the
@@ -797,8 +788,8 @@ void ReassociatePass::RewriteExprTree(BinaryOperator *I,
     BinaryOperator *NewOp;
     if (NodesToRewrite.empty()) {
       Constant *Undef = UndefValue::get(I->getType());
-      NewOp = BinaryOperator::Create(Instruction::BinaryOps(Opcode), Undef,
-                                     Undef, "", I->getIterator());
+      NewOp = BinaryOperator::Create(Instruction::BinaryOps(Opcode),
+                                     Undef, Undef, "", I);
       if (isa<FPMathOperator>(NewOp))
         NewOp->setFastMathFlags(I->getFastMathFlags());
     } else {
@@ -823,20 +814,14 @@ void ReassociatePass::RewriteExprTree(BinaryOperator *I,
   if (ExpressionChangedStart) {
     bool ClearFlags = true;
     do {
-      // Preserve flags.
+      // Preserve FastMathFlags.
       if (ClearFlags) {
         if (isa<FPMathOperator>(I)) {
           FastMathFlags Flags = I->getFastMathFlags();
           ExpressionChangedStart->clearSubclassOptionalData();
           ExpressionChangedStart->setFastMathFlags(Flags);
-        } else {
+        } else
           ExpressionChangedStart->clearSubclassOptionalData();
-          // Note that it doesn't hold for mul if one of the operands is zero.
-          // TODO: We can preserve NUW flag if we prove that all mul operands
-          // are non-zero.
-          if (HasNUW && ExpressionChangedStart->getOpcode() == Instruction::Add)
-            ExpressionChangedStart->setHasNoUnsignedWrap();
-        }
       }
 
       if (ExpressionChangedStart == ExpressionChangedEnd)
@@ -936,20 +921,16 @@ static Value *NegateValue(Value *V, Instruction *BI,
         TheNeg->getParent()->getParent() != BI->getParent()->getParent())
       continue;
 
-    BasicBlock::iterator InsertPt;
+    Instruction *InsertPt;
     if (Instruction *InstInput = dyn_cast<Instruction>(V)) {
-      auto InsertPtOpt = InstInput->getInsertionPointAfterDef();
-      if (!InsertPtOpt)
+      InsertPt = InstInput->getInsertionPointAfterDef();
+      if (!InsertPt)
         continue;
-      InsertPt = *InsertPtOpt;
     } else {
-      InsertPt = TheNeg->getFunction()
-                     ->getEntryBlock()
-                     .getFirstNonPHIOrDbg()
-                     ->getIterator();
+      InsertPt = &*TheNeg->getFunction()->getEntryBlock().begin();
     }
 
-    TheNeg->moveBefore(*InsertPt->getParent(), InsertPt);
+    TheNeg->moveBefore(InsertPt);
     if (TheNeg->getOpcode() == Instruction::Sub) {
       TheNeg->setHasNoUnsignedWrap(false);
       TheNeg->setHasNoSignedWrap(false);
@@ -962,8 +943,7 @@ static Value *NegateValue(Value *V, Instruction *BI,
 
   // Insert a 'neg' instruction that subtracts the value from zero to get the
   // negation.
-  Instruction *NewNeg =
-      CreateNeg(V, V->getName() + ".neg", BI->getIterator(), BI);
+  Instruction *NewNeg = CreateNeg(V, V->getName() + ".neg", BI, BI);
   ToRedo.insert(NewNeg);
   return NewNeg;
 }
@@ -1049,8 +1029,8 @@ static bool shouldConvertOrWithNoCommonBitsToAdd(Instruction *Or) {
 /// transform this into (X+Y) to allow arithmetics reassociation.
 static BinaryOperator *convertOrWithNoCommonBitsToAdd(Instruction *Or) {
   // Convert an or into an add.
-  BinaryOperator *New = CreateAdd(Or->getOperand(0), Or->getOperand(1), "",
-                                  Or->getIterator(), Or);
+  BinaryOperator *New =
+      CreateAdd(Or->getOperand(0), Or->getOperand(1), "", Or, Or);
   New->setHasNoSignedWrap();
   New->setHasNoUnsignedWrap();
   New->takeName(Or);
@@ -1102,8 +1082,7 @@ static BinaryOperator *BreakUpSubtract(Instruction *Sub,
   // Calculate the negative value of Operand 1 of the sub instruction,
   // and set it as the RHS of the add instruction we just made.
   Value *NegVal = NegateValue(Sub->getOperand(1), Sub, ToRedo);
-  BinaryOperator *New =
-      CreateAdd(Sub->getOperand(0), NegVal, "", Sub->getIterator(), Sub);
+  BinaryOperator *New = CreateAdd(Sub->getOperand(0), NegVal, "", Sub, Sub);
   Sub->setOperand(0, Constant::getNullValue(Sub->getType())); // Drop use of op.
   Sub->setOperand(1, Constant::getNullValue(Sub->getType())); // Drop use of op.
   New->takeName(Sub);
@@ -1123,8 +1102,8 @@ static BinaryOperator *ConvertShiftToMul(Instruction *Shl) {
   auto *SA = cast<ConstantInt>(Shl->getOperand(1));
   MulCst = ConstantExpr::getShl(MulCst, SA);
 
-  BinaryOperator *Mul = BinaryOperator::CreateMul(Shl->getOperand(0), MulCst,
-                                                  "", Shl->getIterator());
+  BinaryOperator *Mul =
+    BinaryOperator::CreateMul(Shl->getOperand(0), MulCst, "", Shl);
   Shl->setOperand(0, PoisonValue::get(Shl->getType())); // Drop use of op.
   Mul->takeName(Shl);
 
@@ -1174,13 +1153,13 @@ static unsigned FindInOperandList(const SmallVectorImpl<ValueEntry> &Ops,
 
 /// Emit a tree of add instructions, summing Ops together
 /// and returning the result.  Insert the tree before I.
-static Value *EmitAddTreeOfValues(BasicBlock::iterator It,
+static Value *EmitAddTreeOfValues(Instruction *I,
                                   SmallVectorImpl<WeakTrackingVH> &Ops) {
   if (Ops.size() == 1) return Ops.back();
 
   Value *V1 = Ops.pop_back_val();
-  Value *V2 = EmitAddTreeOfValues(It, Ops);
-  return CreateAdd(V2, V1, "reass.add", It, &*It);
+  Value *V2 = EmitAddTreeOfValues(I, Ops);
+  return CreateAdd(V2, V1, "reass.add", I, I);
 }
 
 /// If V is an expression tree that is a multiplication sequence,
@@ -1192,8 +1171,7 @@ Value *ReassociatePass::RemoveFactorFromExpression(Value *V, Value *Factor) {
     return nullptr;
 
   SmallVector<RepeatedValue, 8> Tree;
-  bool HasNUW = true;
-  MadeChange |= LinearizeExprTree(BO, Tree, RedoInsts, HasNUW);
+  MadeChange |= LinearizeExprTree(BO, Tree, RedoInsts);
   SmallVector<ValueEntry, 8> Factors;
   Factors.reserve(Tree.size());
   for (unsigned i = 0, e = Tree.size(); i != e; ++i) {
@@ -1235,7 +1213,7 @@ Value *ReassociatePass::RemoveFactorFromExpression(Value *V, Value *Factor) {
 
   if (!FoundFactor) {
     // Make sure to restore the operands to the expression tree.
-    RewriteExprTree(BO, Factors, HasNUW);
+    RewriteExprTree(BO, Factors);
     return nullptr;
   }
 
@@ -1247,12 +1225,12 @@ Value *ReassociatePass::RemoveFactorFromExpression(Value *V, Value *Factor) {
     RedoInsts.insert(BO);
     V = Factors[0].Op;
   } else {
-    RewriteExprTree(BO, Factors, HasNUW);
+    RewriteExprTree(BO, Factors);
     V = BO;
   }
 
   if (NeedsNegate)
-    V = CreateNeg(V, "neg", InsertPt, BO);
+    V = CreateNeg(V, "neg", &*InsertPt, BO);
 
   return V;
 }
@@ -1327,7 +1305,7 @@ static Value *OptimizeAndOrXor(unsigned Opcode,
 /// instruction. There are two special cases: 1) if the constant operand is 0,
 /// it will return NULL. 2) if the constant is ~0, the symbolic operand will
 /// be returned.
-static Value *createAndInstr(BasicBlock::iterator InsertBefore, Value *Opnd,
+static Value *createAndInstr(Instruction *InsertBefore, Value *Opnd,
                              const APInt &ConstOpnd) {
   if (ConstOpnd.isZero())
     return nullptr;
@@ -1348,7 +1326,7 @@ static Value *createAndInstr(BasicBlock::iterator InsertBefore, Value *Opnd,
 // If it was successful, true is returned, and the "R" and "C" is returned
 // via "Res" and "ConstOpnd", respectively; otherwise, false is returned,
 // and both "Res" and "ConstOpnd" remain unchanged.
-bool ReassociatePass::CombineXorOpnd(BasicBlock::iterator It, XorOpnd *Opnd1,
+bool ReassociatePass::CombineXorOpnd(Instruction *I, XorOpnd *Opnd1,
                                      APInt &ConstOpnd, Value *&Res) {
   // Xor-Rule 1: (x | c1) ^ c2 = (x | c1) ^ (c1 ^ c1) ^ c2
   //                       = ((x | c1) ^ c1) ^ (c1 ^ c2)
@@ -1365,7 +1343,7 @@ bool ReassociatePass::CombineXorOpnd(BasicBlock::iterator It, XorOpnd *Opnd1,
     return false;
 
   Value *X = Opnd1->getSymbolicPart();
-  Res = createAndInstr(It, X, ~C1);
+  Res = createAndInstr(I, X, ~C1);
   // ConstOpnd was C2, now C1 ^ C2.
   ConstOpnd ^= C1;
 
@@ -1382,7 +1360,7 @@ bool ReassociatePass::CombineXorOpnd(BasicBlock::iterator It, XorOpnd *Opnd1,
 // via "Res" and "ConstOpnd", respectively (If the entire expression is
 // evaluated to a constant, the Res is set to NULL); otherwise, false is
 // returned, and both "Res" and "ConstOpnd" remain unchanged.
-bool ReassociatePass::CombineXorOpnd(BasicBlock::iterator It, XorOpnd *Opnd1,
+bool ReassociatePass::CombineXorOpnd(Instruction *I, XorOpnd *Opnd1,
                                      XorOpnd *Opnd2, APInt &ConstOpnd,
                                      Value *&Res) {
   Value *X = Opnd1->getSymbolicPart();
@@ -1417,7 +1395,7 @@ bool ReassociatePass::CombineXorOpnd(BasicBlock::iterator It, XorOpnd *Opnd1,
         return false;
     }
 
-    Res = createAndInstr(It, X, C3);
+    Res = createAndInstr(I, X, C3);
     ConstOpnd ^= C1;
   } else if (Opnd1->isOrExpr()) {
     // Xor-Rule 3: (x | c1) ^ (x | c2) = (x & c3) ^ c3 where c3 = c1 ^ c2
@@ -1433,7 +1411,7 @@ bool ReassociatePass::CombineXorOpnd(BasicBlock::iterator It, XorOpnd *Opnd1,
         return false;
     }
 
-    Res = createAndInstr(It, X, C3);
+    Res = createAndInstr(I, X, C3);
     ConstOpnd ^= C3;
   } else {
     // Xor-Rule 4: (x & c1) ^ (x & c2) = (x & (c1^c2))
@@ -1441,7 +1419,7 @@ bool ReassociatePass::CombineXorOpnd(BasicBlock::iterator It, XorOpnd *Opnd1,
     const APInt &C1 = Opnd1->getConstPart();
     const APInt &C2 = Opnd2->getConstPart();
     APInt C3 = C1 ^ C2;
-    Res = createAndInstr(It, X, C3);
+    Res = createAndInstr(I, X, C3);
   }
 
   // Put the original operands in the Redo list; hope they will be deleted
@@ -1518,8 +1496,7 @@ Value *ReassociatePass::OptimizeXor(Instruction *I,
     Value *CV;
 
     // Step 3.1: Try simplifying "CurrOpnd ^ ConstOpnd"
-    if (!ConstOpnd.isZero() &&
-        CombineXorOpnd(I->getIterator(), CurrOpnd, ConstOpnd, CV)) {
+    if (!ConstOpnd.isZero() && CombineXorOpnd(I, CurrOpnd, ConstOpnd, CV)) {
       Changed = true;
       if (CV)
         *CurrOpnd = XorOpnd(CV);
@@ -1536,7 +1513,7 @@ Value *ReassociatePass::OptimizeXor(Instruction *I,
 
     // step 3.2: When previous and current operands share the same symbolic
     //  value, try to simplify "PrevOpnd ^ CurrOpnd ^ ConstOpnd"
-    if (CombineXorOpnd(I->getIterator(), CurrOpnd, PrevOpnd, ConstOpnd, CV)) {
+    if (CombineXorOpnd(I, CurrOpnd, PrevOpnd, ConstOpnd, CV)) {
       // Remove previous operand
       PrevOpnd->Invalidate();
       if (CV) {
@@ -1607,7 +1584,7 @@ Value *ReassociatePass::OptimizeAdd(Instruction *I,
       Type *Ty = TheOp->getType();
       Constant *C = Ty->isIntOrIntVectorTy() ?
         ConstantInt::get(Ty, NumFound) : ConstantFP::get(Ty, NumFound);
-      Instruction *Mul = CreateMul(TheOp, C, "factor", I->getIterator(), I);
+      Instruction *Mul = CreateMul(TheOp, C, "factor", I, I);
 
       // Now that we have inserted a multiply, optimize it. This allows us to
       // handle cases that require multiple factoring steps, such as this:
@@ -1771,7 +1748,7 @@ Value *ReassociatePass::OptimizeAdd(Instruction *I,
     DummyInst->deleteValue();
 
     unsigned NumAddedValues = NewMulOps.size();
-    Value *V = EmitAddTreeOfValues(I->getIterator(), NewMulOps);
+    Value *V = EmitAddTreeOfValues(I, NewMulOps);
 
     // Now that we have inserted the add tree, optimize it. This allows us to
     // handle cases that require multiple factoring steps, such as this:
@@ -1782,7 +1759,7 @@ Value *ReassociatePass::OptimizeAdd(Instruction *I,
       RedoInsts.insert(VI);
 
     // Create the multiply.
-    Instruction *V2 = CreateMul(V, MaxOccVal, "reass.mul", I->getIterator(), I);
+    Instruction *V2 = CreateMul(V, MaxOccVal, "reass.mul", I, I);
 
     // Rerun associate on the multiply in case the inner expression turned into
     // a multiply.  We want to make sure that we keep things in canonical form.
@@ -2275,10 +2252,9 @@ void ReassociatePass::OptimizeInst(Instruction *I) {
   // with no common bits set, convert it to X+Y.
   if (I->getOpcode() == Instruction::Or &&
       shouldConvertOrWithNoCommonBitsToAdd(I) && !isLoadCombineCandidate(I) &&
-      (cast<PossiblyDisjointInst>(I)->isDisjoint() ||
-       haveNoCommonBitsSet(I->getOperand(0), I->getOperand(1),
-                           SimplifyQuery(I->getModule()->getDataLayout(),
-                                         /*DT=*/nullptr, /*AC=*/nullptr, I)))) {
+      haveNoCommonBitsSet(I->getOperand(0), I->getOperand(1),
+                          I->getModule()->getDataLayout(), /*AC=*/nullptr, I,
+                          /*DT=*/nullptr)) {
     Instruction *NI = convertOrWithNoCommonBitsToAdd(I);
     RedoInsts.insert(I);
     MadeChange = true;
@@ -2373,8 +2349,7 @@ void ReassociatePass::ReassociateExpression(BinaryOperator *I) {
   // First, walk the expression tree, linearizing the tree, collecting the
   // operand information.
   SmallVector<RepeatedValue, 8> Tree;
-  bool HasNUW = true;
-  MadeChange |= LinearizeExprTree(I, Tree, RedoInsts, HasNUW);
+  MadeChange |= LinearizeExprTree(I, Tree, RedoInsts);
   SmallVector<ValueEntry, 8> Ops;
   Ops.reserve(Tree.size());
   for (const RepeatedValue &E : Tree)
@@ -2567,7 +2542,7 @@ void ReassociatePass::ReassociateExpression(BinaryOperator *I) {
              dbgs() << '\n');
   // Now that we ordered and optimized the expressions, splat them back into
   // the expression tree, removing any unneeded nodes.
-  RewriteExprTree(I, Ops, HasNUW);
+  RewriteExprTree(I, Ops);
 }
 
 void
@@ -2575,7 +2550,7 @@ ReassociatePass::BuildPairMap(ReversePostOrderTraversal<Function *> &RPOT) {
   // Make a "pairmap" of how often each operand pair occurs.
   for (BasicBlock *BI : RPOT) {
     for (Instruction &I : *BI) {
-      if (!I.isAssociative() || !I.isBinaryOp())
+      if (!I.isAssociative())
         continue;
 
       // Ignore nodes that aren't at the root of trees.

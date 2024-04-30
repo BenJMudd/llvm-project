@@ -445,7 +445,7 @@ bool AppleObjCRuntime::ExceptionBreakpointsExplainStop(
     return false;
 
   uint64_t break_site_id = stop_reason->GetValue();
-  return m_process->GetBreakpointSiteList().StopPointSiteContainsBreakpoint(
+  return m_process->GetBreakpointSiteList().BreakpointSiteContainsBreakpoint(
       break_site_id, m_objc_exception_bp_sp->GetID());
 }
 
@@ -539,8 +539,7 @@ ThreadSP AppleObjCRuntime::GetBacktraceThreadFromException(
     return object;
   };
 
-  for (size_t idx = 0; idx < reserved_dict->GetNumChildrenIgnoringErrors();
-       idx++) {
+  for (size_t idx = 0; idx < reserved_dict->GetNumChildren(); idx++) {
     ValueObjectSP dict_entry = reserved_dict->GetChildAtIndex(idx);
 
     DataExtractor data;

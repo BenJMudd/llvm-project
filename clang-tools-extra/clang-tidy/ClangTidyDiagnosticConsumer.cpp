@@ -62,7 +62,8 @@ protected:
     // appending the check name to the message in ClangTidyContext::diag and
     // using getCustomDiagID.
     std::string CheckNameInMessage = " [" + Error.DiagnosticName + "]";
-    Message.consume_back(CheckNameInMessage);
+    if (Message.endswith(CheckNameInMessage))
+      Message = Message.substr(0, Message.size() - CheckNameInMessage.size());
 
     auto TidyMessage =
         Loc.isValid()
@@ -160,11 +161,11 @@ ClangTidyError::ClangTidyError(StringRef CheckName,
 
 ClangTidyContext::ClangTidyContext(
     std::unique_ptr<ClangTidyOptionsProvider> OptionsProvider,
-    bool AllowEnablingAnalyzerAlphaCheckers, bool EnableModuleHeadersParsing)
-    : OptionsProvider(std::move(OptionsProvider)),
-
+    bool AllowEnablingAnalyzerAlphaCheckers)
+    : DiagEngine(nullptr), OptionsProvider(std::move(OptionsProvider)),
+      Profile(false),
       AllowEnablingAnalyzerAlphaCheckers(AllowEnablingAnalyzerAlphaCheckers),
-      EnableModuleHeadersParsing(EnableModuleHeadersParsing) {
+      SelfContainedDiags(false) {
   // Before the first translation unit we can get errors related to command-line
   // parsing, use empty string for the file name in this case.
   setCurrentFile("");
@@ -193,9 +194,9 @@ DiagnosticBuilder ClangTidyContext::diag(
 
 DiagnosticBuilder ClangTidyContext::diag(const tooling::Diagnostic &Error) {
   SourceManager &SM = DiagEngine->getSourceManager();
-  FileManager &FM = SM.getFileManager();
-  FileEntryRef File = llvm::cantFail(FM.getFileRef(Error.Message.FilePath));
-  FileID ID = SM.getOrCreateFileID(File, SrcMgr::C_User);
+  llvm::ErrorOr<const FileEntry *> File =
+      SM.getFileManager().getFile(Error.Message.FilePath);
+  FileID ID = SM.getOrCreateFileID(*File, SrcMgr::C_User);
   SourceLocation FileStartLoc = SM.getLocForStartOfFile(ID);
   SourceLocation Loc = FileStartLoc.getLocWithOffset(
       static_cast<SourceLocation::IntTy>(Error.Message.FileOffset));
@@ -311,7 +312,8 @@ ClangTidyDiagnosticConsumer::ClangTidyDiagnosticConsumer(
     : Context(Ctx), ExternalDiagEngine(ExternalDiagEngine),
       RemoveIncompatibleErrors(RemoveIncompatibleErrors),
       GetFixesFromNotes(GetFixesFromNotes),
-      EnableNolintBlocks(EnableNolintBlocks) {}
+      EnableNolintBlocks(EnableNolintBlocks), LastErrorRelatesToUserCode(false),
+      LastErrorPassesLineFilter(false), LastErrorWasIgnored(false) {}
 
 void ClangTidyDiagnosticConsumer::finalizeLastError() {
   if (!Errors.empty()) {
@@ -339,10 +341,10 @@ void ClangTidyDiagnosticConsumer::finalizeLastError() {
 namespace clang::tidy {
 
 const llvm::StringMap<tooling::Replacements> *
-getFixIt(const tooling::Diagnostic &Diagnostic, bool AnyFix) {
+getFixIt(const tooling::Diagnostic &Diagnostic, bool GetFixFromNotes) {
   if (!Diagnostic.Message.Fix.empty())
     return &Diagnostic.Message.Fix;
-  if (!AnyFix)
+  if (!GetFixFromNotes)
     return nullptr;
   const llvm::StringMap<tooling::Replacements> *Result = nullptr;
   for (const auto &Note : Diagnostic.Notes) {
@@ -456,7 +458,7 @@ bool ClangTidyDiagnosticConsumer::passesLineFilter(StringRef FileName,
   if (Context.getGlobalOptions().LineFilter.empty())
     return true;
   for (const FileFilter &Filter : Context.getGlobalOptions().LineFilter) {
-    if (FileName.ends_with(Filter.Name)) {
+    if (FileName.endswith(Filter.Name)) {
       if (Filter.LineRanges.empty())
         return true;
       for (const FileFilter::LineRange &Range : Filter.LineRanges) {
@@ -478,7 +480,7 @@ void ClangTidyDiagnosticConsumer::forwardDiagnostic(const Diagnostic &Info) {
 
   // Forward the details.
   auto Builder = ExternalDiagEngine->Report(Info.getLocation(), ExternalID);
-  for (const FixItHint &Hint : Info.getFixItHints())
+  for (auto Hint : Info.getFixItHints())
     Builder << Hint;
   for (auto Range : Info.getRanges())
     Builder << Range;
@@ -551,7 +553,7 @@ void ClangTidyDiagnosticConsumer::checkFilters(SourceLocation Location,
   // location needed depends on the check (in particular, where this check wants
   // to apply fixes).
   FileID FID = Sources.getDecomposedExpansionLoc(Location).first;
-  OptionalFileEntryRef File = Sources.getFileEntryRefForID(FID);
+  const FileEntry *File = Sources.getFileEntryForID(FID);
 
   // -DMACRO definitions on the command line have locations in a virtual buffer
   // that doesn't have a FileEntry. Don't skip these as well.

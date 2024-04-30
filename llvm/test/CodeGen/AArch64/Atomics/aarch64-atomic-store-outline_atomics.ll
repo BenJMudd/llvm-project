@@ -117,10 +117,14 @@ define dso_local void @store_atomic_i64_aligned_seq_cst(i64 %value, ptr %ptr) {
 
 define dso_local void @store_atomic_i128_aligned_unordered(i128 %value, ptr %ptr) {
 ; -O0-LABEL: store_atomic_i128_aligned_unordered:
-; -O0:    bl __aarch64_cas16_relax
-; -O0:    eor x8, x0, x8
-; -O0:    eor x9, x1, x9
-; -O0:    orr x8, x8, x9
+; -O0:    ldxp x10, x9, [x11]
+; -O0:    cmp x10, x12
+; -O0:    cmp x9, x13
+; -O0:    stxp w8, x14, x15, [x11]
+; -O0:    stxp w8, x10, x9, [x11]
+; -O0:    eor x8, x10, x8
+; -O0:    eor x11, x9, x11
+; -O0:    orr x8, x8, x11
 ; -O0:    subs x8, x8, #0
 ;
 ; -O1-LABEL: store_atomic_i128_aligned_unordered:
@@ -132,10 +136,14 @@ define dso_local void @store_atomic_i128_aligned_unordered(i128 %value, ptr %ptr
 
 define dso_local void @store_atomic_i128_aligned_monotonic(i128 %value, ptr %ptr) {
 ; -O0-LABEL: store_atomic_i128_aligned_monotonic:
-; -O0:    bl __aarch64_cas16_relax
-; -O0:    eor x8, x0, x8
-; -O0:    eor x9, x1, x9
-; -O0:    orr x8, x8, x9
+; -O0:    ldxp x10, x9, [x11]
+; -O0:    cmp x10, x12
+; -O0:    cmp x9, x13
+; -O0:    stxp w8, x14, x15, [x11]
+; -O0:    stxp w8, x10, x9, [x11]
+; -O0:    eor x8, x10, x8
+; -O0:    eor x11, x9, x11
+; -O0:    orr x8, x8, x11
 ; -O0:    subs x8, x8, #0
 ;
 ; -O1-LABEL: store_atomic_i128_aligned_monotonic:
@@ -147,10 +155,14 @@ define dso_local void @store_atomic_i128_aligned_monotonic(i128 %value, ptr %ptr
 
 define dso_local void @store_atomic_i128_aligned_release(i128 %value, ptr %ptr) {
 ; -O0-LABEL: store_atomic_i128_aligned_release:
-; -O0:    bl __aarch64_cas16_rel
-; -O0:    eor x8, x0, x8
-; -O0:    eor x9, x1, x9
-; -O0:    orr x8, x8, x9
+; -O0:    ldxp x10, x9, [x11]
+; -O0:    cmp x10, x12
+; -O0:    cmp x9, x13
+; -O0:    stlxp w8, x14, x15, [x11]
+; -O0:    stlxp w8, x10, x9, [x11]
+; -O0:    eor x8, x10, x8
+; -O0:    eor x11, x9, x11
+; -O0:    orr x8, x8, x11
 ; -O0:    subs x8, x8, #0
 ;
 ; -O1-LABEL: store_atomic_i128_aligned_release:
@@ -162,10 +174,14 @@ define dso_local void @store_atomic_i128_aligned_release(i128 %value, ptr %ptr) 
 
 define dso_local void @store_atomic_i128_aligned_seq_cst(i128 %value, ptr %ptr) {
 ; -O0-LABEL: store_atomic_i128_aligned_seq_cst:
-; -O0:    bl __aarch64_cas16_acq_rel
-; -O0:    eor x8, x0, x8
-; -O0:    eor x9, x1, x9
-; -O0:    orr x8, x8, x9
+; -O0:    ldaxp x10, x9, [x11]
+; -O0:    cmp x10, x12
+; -O0:    cmp x9, x13
+; -O0:    stlxp w8, x14, x15, [x11]
+; -O0:    stlxp w8, x10, x9, [x11]
+; -O0:    eor x8, x10, x8
+; -O0:    eor x11, x9, x11
+; -O0:    orr x8, x8, x11
 ; -O0:    subs x8, x8, #0
 ;
 ; -O1-LABEL: store_atomic_i128_aligned_seq_cst:

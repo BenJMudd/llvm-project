@@ -25,7 +25,7 @@ define ghccc void @caller_float() nounwind {
 ; CHECK-NEXT:    lw s2, %lo(f2)(a0)
 ; CHECK-NEXT:    lui a0, %hi(f1)
 ; CHECK-NEXT:    lw s1, %lo(f1)(a0)
-; CHECK-NEXT:    tail callee_float
+; CHECK-NEXT:    tail callee_float@plt
 entry:
   %0  = load float, ptr @f6
   %1  = load float, ptr @f5
@@ -61,7 +61,7 @@ define ghccc void @caller_double() nounwind {
 ; CHECK-NEXT:    ld s2, %lo(d2)(a0)
 ; CHECK-NEXT:    lui a0, %hi(d1)
 ; CHECK-NEXT:    ld s1, %lo(d1)(a0)
-; CHECK-NEXT:    tail callee_double
+; CHECK-NEXT:    tail callee_double@plt
 entry:
   %0  = load double, ptr @d6
   %1  = load double, ptr @d5

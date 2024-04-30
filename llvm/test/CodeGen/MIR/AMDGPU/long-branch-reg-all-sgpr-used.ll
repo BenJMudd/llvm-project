@@ -1,4 +1,4 @@
-; RUN: llc -mtriple=amdgcn -verify-machineinstrs -amdgpu-s-branch-bits=5 -stop-after=branch-relaxation  %s -o - | FileCheck %s
+; RUN: llc -march=amdgcn -verify-machineinstrs -amdgpu-s-branch-bits=5 -stop-after=branch-relaxation  %s -o - | FileCheck %s
 
 ; Test long branch reserved register pass when all
 ; SGPRs are used
@@ -11,7 +11,6 @@
 ; CHECK-NEXT:   gdsSize:         0
 ; CHECK-NEXT:   dynLDSAlign:     1
 ; CHECK-NEXT:   isEntryFunction: true
-; CHECK-NEXT:   isChainFunction: false
 ; CHECK-NEXT:   noSignedZerosFPMath: false
 ; CHECK-NEXT:   memoryBound:     false
 ; CHECK-NEXT:   waveLimiter:     false
@@ -38,7 +37,7 @@
 ; CHECK-NEXT:     fp64-fp16-output-denormals: true
 ; CHECK-NEXT:   highBitsOf32BitAddress: 0
 ; CHECK-NEXT:   occupancy:       5
-; CHECK-NEXT:   scavengeFI:      '%stack.0'
+; CHECK-NEXT:   scavengeFI:      '%fixed-stack.0'
 ; CHECK-NEXT:   vgprForAGPRCopy: ''
 ; CHECK-NEXT:   sgprForEXECCopy: '$sgpr100_sgpr101'
 ; CHECK-NEXT:   longBranchReservedReg: ''
@@ -276,7 +275,6 @@
 ; CHECK-NEXT:   gdsSize:         0
 ; CHECK-NEXT:   dynLDSAlign:     1
 ; CHECK-NEXT:   isEntryFunction: true
-; CHECK-NEXT:   isChainFunction: false
 ; CHECK-NEXT:   noSignedZerosFPMath: false
 ; CHECK-NEXT:   memoryBound:     false
 ; CHECK-NEXT:   waveLimiter:     false
@@ -303,7 +301,7 @@
 ; CHECK-NEXT:     fp64-fp16-output-denormals: true
 ; CHECK-NEXT:   highBitsOf32BitAddress: 0
 ; CHECK-NEXT:   occupancy:       5
-; CHECK-NEXT:   scavengeFI:      '%stack.0'
+; CHECK-NEXT:   scavengeFI:      '%fixed-stack.0'
 ; CHECK-NEXT:   vgprForAGPRCopy: ''
 ; CHECK-NEXT:   sgprForEXECCopy: '$sgpr100_sgpr101'
 ; CHECK-NEXT:   longBranchReservedReg: ''

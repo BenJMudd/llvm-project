@@ -7,8 +7,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "UseNullptrCheck.h"
-#include "../utils/Matchers.h"
-#include "../utils/OptionsUtils.h"
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/RecursiveASTVisitor.h"
 #include "clang/ASTMatchers/ASTMatchFinder.h"
@@ -35,13 +33,11 @@ AST_MATCHER(Type, sugaredNullptrType) {
 /// to null within.
 /// Finding sequences of explicit casts is necessary so that an entire sequence
 /// can be replaced instead of just the inner-most implicit cast.
-StatementMatcher makeCastSequenceMatcher(llvm::ArrayRef<StringRef> NameList) {
-  auto ImplicitCastToNull = implicitCastExpr(
+StatementMatcher makeCastSequenceMatcher() {
+  StatementMatcher ImplicitCastToNull = implicitCastExpr(
       anyOf(hasCastKind(CK_NullToPointer), hasCastKind(CK_NullToMemberPointer)),
       unless(hasImplicitDestinationType(qualType(substTemplateTypeParmType()))),
-      unless(hasSourceExpression(hasType(sugaredNullptrType()))),
-      unless(hasImplicitDestinationType(
-          qualType(matchers::matchesAnyListedTypeName(NameList)))));
+      unless(hasSourceExpression(hasType(sugaredNullptrType()))));
 
   auto IsOrHasDescendant = [](auto InnerMatcher) {
     return anyOf(InnerMatcher, hasDescendant(InnerMatcher));
@@ -115,7 +111,8 @@ StringRef getOutermostMacroName(SourceLocation Loc, const SourceManager &SM,
 class MacroArgUsageVisitor : public RecursiveASTVisitor<MacroArgUsageVisitor> {
 public:
   MacroArgUsageVisitor(SourceLocation CastLoc, const SourceManager &SM)
-      : CastLoc(CastLoc), SM(SM) {
+      : CastLoc(CastLoc), SM(SM), Visited(false), CastFound(false),
+        InvalidFound(false) {
     assert(CastLoc.isFileID());
   }
 
@@ -173,9 +170,9 @@ private:
   SourceLocation CastLoc;
   const SourceManager &SM;
 
-  bool Visited = false;
-  bool CastFound = false;
-  bool InvalidFound = false;
+  bool Visited;
+  bool CastFound;
+  bool InvalidFound;
 };
 
 /// Looks for implicit casts as well as sequences of 0 or more explicit
@@ -194,7 +191,8 @@ public:
   CastSequenceVisitor(ASTContext &Context, ArrayRef<StringRef> NullMacros,
                       ClangTidyCheck &Check)
       : SM(Context.getSourceManager()), Context(Context),
-        NullMacros(NullMacros), Check(Check) {}
+        NullMacros(NullMacros), Check(Check), FirstSubExpr(nullptr),
+        PruneSubtree(false) {}
 
   bool TraverseStmt(Stmt *S) {
     // Stop traversing down the tree if requested.
@@ -469,33 +467,29 @@ private:
     llvm_unreachable("findContainingAncestor");
   }
 
+private:
   SourceManager &SM;
   ASTContext &Context;
   ArrayRef<StringRef> NullMacros;
   ClangTidyCheck &Check;
-  Expr *FirstSubExpr = nullptr;
-  bool PruneSubtree = false;
+  Expr *FirstSubExpr;
+  bool PruneSubtree;
 };
 
 } // namespace
 
 UseNullptrCheck::UseNullptrCheck(StringRef Name, ClangTidyContext *Context)
     : ClangTidyCheck(Name, Context),
-      NullMacrosStr(Options.get("NullMacros", "NULL")),
-      IgnoredTypes(utils::options::parseStringList(Options.get(
-          "IgnoredTypes",
-          "std::_CmpUnspecifiedParam::;^std::__cmp_cat::__unspec"))) {
+      NullMacrosStr(Options.get("NullMacros", "NULL")) {
   StringRef(NullMacrosStr).split(NullMacros, ",");
 }
 
 void UseNullptrCheck::storeOptions(ClangTidyOptions::OptionMap &Opts) {
   Options.store(Opts, "NullMacros", NullMacrosStr);
-  Options.store(Opts, "IgnoredTypes",
-                utils::options::serializeStringList(IgnoredTypes));
 }
 
 void UseNullptrCheck::registerMatchers(MatchFinder *Finder) {
-  Finder->addMatcher(makeCastSequenceMatcher(IgnoredTypes), this);
+  Finder->addMatcher(makeCastSequenceMatcher(), this);
 }
 
 void UseNullptrCheck::check(const MatchFinder::MatchResult &Result) {

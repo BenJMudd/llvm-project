@@ -139,13 +139,9 @@ LLVM_DUMP_METHOD void Pass::dump() const {
 #endif
 
 #ifdef EXPENSIVE_CHECKS
-uint64_t Pass::structuralHash(Module &M) const {
-  return StructuralHash(M, true);
-}
+uint64_t Pass::structuralHash(Module &M) const { return StructuralHash(M); }
 
-uint64_t Pass::structuralHash(Function &F) const {
-  return StructuralHash(F, true);
-}
+uint64_t Pass::structuralHash(Function &F) const { return StructuralHash(F); }
 #endif
 
 //===----------------------------------------------------------------------===//

@@ -16,8 +16,8 @@
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/Dialect/Tensor/Transforms/TransformUtils.h"
 #include "mlir/Dialect/Tensor/Transforms/Transforms.h"
+#include "mlir/Dialect/Transform/IR/TransformInterfaces.h"
 #include "mlir/Dialect/Transform/IR/TransformOps.h"
-#include "mlir/Dialect/Transform/Interfaces/TransformInterfaces.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
@@ -32,8 +32,8 @@ struct TestTensorTransforms
   TestTensorTransforms(const TestTensorTransforms &pass) : PassWrapper(pass) {}
 
   void getDependentDialects(DialectRegistry &registry) const override {
-    registry.insert<arith::ArithDialect, scf::SCFDialect, linalg::LinalgDialect,
-                    transform::TransformDialect>();
+    registry
+        .insert<arith::ArithDialect, scf::SCFDialect, linalg::LinalgDialect>();
   }
 
   StringRef getArgument() const final {
@@ -84,9 +84,9 @@ struct TestTensorTransforms
           "the extract_slice of collapse_shape pattern"),
       llvm::cl::init(false)};
 
-  Option<bool> testSimplifyPackUnpackPatterns{
-      *this, "test-simplify-pack-unpack-patterns",
-      llvm::cl::desc("Test patterns to simplify tensor.pack and tensor.unpack"),
+  Option<bool> testSimplifyPackPatterns{
+      *this, "test-simplify-pack-patterns",
+      llvm::cl::desc("Test patterns to simplify tensor.pack"),
       llvm::cl::init(false)};
 
   Option<bool> testTrackingListener{
@@ -137,9 +137,9 @@ applyDropRedundantInsertSliceRankExpansionPatterns(Operation *rootOp) {
   (void)applyPatternsAndFoldGreedily(rootOp, std::move(patterns));
 }
 
-static void applySimplifyPackUnpackPatterns(Operation *rootOp) {
+static void applySimplifyPackPatterns(Operation *rootOp) {
   RewritePatternSet patterns(rootOp->getContext());
-  tensor::populateSimplifyPackAndUnpackPatterns(patterns);
+  tensor::populateSimplifyTensorPack(patterns);
   (void)applyPatternsAndFoldGreedily(rootOp, std::move(patterns));
 }
 
@@ -292,10 +292,10 @@ public:
 
   // Expose `findReplacementOp` as a public function, so that it can be tested.
   Operation *getReplacementOp(Operation *op, ValueRange newValues) const {
-    Operation *replacementOp;
-    if (!findReplacementOp(replacementOp, op, newValues).succeeded())
+    FailureOr<Operation *> replacementOp = findReplacementOp(op, newValues);
+    if (failed(replacementOp))
       return nullptr;
-    return replacementOp;
+    return *replacementOp;
   }
 };
 } // namespace
@@ -352,18 +352,8 @@ static LogicalResult testTrackingListenerReplacements(Operation *rootOp) {
   transform::TransformState transformState =
       transform::detail::makeTransformStateForTesting(/*region=*/nullptr,
                                                       /*payloadRoot=*/nullptr);
-  MLIRContext *context = rootOp->getContext();
-  OpBuilder builder(context);
-  OwningOpRef<transform::NamedSequenceOp> transformOp =
-      builder.create<transform::NamedSequenceOp>(
-          rootOp->getLoc(),
-          /*sym_name=*/"test_sequence",
-          /*function_type=*/
-          TypeAttr::get(FunctionType::get(context, TypeRange{}, TypeRange{})),
-          /*sym_visibility*/ StringAttr::get(context, "public"),
-          /*arg_attrs=*/ArrayAttr::get(context, ArrayRef<Attribute>()),
-          /*res_attrs=*/ArrayAttr::get(context, ArrayRef<Attribute>()));
-  DummyTrackingListener listener(transformState, transformOp.get());
+  DummyTrackingListener listener(transformState,
+                                 transform::TransformOpInterface());
   Operation *replacement = listener.getReplacementOp(replaced, replacements);
   if (!replacement) {
     replaced->emitError("listener could not find replacement op");
@@ -376,8 +366,8 @@ static LogicalResult testTrackingListenerReplacements(Operation *rootOp) {
 
 void TestTensorTransforms::runOnOperation() {
   Operation *rootOp = getOperation();
-  if (testSimplifyPackUnpackPatterns)
-    applySimplifyPackUnpackPatterns(rootOp);
+  if (testSimplifyPackPatterns)
+    applySimplifyPackPatterns(rootOp);
   if (testFoldConstantExtractSlice)
     applyFoldConstantExtractSlicePatterns(rootOp);
   if (testFoldConsecutiveInsertExtractSlice)

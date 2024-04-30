@@ -153,7 +153,6 @@ private:
   const DataLayout *DL;
   BasicBlock *Entry;
   ProfileSummaryInfo *PSI;
-  bool OptForSize;
 
   /// Keeps track of constant candidates found in the function.
   using ConstCandVecType = std::vector<consthoist::ConstantCandidate>;
@@ -172,12 +171,11 @@ private:
 
   void collectMatInsertPts(
       const consthoist::RebasedConstantListType &RebasedConstants,
-      SmallVectorImpl<BasicBlock::iterator> &MatInsertPts) const;
-  BasicBlock::iterator findMatInsertPt(Instruction *Inst,
-                                       unsigned Idx = ~0U) const;
-  SetVector<BasicBlock::iterator> findConstantInsertionPoint(
-      const consthoist::ConstantInfo &ConstInfo,
-      const ArrayRef<BasicBlock::iterator> MatInsertPts) const;
+      SmallVectorImpl<Instruction *> &MatInsertPts) const;
+  Instruction *findMatInsertPt(Instruction *Inst, unsigned Idx = ~0U) const;
+  SetVector<Instruction *>
+  findConstantInsertionPoint(const consthoist::ConstantInfo &ConstInfo,
+                             const ArrayRef<Instruction *> MatInsertPts) const;
   void collectConstantCandidates(ConstCandMapType &ConstCandMap,
                                  Instruction *Inst, unsigned Idx,
                                  ConstantInt *ConstInt);
@@ -204,9 +202,9 @@ private:
   struct UserAdjustment {
     Constant *Offset;
     Type *Ty;
-    BasicBlock::iterator MatInsertPt;
+    Instruction *MatInsertPt;
     const consthoist::ConstantUser User;
-    UserAdjustment(Constant *O, Type *T, BasicBlock::iterator I,
+    UserAdjustment(Constant *O, Type *T, Instruction *I,
                    consthoist::ConstantUser U)
         : Offset(O), Ty(T), MatInsertPt(I), User(U) {}
   };

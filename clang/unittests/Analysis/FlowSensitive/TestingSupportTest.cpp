@@ -86,9 +86,7 @@ void checkDataflow(
                             Code, std::move(TargetFuncMatcher),
                             [](ASTContext &Context, Environment &) {
                               return NoopAnalysis(
-                                  Context,
-                                  // Don't apply builtin transfer function.
-                                  DataflowAnalysisOptions{std::nullopt});
+                                  Context, /*ApplyBuiltinTransfer=*/false);
                             })
                             .withASTBuildArgs({"-fsyntax-only", "-std=c++17"}),
                         /*VerifyResults=*/std::move(Expectations)),

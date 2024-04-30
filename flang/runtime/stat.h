@@ -11,8 +11,7 @@
 
 #ifndef FORTRAN_RUNTIME_STAT_H_
 #define FORTRAN_RUNTIME_STAT_H_
-#include "flang/Common/api-attrs.h"
-#include "flang/ISO_Fortran_binding_wrapper.h"
+#include "flang/ISO_Fortran_binding.h"
 #include "flang/Runtime/magic-numbers.h"
 namespace Fortran::runtime {
 
@@ -51,12 +50,11 @@ enum Stat {
   StatValueTooShort = FORTRAN_RUNTIME_STAT_VALUE_TOO_SHORT,
   StatMoveAllocSameAllocatable =
       FORTRAN_RUNTIME_STAT_MOVE_ALLOC_SAME_ALLOCATABLE,
-  StatBadPointerDeallocation = FORTRAN_RUNTIME_STAT_BAD_POINTER_DEALLOCATION,
 };
 
-RT_API_ATTRS const char *StatErrorString(int);
-RT_API_ATTRS int ToErrmsg(const Descriptor *errmsg, int stat); // returns stat
-RT_API_ATTRS int ReturnError(Terminator &, int stat,
-    const Descriptor *errmsg = nullptr, bool hasStat = false);
+const char *StatErrorString(int);
+int ToErrmsg(const Descriptor *errmsg, int stat); // returns stat
+int ReturnError(Terminator &, int stat, const Descriptor *errmsg = nullptr,
+    bool hasStat = false);
 } // namespace Fortran::runtime
 #endif // FORTRAN_RUNTIME_STAT_H

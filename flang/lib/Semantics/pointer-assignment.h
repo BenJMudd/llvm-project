@@ -26,19 +26,17 @@ class Symbol;
 bool CheckPointerAssignment(
     SemanticsContext &, const evaluate::Assignment &, const Scope &);
 bool CheckPointerAssignment(SemanticsContext &, const SomeExpr &lhs,
-    const SomeExpr &rhs, const Scope &, bool isBoundsRemapping,
-    bool isAssumedRank);
+    const SomeExpr &rhs, const Scope &, bool isBoundsRemapping = false);
+bool CheckStructConstructorPointerComponent(
+    SemanticsContext &, const Symbol &lhs, const SomeExpr &rhs, const Scope &);
 bool CheckPointerAssignment(SemanticsContext &, parser::CharBlock source,
     const std::string &description,
     const evaluate::characteristics::DummyDataObject &, const SomeExpr &rhs,
-    const Scope &, bool isAssumedRank);
-
-bool CheckStructConstructorPointerComponent(
-    SemanticsContext &, const Symbol &lhs, const SomeExpr &rhs, const Scope &);
+    const Scope &);
 
 // Checks whether an expression is a valid static initializer for a
 // particular pointer designator.
-bool CheckInitialDataPointerTarget(SemanticsContext &, const SomeExpr &pointer,
+bool CheckInitialTarget(SemanticsContext &, const SomeExpr &pointer,
     const SomeExpr &init, const Scope &);
 
 } // namespace Fortran::semantics

@@ -13,7 +13,4 @@ executable("clang-repl") {
     "//llvm/lib/Target:TargetsToBuild",
   ]
   sources = [ "ClangRepl.cpp" ]
-  if (current_os == "linux") {
-    ldflags = [ "-Wl,--export-dynamic" ]
-  }
 }

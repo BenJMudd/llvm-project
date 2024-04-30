@@ -108,19 +108,18 @@ public:
       llvm::DenseMap<NamingCheckId, NamingCheckFailure>;
 
   /// Check Macros for style violations.
-  void checkMacro(const Token &MacroNameTok, const MacroInfo *MI,
-                  const SourceManager &SourceMgr);
+  void checkMacro(const SourceManager &SourceMgr, const Token &MacroNameTok,
+                  const MacroInfo *MI);
 
   /// Add a usage of a macro if it already has a violation.
-  void expandMacro(const Token &MacroNameTok, const MacroInfo *MI,
-                   const SourceManager &SourceMgr);
+  void expandMacro(const Token &MacroNameTok, const MacroInfo *MI);
 
   void addUsage(const RenamerClangTidyCheck::NamingCheckId &Decl,
-                SourceRange Range, const SourceManager &SourceMgr);
+                SourceRange Range, const SourceManager *SourceMgr = nullptr);
 
   /// Convenience method when the usage to be added is a NamedDecl.
   void addUsage(const NamedDecl *Decl, SourceRange Range,
-                const SourceManager &SourceMgr);
+                const SourceManager *SourceMgr = nullptr);
 
   void checkNamedDecl(const NamedDecl *Decl, const SourceManager &SourceMgr);
 

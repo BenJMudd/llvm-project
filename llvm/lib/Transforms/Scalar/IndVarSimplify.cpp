@@ -70,7 +70,6 @@
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/Transforms/Scalar/SimpleLoopUnswitch.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Utils/Local.h"
 #include "llvm/Transforms/Utils/LoopUtils.h"
@@ -138,8 +137,6 @@ class IndVarSimplify {
   SmallVector<WeakTrackingVH, 16> DeadInsts;
   bool WidenIndVars;
 
-  bool RunUnswitching = false;
-
   bool handleFloatingPointIV(Loop *L, PHINode *PH);
   bool rewriteNonIntegerIVs(Loop *L);
 
@@ -173,8 +170,6 @@ public:
   }
 
   bool run(Loop *L);
-
-  bool runUnswitching() const { return RunUnswitching; }
 };
 
 } // end anonymous namespace
@@ -355,19 +350,18 @@ bool IndVarSimplify::handleFloatingPointIV(Loop *L, PHINode *PN) {
   IntegerType *Int32Ty = Type::getInt32Ty(PN->getContext());
 
   // Insert new integer induction variable.
-  PHINode *NewPHI =
-      PHINode::Create(Int32Ty, 2, PN->getName() + ".int", PN->getIterator());
+  PHINode *NewPHI = PHINode::Create(Int32Ty, 2, PN->getName()+".int", PN);
   NewPHI->addIncoming(ConstantInt::get(Int32Ty, InitValue),
                       PN->getIncomingBlock(IncomingEdge));
 
   Value *NewAdd =
-      BinaryOperator::CreateAdd(NewPHI, ConstantInt::get(Int32Ty, IncValue),
-                                Incr->getName() + ".int", Incr->getIterator());
+    BinaryOperator::CreateAdd(NewPHI, ConstantInt::get(Int32Ty, IncValue),
+                              Incr->getName()+".int", Incr);
   NewPHI->addIncoming(NewAdd, PN->getIncomingBlock(BackEdge));
 
-  ICmpInst *NewCompare =
-      new ICmpInst(TheBr->getIterator(), NewPred, NewAdd,
-                   ConstantInt::get(Int32Ty, ExitValue), Compare->getName());
+  ICmpInst *NewCompare = new ICmpInst(TheBr, NewPred, NewAdd,
+                                      ConstantInt::get(Int32Ty, ExitValue),
+                                      Compare->getName());
 
   // In the following deletions, PN may become dead and may be deleted.
   // Use a WeakTrackingVH to observe whether this happens.
@@ -392,7 +386,7 @@ bool IndVarSimplify::handleFloatingPointIV(Loop *L, PHINode *PN) {
   // platforms.
   if (WeakPH) {
     Value *Conv = new SIToFPInst(NewPHI, PN->getType(), "indvar.conv",
-                                 PN->getParent()->getFirstInsertionPt());
+                                 &*PN->getParent()->getFirstInsertionPt());
     PN->replaceAllUsesWith(Conv);
     RecursivelyDeleteTriviallyDeadInstructions(PN, TLI, MSSAU.get());
   }
@@ -620,11 +614,9 @@ bool IndVarSimplify::simplifyAndExtend(Loop *L,
       // Information about sign/zero extensions of CurrIV.
       IndVarSimplifyVisitor Visitor(CurrIV, SE, TTI, DT);
 
-      const auto &[C, U] = simplifyUsersOfIV(CurrIV, SE, DT, LI, TTI, DeadInsts,
-                                             Rewriter, &Visitor);
+      Changed |= simplifyUsersOfIV(CurrIV, SE, DT, LI, TTI, DeadInsts, Rewriter,
+                                   &Visitor);
 
-      Changed |= C;
-      RunUnswitching |= U;
       if (Visitor.WI.WidestNativeType) {
         WideIVs.push_back(Visitor.WI);
       }
@@ -1524,9 +1516,9 @@ bool IndVarSimplify::canonicalizeExitCondition(Loop *L) {
     // loop varying work to loop-invariant work.
     auto doRotateTransform = [&]() {
       assert(ICmp->isUnsigned() && "must have proven unsigned already");
-      auto *NewRHS = CastInst::Create(
-          Instruction::Trunc, RHS, LHSOp->getType(), "",
-          L->getLoopPreheader()->getTerminator()->getIterator());
+      auto *NewRHS =
+        CastInst::Create(Instruction::Trunc, RHS, LHSOp->getType(), "",
+                         L->getLoopPreheader()->getTerminator());
       ICmp->setOperand(Swapped ? 1 : 0, LHSOp);
       ICmp->setOperand(Swapped ? 0 : 1, NewRHS);
       if (LHS->use_empty())
@@ -1881,7 +1873,6 @@ bool IndVarSimplify::predicateLoopExits(Loop *L, SCEVExpander &Rewriter) {
     if (OldCond->use_empty())
       DeadInsts.emplace_back(OldCond);
     Changed = true;
-    RunUnswitching = true;
   }
 
   return Changed;
@@ -2006,12 +1997,20 @@ bool IndVarSimplify::run(Loop *L) {
                                        TTI, PreHeader->getTerminator()))
         continue;
 
-      if (!Rewriter.isSafeToExpand(ExitCount))
-        continue;
-
-      Changed |= linearFunctionTestReplace(L, ExitingBB,
-                                           ExitCount, IndVar,
-                                           Rewriter);
+      // Check preconditions for proper SCEVExpander operation. SCEV does not
+      // express SCEVExpander's dependencies, such as LoopSimplify. Instead
+      // any pass that uses the SCEVExpander must do it. This does not work
+      // well for loop passes because SCEVExpander makes assumptions about
+      // all loops, while LoopPassManager only forces the current loop to be
+      // simplified.
+      //
+      // FIXME: SCEV expansion has no way to bail out, so the caller must
+      // explicitly check any assumptions made by SCEV. Brittle.
+      const SCEVAddRecExpr *AR = dyn_cast<SCEVAddRecExpr>(ExitCount);
+      if (!AR || AR->getLoop()->getLoopPreheader())
+        Changed |= linearFunctionTestReplace(L, ExitingBB,
+                                             ExitCount, IndVar,
+                                             Rewriter);
     }
   }
   // Clear the rewriter cache, because values that are in the rewriter's cache
@@ -2067,11 +2066,6 @@ PreservedAnalyses IndVarSimplifyPass::run(Loop &L, LoopAnalysisManager &AM,
 
   auto PA = getLoopPassPreservedAnalyses();
   PA.preserveSet<CFGAnalyses>();
-  if (IVS.runUnswitching()) {
-    AM.getResult<ShouldRunExtraSimpleLoopUnswitch>(L, AR);
-    PA.preserve<ShouldRunExtraSimpleLoopUnswitch>();
-  }
-
   if (AR.MSSA)
     PA.preserve<MemorySSAAnalysis>();
   return PA;

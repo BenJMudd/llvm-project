@@ -14,7 +14,7 @@
 #define MLIR_DIALECT_PDLINTERP_IR_PDLINTERPOPS
 
 include "mlir/Dialect/PDL/IR/PDLTypes.td"
-include "mlir/Interfaces/FunctionInterfaces.td"
+include "mlir/IR/FunctionInterfaces.td"
 include "mlir/IR/SymbolInterfaces.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 
@@ -38,6 +38,7 @@ def PDLInterp_Dialect : Dialect {
   let name = "pdl_interp";
   let cppNamespace = "::mlir::pdl_interp";
   let dependentDialects = ["pdl::PDLDialect"];
+  let usePropertiesForAttributes = 1;
   let extraClassDeclaration = [{
     /// Returns the name of the function containing the matcher code. This
     /// function is called by the interpreter when matching an operation.
@@ -88,11 +89,8 @@ def PDLInterp_ApplyConstraintOp : PDLInterp_PredicateOp<"apply_constraint"> {
   let description = [{
     `pdl_interp.apply_constraint` operations apply a generic constraint, that
     has been registered with the interpreter, with a given set of positional
-    values.
-    The constraint function may return any number of results.
-    On success, this operation branches to the true destination,
-    otherwise the false destination is taken. This behavior can be reversed
-    by setting the attribute `isNegated` to true.
+    values. On success, this operation branches to the true destination,
+    otherwise the false destination is taken.
 
     Example:
 
@@ -103,13 +101,9 @@ def PDLInterp_ApplyConstraintOp : PDLInterp_PredicateOp<"apply_constraint"> {
     ```
   }];
 
-  let arguments = (ins StrAttr:$name, 
-                       Variadic<PDL_AnyType>:$args,
-                       DefaultValuedAttr<BoolAttr, "false">:$isNegated);
-  let results = (outs Variadic<PDL_AnyType>:$results);
+  let arguments = (ins StrAttr:$name, Variadic<PDL_AnyType>:$args);
   let assemblyFormat = [{
-    $name `(` $args `:` type($args) `)` (`:` type($results)^)? attr-dict 
-    `->` successors
+    $name `(` $args `:` type($args) `)` attr-dict `->` successors
   }];
 }
 
@@ -681,8 +675,6 @@ def PDLInterp_FuncOp : PDLInterp_Op<"func", [
 
     /// Returns the result types of this function.
     ArrayRef<Type> getResultTypes() { return getFunctionType().getResults(); }
-
-    Region *getCallableRegion() { return &getBody(); }
   }];
   let hasCustomAssemblyFormat = 1;
   let skipDefaultBuilders = 1;

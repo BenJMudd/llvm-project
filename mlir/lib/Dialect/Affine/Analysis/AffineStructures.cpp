@@ -11,7 +11,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "mlir/Dialect/Affine/Analysis/AffineStructures.h"
-#include "mlir/Analysis/Presburger/IntegerRelation.h"
 #include "mlir/Analysis/Presburger/LinearTransform.h"
 #include "mlir/Analysis/Presburger/Simplex.h"
 #include "mlir/Analysis/Presburger/Utils.h"
@@ -75,7 +74,7 @@ FlatAffineValueConstraints::addAffineForOpDomain(AffineForOp forOp) {
     return failure();
   }
 
-  int64_t step = forOp.getStepAsInt();
+  int64_t step = forOp.getStep();
   if (step != 1) {
     if (!forOp.hasConstantLowerBound())
       LLVM_DEBUG(forOp.emitWarning("domain conservatively approximated"));
@@ -168,10 +167,10 @@ FlatAffineValueConstraints::addDomainFromSliceMaps(ArrayRef<AffineMap> lbMaps,
         // iteration (e.g., lbMap.getResult(0) = 0, ubMap.getResult(0) = 1).
         // Make sure we skip those cases by checking that the lb result is not
         // just a constant.
-        !isa<AffineConstantExpr>(lbMap.getResult(0))) {
+        !lbMap.getResult(0).isa<AffineConstantExpr>()) {
       // Limited support: we expect the lb result to be just a loop dimension.
       // Not supported otherwise for now.
-      AffineDimExpr result = dyn_cast<AffineDimExpr>(lbMap.getResult(0));
+      AffineDimExpr result = lbMap.getResult(0).dyn_cast<AffineDimExpr>();
       if (!result)
         return failure();
 
@@ -373,8 +372,9 @@ FlatAffineValueConstraints FlatAffineRelation::getRangeSet() const {
 void FlatAffineRelation::compose(const FlatAffineRelation &other) {
   assert(getNumDomainDims() == other.getNumRangeDims() &&
          "Domain of this and range of other do not match");
-  assert(space.getDomainSpace().isAligned(other.getSpace().getRangeSpace()) &&
-         "Values of domain of this and range of other do not match");
+  assert(std::equal(values.begin(), values.begin() + getNumDomainDims(),
+                    other.values.begin() + other.getNumDomainDims()) &&
+         "Domain of this and range of other do not match");
 
   FlatAffineRelation rel = other;
 
@@ -491,25 +491,20 @@ void FlatAffineRelation::removeVarRange(VarKind kind, unsigned varStart,
 }
 
 LogicalResult mlir::affine::getRelationFromMap(AffineMap &map,
-                                               IntegerRelation &rel) {
+                                               FlatAffineRelation &rel) {
   // Get flattened affine expressions.
   std::vector<SmallVector<int64_t, 8>> flatExprs;
   FlatAffineValueConstraints localVarCst;
   if (failed(getFlattenedAffineExprs(map, &flatExprs, &localVarCst)))
     return failure();
 
-  const unsigned oldDimNum = localVarCst.getNumDimVars();
-  const unsigned oldCols = localVarCst.getNumCols();
-  const unsigned numRangeVars = map.getNumResults();
-  const unsigned numDomainVars = map.getNumDims();
+  unsigned oldDimNum = localVarCst.getNumDimVars();
+  unsigned oldCols = localVarCst.getNumCols();
+  unsigned numRangeVars = map.getNumResults();
+  unsigned numDomainVars = map.getNumDims();
 
   // Add range as the new expressions.
   localVarCst.appendDimVar(numRangeVars);
-
-  // Add identifiers to the local constraints as getFlattenedAffineExprs creates
-  // a FlatLinearConstraints with no identifiers.
-  for (unsigned i = 0, e = localVarCst.getNumDimAndSymbolVars(); i < e; ++i)
-    localVarCst.setValue(i, Value());
 
   // Add equalities between source and range.
   SmallVector<int64_t, 8> eq(localVarCst.getNumCols());
@@ -526,26 +521,24 @@ LogicalResult mlir::affine::getRelationFromMap(AffineMap &map,
     localVarCst.addEquality(eq);
   }
 
-  rel = localVarCst;
+  // Create relation and return success.
+  rel = FlatAffineRelation(numDomainVars, numRangeVars, localVarCst);
   return success();
 }
 
 LogicalResult mlir::affine::getRelationFromMap(const AffineValueMap &map,
-                                               IntegerRelation &rel) {
+                                               FlatAffineRelation &rel) {
 
   AffineMap affineMap = map.getAffineMap();
   if (failed(getRelationFromMap(affineMap, rel)))
     return failure();
 
-  // Set identifiers for domain and symbol variables.
-  for (unsigned i = 0, e = affineMap.getNumDims(); i < e; ++i)
-    rel.setId(VarKind::SetDim, i, Identifier(map.getOperand(i)));
-
-  const unsigned mapNumResults = affineMap.getNumResults();
-  for (unsigned i = 0, e = rel.getNumSymbolVars(); i < e; ++i)
-    rel.setId(
-        VarKind::Symbol, i,
-        Identifier(map.getOperand(rel.getNumDimVars() + i - mapNumResults)));
+  // Set symbol values for domain dimensions and symbols.
+  for (unsigned i = 0, e = rel.getNumDomainDims(); i < e; ++i)
+    rel.setValue(i, map.getOperand(i));
+  for (unsigned i = rel.getNumDimVars(), e = rel.getNumDimAndSymbolVars();
+       i < e; ++i)
+    rel.setValue(i, map.getOperand(i - rel.getNumRangeDims()));
 
   return success();
 }

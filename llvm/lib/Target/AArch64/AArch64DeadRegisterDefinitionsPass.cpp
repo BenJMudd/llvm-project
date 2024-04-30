@@ -124,8 +124,7 @@ void AArch64DeadRegisterDefinitions::processMachineBasicBlock(
       LLVM_DEBUG(dbgs() << "    Ignoring, operand is frame index\n");
       continue;
     }
-    if (MI.definesRegister(AArch64::XZR, /*TRI=*/nullptr) ||
-        MI.definesRegister(AArch64::WZR, /*TRI=*/nullptr)) {
+    if (MI.definesRegister(AArch64::XZR) || MI.definesRegister(AArch64::WZR)) {
       // It is not allowed to write to the same register (not even the zero
       // register) twice in a single instruction.
       LLVM_DEBUG(

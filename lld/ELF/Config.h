@@ -53,14 +53,11 @@ enum ELFKind : uint8_t {
 };
 
 // For -Bno-symbolic, -Bsymbolic-non-weak-functions, -Bsymbolic-functions,
-// -Bsymbolic-non-weak, -Bsymbolic.
-enum class BsymbolicKind { None, NonWeakFunctions, Functions, NonWeak, All };
+// -Bsymbolic.
+enum class BsymbolicKind { None, NonWeakFunctions, Functions, All };
 
 // For --build-id.
 enum class BuildIdKind { None, Fast, Md5, Sha1, Hexstring, Uuid };
-
-// For --call-graph-profile-sort={none,hfsort,cdsort}.
-enum class CGProfileSortKind { None, Hfsort, Cdsort };
 
 // For --discard-{all,locals,none}.
 enum class DiscardPolicy { Default, All, Locals, None };
@@ -126,10 +123,9 @@ public:
 private:
   void createFiles(llvm::opt::InputArgList &args);
   void inferMachineType();
-  template <class ELFT> void link(llvm::opt::InputArgList &args);
+  void link(llvm::opt::InputArgList &args);
   template <class ELFT> void compileBitcodeFiles(bool skipLinkedOutput);
-  bool tryAddFatLTOFile(MemoryBufferRef mb, StringRef archiveName,
-                        uint64_t offsetInArchive, bool lazy);
+
   // True if we are in --whole-archive and --no-whole-archive.
   bool inWholeArchive = false;
 
@@ -138,7 +134,7 @@ private:
 
   std::unique_ptr<BitcodeCompiler> lto;
   std::vector<InputFile *> files;
-  InputFile *armCmseImpLib = nullptr;
+  std::optional<InputFile *> armCmseImpLib;
 
 public:
   SmallVector<std::pair<StringRef, unsigned>, 0> archiveFiles;
@@ -187,8 +183,6 @@ struct Config {
   llvm::StringRef cmseOutputLib;
   StringRef zBtiReport = "none";
   StringRef zCetReport = "none";
-  StringRef zPauthReport = "none";
-  bool ltoBBAddrMap;
   llvm::StringRef ltoBasicBlockSections;
   std::pair<llvm::StringRef, llvm::StringRef> thinLTOObjectSuffixReplace;
   llvm::StringRef thinLTOPrefixReplaceOld;
@@ -211,7 +205,6 @@ struct Config {
       callGraphProfile;
   bool cmseImplib = false;
   bool allowMultipleDefinition;
-  bool fatLTOObjects;
   bool androidPackDynRelocs = false;
   bool armHasBlx = false;
   bool armHasMovtMovw = false;
@@ -220,16 +213,13 @@ struct Config {
   bool asNeeded = false;
   bool armBe8 = false;
   BsymbolicKind bsymbolic = BsymbolicKind::None;
-  CGProfileSortKind callGraphProfileSort;
+  bool callGraphProfileSort;
   bool checkSections;
   bool checkDynamicRelocs;
-  std::optional<llvm::DebugCompressionType> compressDebugSections;
-  llvm::SmallVector<std::pair<llvm::GlobPattern, llvm::DebugCompressionType>, 0>
-      compressSections;
+  llvm::DebugCompressionType compressDebugSections;
   bool cref;
   llvm::SmallVector<std::pair<llvm::GlobPattern, uint64_t>, 0>
       deadRelocInNonAlloc;
-  bool debugNames;
   bool demangle = true;
   bool dependentLibraries;
   bool disableVerify;
@@ -255,7 +245,6 @@ struct Config {
   bool ltoDebugPassManager;
   bool ltoEmitAsm;
   bool ltoUniqueBasicBlockSectionNames;
-  bool ltoValidateAllVtablesHaveTypeInfos;
   bool ltoWholeProgramVisibility;
   bool mergeArmExidx;
   bool mipsN32Abi = false;
@@ -275,7 +264,6 @@ struct Config {
   bool printGcSections;
   bool printIcfSections;
   bool printMemoryUsage;
-  bool rejectMismatch;
   bool relax;
   bool relaxGP;
   bool relocatable;
@@ -315,7 +303,6 @@ struct Config {
   bool zInitfirst;
   bool zInterpose;
   bool zKeepTextSectionPrefix;
-  bool zLrodataAfterBss;
   bool zNodefaultlib;
   bool zNodelete;
   bool zNodlopen;
@@ -352,7 +339,7 @@ struct Config {
   uint64_t zStackSize;
   unsigned ltoPartitions;
   unsigned ltoo;
-  llvm::CodeGenOptLevel ltoCgo;
+  llvm::CodeGenOpt::Level ltoCgo;
   unsigned optimize;
   StringRef thinLTOJobs;
   unsigned timeTraceGranularity;
@@ -373,7 +360,7 @@ struct Config {
   bool isLE;
 
   // endianness::little if isLE is true. endianness::big otherwise.
-  llvm::endianness endianness;
+  llvm::support::endianness endianness;
 
   // True if the target is the little-endian MIPS64.
   //
@@ -480,29 +467,16 @@ struct Ctx {
                  std::pair<const InputFile *, const InputFile *>>
       backwardReferences;
   llvm::SmallSet<llvm::StringRef, 0> auxiliaryFiles;
-  // InputFile for linker created symbols with no source location.
-  InputFile *internalFile;
   // True if SHT_LLVM_SYMPART is used.
   std::atomic<bool> hasSympart{false};
   // True if there are TLS IE relocations. Set DF_STATIC_TLS if -shared.
   std::atomic<bool> hasTlsIe{false};
   // True if we need to reserve two .got entries for local-dynamic TLS model.
   std::atomic<bool> needsTlsLd{false};
-  // True if all native vtable symbols have corresponding type info symbols
-  // during LTO.
-  bool ltoAllVtablesHaveTypeInfos;
-
-  // Each symbol assignment and DEFINED(sym) reference is assigned an increasing
-  // order. Each DEFINED(sym) evaluation checks whether the reference happens
-  // before a possible `sym = expr;`.
-  unsigned scriptSymOrderCounter = 1;
-  llvm::DenseMap<const Symbol *, unsigned> scriptSymOrder;
 
   void reset();
 
   llvm::raw_fd_ostream openAuxiliaryFile(llvm::StringRef, std::error_code &);
-
-  ArrayRef<uint8_t> aarch64PauthAbiCoreInfo;
 };
 
 LLVM_LIBRARY_VISIBILITY extern Ctx ctx;

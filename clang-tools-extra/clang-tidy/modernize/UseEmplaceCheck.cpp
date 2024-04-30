@@ -13,10 +13,6 @@ using namespace clang::ast_matchers;
 namespace clang::tidy::modernize {
 
 namespace {
-AST_MATCHER_P(InitListExpr, initCountLeq, unsigned, N) {
-  return Node.getNumInits() <= N;
-}
-
 // Identical to hasAnyName, except it does not take template specifiers into
 // account. This is used to match the functions names as in
 // DefaultEmplacyFunctions below without caring about the template types of the
@@ -45,11 +41,11 @@ AST_MATCHER_P(NamedDecl, hasAnyNameIgnoringTemplates, std::vector<StringRef>,
   // FullNameTrimmed matches any of the given Names.
   const StringRef FullNameTrimmedRef = FullNameTrimmed;
   for (const StringRef Pattern : Names) {
-    if (Pattern.starts_with("::")) {
+    if (Pattern.startswith("::")) {
       if (FullNameTrimmed == Pattern)
         return true;
-    } else if (FullNameTrimmedRef.ends_with(Pattern) &&
-               FullNameTrimmedRef.drop_back(Pattern.size()).ends_with("::")) {
+    } else if (FullNameTrimmedRef.endswith(Pattern) &&
+               FullNameTrimmedRef.drop_back(Pattern.size()).endswith("::")) {
       return true;
     }
   }
@@ -71,9 +67,11 @@ AST_MATCHER_P(CallExpr, hasLastArgument,
 // function had parameters defined (this is useful to check if there is only one
 // variadic argument).
 AST_MATCHER(CXXMemberCallExpr, hasSameNumArgsAsDeclNumParams) {
-  if (const FunctionTemplateDecl *Primary =
-          Node.getMethodDecl()->getPrimaryTemplate())
-    return Node.getNumArgs() == Primary->getTemplatedDecl()->getNumParams();
+  if (Node.getMethodDecl()->isFunctionTemplateSpecialization())
+    return Node.getNumArgs() == Node.getMethodDecl()
+                                    ->getPrimaryTemplate()
+                                    ->getTemplatedDecl()
+                                    ->getNumParams();
 
   return Node.getNumArgs() == Node.getMethodDecl()->getNumParams();
 }
@@ -209,12 +207,11 @@ void UseEmplaceCheck::registerMatchers(MatchFinder *Finder) {
   auto HasConstructExpr = has(ignoringImplicit(SoughtConstructExpr));
 
   // allow for T{} to be replaced, even if no CTOR is declared
-  auto HasConstructInitListExpr = has(initListExpr(
-      initCountLeq(1), anyOf(allOf(has(SoughtConstructExpr),
-                                   has(cxxConstructExpr(argumentCountIs(0)))),
-                             has(cxxBindTemporaryExpr(
-                                 has(SoughtConstructExpr),
-                                 has(cxxConstructExpr(argumentCountIs(0))))))));
+  auto HasConstructInitListExpr = has(initListExpr(anyOf(
+      allOf(has(SoughtConstructExpr),
+            has(cxxConstructExpr(argumentCountIs(0)))),
+      has(cxxBindTemporaryExpr(has(SoughtConstructExpr),
+                               has(cxxConstructExpr(argumentCountIs(0))))))));
   auto HasBracedInitListExpr =
       anyOf(has(cxxBindTemporaryExpr(HasConstructInitListExpr)),
             HasConstructInitListExpr);

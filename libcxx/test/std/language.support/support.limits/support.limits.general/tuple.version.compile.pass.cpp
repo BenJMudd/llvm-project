@@ -15,16 +15,13 @@
 
 // Test the feature test macros defined by <tuple>
 
-/*  Constant                          Value
-    __cpp_lib_apply                   201603L [C++17]
-    __cpp_lib_constexpr_tuple         201811L [C++20]
-    __cpp_lib_constrained_equality    202403L [C++26]
-    __cpp_lib_make_from_tuple         201606L [C++17]
-    __cpp_lib_ranges_zip              202110L [C++23]
-    __cpp_lib_tuple_element_t         201402L [C++14]
-    __cpp_lib_tuple_like              202207L [C++23]
-                                      202311L [C++26]
-    __cpp_lib_tuples_by_type          201304L [C++14]
+/*  Constant                     Value
+    __cpp_lib_apply              201603L [C++17]
+    __cpp_lib_constexpr_tuple    201811L [C++20]
+    __cpp_lib_make_from_tuple    201606L [C++17]
+    __cpp_lib_ranges_zip         202110L [C++23]
+    __cpp_lib_tuple_element_t    201402L [C++14]
+    __cpp_lib_tuples_by_type     201304L [C++14]
 */
 
 #include <tuple>
@@ -40,10 +37,6 @@
 #   error "__cpp_lib_constexpr_tuple should not be defined before c++20"
 # endif
 
-# ifdef __cpp_lib_constrained_equality
-#   error "__cpp_lib_constrained_equality should not be defined before c++26"
-# endif
-
 # ifdef __cpp_lib_make_from_tuple
 #   error "__cpp_lib_make_from_tuple should not be defined before c++17"
 # endif
@@ -54,10 +47,6 @@
 
 # ifdef __cpp_lib_tuple_element_t
 #   error "__cpp_lib_tuple_element_t should not be defined before c++14"
-# endif
-
-# ifdef __cpp_lib_tuple_like
-#   error "__cpp_lib_tuple_like should not be defined before c++23"
 # endif
 
 # ifdef __cpp_lib_tuples_by_type
@@ -74,10 +63,6 @@
 #   error "__cpp_lib_constexpr_tuple should not be defined before c++20"
 # endif
 
-# ifdef __cpp_lib_constrained_equality
-#   error "__cpp_lib_constrained_equality should not be defined before c++26"
-# endif
-
 # ifdef __cpp_lib_make_from_tuple
 #   error "__cpp_lib_make_from_tuple should not be defined before c++17"
 # endif
@@ -91,10 +76,6 @@
 # endif
 # if __cpp_lib_tuple_element_t != 201402L
 #   error "__cpp_lib_tuple_element_t should have the value 201402L in c++14"
-# endif
-
-# ifdef __cpp_lib_tuple_like
-#   error "__cpp_lib_tuple_like should not be defined before c++23"
 # endif
 
 # ifndef __cpp_lib_tuples_by_type
@@ -117,10 +98,6 @@
 #   error "__cpp_lib_constexpr_tuple should not be defined before c++20"
 # endif
 
-# ifdef __cpp_lib_constrained_equality
-#   error "__cpp_lib_constrained_equality should not be defined before c++26"
-# endif
-
 # ifndef __cpp_lib_make_from_tuple
 #   error "__cpp_lib_make_from_tuple should be defined in c++17"
 # endif
@@ -137,10 +114,6 @@
 # endif
 # if __cpp_lib_tuple_element_t != 201402L
 #   error "__cpp_lib_tuple_element_t should have the value 201402L in c++17"
-# endif
-
-# ifdef __cpp_lib_tuple_like
-#   error "__cpp_lib_tuple_like should not be defined before c++23"
 # endif
 
 # ifndef __cpp_lib_tuples_by_type
@@ -166,10 +139,6 @@
 #   error "__cpp_lib_constexpr_tuple should have the value 201811L in c++20"
 # endif
 
-# ifdef __cpp_lib_constrained_equality
-#   error "__cpp_lib_constrained_equality should not be defined before c++26"
-# endif
-
 # ifndef __cpp_lib_make_from_tuple
 #   error "__cpp_lib_make_from_tuple should be defined in c++20"
 # endif
@@ -186,10 +155,6 @@
 # endif
 # if __cpp_lib_tuple_element_t != 201402L
 #   error "__cpp_lib_tuple_element_t should have the value 201402L in c++20"
-# endif
-
-# ifdef __cpp_lib_tuple_like
-#   error "__cpp_lib_tuple_like should not be defined before c++23"
 # endif
 
 # ifndef __cpp_lib_tuples_by_type
@@ -213,10 +178,6 @@
 # endif
 # if __cpp_lib_constexpr_tuple != 201811L
 #   error "__cpp_lib_constexpr_tuple should have the value 201811L in c++23"
-# endif
-
-# ifdef __cpp_lib_constrained_equality
-#   error "__cpp_lib_constrained_equality should not be defined before c++26"
 # endif
 
 # ifndef __cpp_lib_make_from_tuple
@@ -246,19 +207,6 @@
 #   error "__cpp_lib_tuple_element_t should have the value 201402L in c++23"
 # endif
 
-# if !defined(_LIBCPP_VERSION)
-#   ifndef __cpp_lib_tuple_like
-#     error "__cpp_lib_tuple_like should be defined in c++23"
-#   endif
-#   if __cpp_lib_tuple_like != 202207L
-#     error "__cpp_lib_tuple_like should have the value 202207L in c++23"
-#   endif
-# else // _LIBCPP_VERSION
-#   ifdef __cpp_lib_tuple_like
-#     error "__cpp_lib_tuple_like should not be defined because it is unimplemented in libc++!"
-#   endif
-# endif
-
 # ifndef __cpp_lib_tuples_by_type
 #   error "__cpp_lib_tuples_by_type should be defined in c++23"
 # endif
@@ -280,19 +228,6 @@
 # endif
 # if __cpp_lib_constexpr_tuple != 201811L
 #   error "__cpp_lib_constexpr_tuple should have the value 201811L in c++26"
-# endif
-
-# if !defined(_LIBCPP_VERSION)
-#   ifndef __cpp_lib_constrained_equality
-#     error "__cpp_lib_constrained_equality should be defined in c++26"
-#   endif
-#   if __cpp_lib_constrained_equality != 202403L
-#     error "__cpp_lib_constrained_equality should have the value 202403L in c++26"
-#   endif
-# else // _LIBCPP_VERSION
-#   ifdef __cpp_lib_constrained_equality
-#     error "__cpp_lib_constrained_equality should not be defined because it is unimplemented in libc++!"
-#   endif
 # endif
 
 # ifndef __cpp_lib_make_from_tuple
@@ -320,19 +255,6 @@
 # endif
 # if __cpp_lib_tuple_element_t != 201402L
 #   error "__cpp_lib_tuple_element_t should have the value 201402L in c++26"
-# endif
-
-# if !defined(_LIBCPP_VERSION)
-#   ifndef __cpp_lib_tuple_like
-#     error "__cpp_lib_tuple_like should be defined in c++26"
-#   endif
-#   if __cpp_lib_tuple_like != 202311L
-#     error "__cpp_lib_tuple_like should have the value 202311L in c++26"
-#   endif
-# else // _LIBCPP_VERSION
-#   ifdef __cpp_lib_tuple_like
-#     error "__cpp_lib_tuple_like should not be defined because it is unimplemented in libc++!"
-#   endif
 # endif
 
 # ifndef __cpp_lib_tuples_by_type

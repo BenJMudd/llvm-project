@@ -16,7 +16,6 @@
 include "mlir/Dialect/Arith/IR/ArithBase.td"
 include "mlir/Dialect/Affine/IR/AffineMemoryOpInterfaces.td"
 include "mlir/Interfaces/ControlFlowInterfaces.td"
-include "mlir/Interfaces/InferTypeOpInterface.td"
 include "mlir/Interfaces/LoopLikeInterface.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 
@@ -24,7 +23,8 @@ def Affine_Dialect : Dialect {
   let name = "affine";
   let cppNamespace = "::mlir::affine";
   let hasConstantMaterializer = 1;
-  let dependentDialects = ["arith::ArithDialect", "ub::UBDialect"];
+  let usePropertiesForAttributes = 1;
+  let dependentDialects = ["arith::ArithDialect"];
 }
 
 // Base class for Affine dialect ops.
@@ -64,11 +64,14 @@ def AffineApplyOp : Affine_Op<"apply", [Pure]> {
   // has a constant builder. That way we wouldn't need to explicitly specify the
   // result types here.
   let builders = [
+    OpBuilder<(ins "AffineMap":$map, "ValueRange":$mapOperands),
+    [{
+      build($_builder, $_state, $_builder.getIndexType(), map, mapOperands);
+    }]>,
     OpBuilder<(ins "ArrayRef<AffineExpr> ":$exprList,"ValueRange":$mapOperands),
     [{
       build($_builder, $_state, $_builder.getIndexType(),
-            AffineMap::inferFromExprList(exprList, $_builder.getContext())
-                                        .front(), mapOperands);
+            AffineMap::inferFromExprList(exprList).front(), mapOperands);
     }]>
   ];
 
@@ -115,14 +118,12 @@ def AffineApplyOp : Affine_Op<"apply", [Pure]> {
 }
 
 def AffineForOp : Affine_Op<"for",
-    [AttrSizedOperandSegments, AutomaticAllocationScope,
-     ImplicitAffineTerminator, ConditionallySpeculatable,
+    [AutomaticAllocationScope, ImplicitAffineTerminator, ConditionallySpeculatable,
      RecursiveMemoryEffects, DeclareOpInterfaceMethods<LoopLikeOpInterface,
      ["getSingleInductionVar", "getSingleLowerBound", "getSingleStep",
-      "getSingleUpperBound", "getYieldedValuesMutable",
-      "replaceWithAdditionalYields"]>,
+      "getSingleUpperBound"]>,
      DeclareOpInterfaceMethods<RegionBranchOpInterface,
-     ["getEntrySuccessorOperands"]>]> {
+     ["getSuccessorEntryOperands"]>]> {
   let summary = "for operation";
   let description = [{
     Syntax:
@@ -147,7 +148,7 @@ def AffineForOp : Affine_Op<"for",
     from a lower bound to an upper bound by a stride. The stride, represented by
     `step`, is a positive constant integer which defaults to "1" if not present.
     The lower and upper bounds specify a half-open range: the range includes the
-    lower bound but does not include the upper bound.
+    lower bound but does not include the upper bound.
 
     The lower and upper bounds of a `affine.for` operation are represented as an
     application of an affine mapping to a list of SSA values passed to the map.
@@ -229,12 +230,7 @@ def AffineForOp : Affine_Op<"for",
     explicitly present. The number and types of the "affine.for" results must
     match the initial values in the `iter_args` binding and the yield operands.
   }];
-  let arguments = (ins Variadic<Index>:$lowerBoundOperands,
-                       Variadic<Index>:$upperBoundOperands,
-                       Variadic<AnyType>:$inits,
-                       AffineMapAttr:$lowerBoundMap,
-                       AffineMapAttr:$upperBoundMap,
-                       IndexAttr:$step);
+  let arguments = (ins Variadic<AnyType>);
   let results = (outs Variadic<AnyType>:$results);
   let regions = (region SizedRegion<1>:$region);
 
@@ -256,10 +252,26 @@ def AffineForOp : Affine_Op<"for",
     using BodyBuilderFn =
         function_ref<void(OpBuilder &, Location, Value, ValueRange)>;
 
+    static StringRef getStepAttrStrName() { return "step"; }
+    static StringRef getLowerBoundAttrStrName() { return "lower_bound"; }
+    static StringRef getUpperBoundAttrStrName() { return "upper_bound"; }
+
     BlockArgument getInductionVar() { return getBody()->getArgument(0); }
     Block::BlockArgListType getRegionIterArgs() {
       return getBody()->getArguments().drop_front();
     }
+    Operation::operand_range getIterOperands() {
+      return getOperands().drop_front(getNumControlOperands());
+    }
+
+    // TODO: provide iterators for the lower and upper bound operands
+    // if the current access via getLowerBound(), getUpperBound() is too slow.
+
+    /// Returns operands for the lower bound map.
+    operand_range getLowerBoundOperands();
+
+    /// Returns operands for the upper bound map.
+    operand_range getUpperBoundOperands();
 
     /// Returns operands for the lower and upper bound maps with the operands
     /// for the lower bound map in front of those for the upper bound map.
@@ -272,7 +284,20 @@ def AffineForOp : Affine_Op<"for",
     AffineBound getUpperBound();
 
     /// Returns loop step.
-    int64_t getStepAsInt() { return getStep().getSExtValue(); }
+    int64_t getStep() {
+      return ::llvm::cast<IntegerAttr>((*this)->getAttr(getStepAttrStrName())).getInt();
+    }
+
+    /// Returns affine map for the lower bound.
+    AffineMap getLowerBoundMap() { return getLowerBoundMapAttr().getValue(); }
+    AffineMapAttr getLowerBoundMapAttr() {
+      return ::llvm::cast<AffineMapAttr>((*this)->getAttr(getLowerBoundAttrStrName()));
+    }
+    /// Returns affine map for the upper bound. The upper bound is exclusive.
+    AffineMap getUpperBoundMap() { return getUpperBoundMapAttr().getValue(); }
+    AffineMapAttr getUpperBoundMapAttr() {
+      return ::llvm::cast<AffineMapAttr>((*this)->getAttr(getUpperBoundAttrStrName()));
+    }
 
     /// Set lower bound. The new bound must have the same number of operands as
     /// the current bound map. Otherwise, 'replaceForLowerBound' should be used.
@@ -281,10 +306,18 @@ def AffineForOp : Affine_Op<"for",
     /// current bound map. Otherwise, 'replaceForUpperBound' should be used.
     void setUpperBound(ValueRange operands, AffineMap map);
 
+    /// Set the lower bound map without changing operands.
+    void setLowerBoundMap(AffineMap map);
+
+    /// Set the upper bound map without changing operands.
+    void setUpperBoundMap(AffineMap map);
+
     /// Set loop step.
     void setStep(int64_t step) {
       assert(step > 0 && "step has to be a positive integer constant");
-      setStep(APInt(/*numBits=*/64, step, /*isSigned=*/true));
+      auto *context = getLowerBoundMap().getContext();
+      (*this)->setAttr(StringAttr::get(context, getStepAttrStrName()),
+                       IntegerAttr::get(IndexType::get(context), step));
     }
 
     /// Returns number of region arguments for loop-carried values.
@@ -293,9 +326,7 @@ def AffineForOp : Affine_Op<"for",
     }
 
     /// Number of operands controlling the loop: lb and ub.
-    unsigned getNumControlOperands() {
-      return getOperation()->getNumOperands() - getNumIterOperands();
-    }
+    unsigned getNumControlOperands() { return getOperation()->getNumOperands() - getNumIterOperands(); }
 
     /// Get the number of loop-carried values.
     unsigned getNumIterOperands();
@@ -467,8 +498,7 @@ class AffineLoadOpBase<string mnemonic, list<Trait> traits = []> :
         MemRefsNormalizable])> {
   let arguments = (ins Arg<AnyMemRef, "the reference to load from",
       [MemRead]>:$memref,
-      Variadic<Index>:$indices,
-      AffineMapAttr:$map);
+      Variadic<Index>:$indices);
 
   code extraClassDeclarationBase = [{
     /// Returns the operand index of the memref.
@@ -478,7 +508,7 @@ class AffineLoadOpBase<string mnemonic, list<Trait> traits = []> :
 
     /// Returns the affine map used to index the memref for this operation.
     AffineMapAttr getAffineMapAttr() {
-      return getProperties().map;
+      return ::llvm::cast<AffineMapAttr>((*this)->getAttr(getMapAttrStrName()));
     }
 
     static StringRef getMapAttrStrName() { return "map"; }
@@ -538,6 +568,13 @@ class AffineMinMaxOpBase<string mnemonic, list<Trait> traits = []> :
     Op<Affine_Dialect, mnemonic, traits> {
   let arguments = (ins AffineMapAttr:$map, Variadic<Index>:$operands);
   let results = (outs Index);
+
+  let builders = [
+    OpBuilder<(ins "AffineMap":$affineMap, "ValueRange":$mapOperands),
+    [{
+      build($_builder, $_state, $_builder.getIndexType(), affineMap, mapOperands);
+    }]>
+  ];
 
   let extraClassDeclaration = [{
     static StringRef getMapAttrStrName() { return "map"; }
@@ -765,8 +802,7 @@ def AffinePrefetchOp : Affine_Op<"prefetch",
                    BoolAttr:$isWrite,
                    ConfinedAttr<I32Attr, [IntMinValue<0>,
                      IntMaxValue<3>]>:$localityHint,
-                   BoolAttr:$isDataCache,
-                   AffineMapAttr:$map);
+                   BoolAttr:$isDataCache);
 
   let builders = [
     OpBuilder<(ins "Value":$memref, "AffineMap":$map,
@@ -779,12 +815,11 @@ def AffinePrefetchOp : Affine_Op<"prefetch",
       auto isWriteAttr = $_builder.getBoolAttr(isWrite);
       auto isDataCacheAttr = $_builder.getBoolAttr(isDataCache);
       $_state.addOperands(memref);
+      $_state.addAttribute(getMapAttrStrName(), AffineMapAttr::get(map));
       $_state.addOperands(mapOperands);
-      Properties &prop = $_state.getOrAddProperties<Properties>();
-      prop.map = AffineMapAttr::get(map);
-      prop.localityHint = localityHintAttr;
-      prop.isWrite = isWriteAttr;
-      prop.isDataCache = isDataCacheAttr;
+      $_state.addAttribute(getLocalityHintAttrStrName(), localityHintAttr);
+      $_state.addAttribute(getIsWriteAttrStrName(), isWriteAttr);
+      $_state.addAttribute(getIsDataCacheAttrStrName(), isDataCacheAttr);
     }]>];
 
   let extraClassDeclaration = [{
@@ -795,10 +830,10 @@ def AffinePrefetchOp : Affine_Op<"prefetch",
     /// Returns the affine map used to index the memref for this operation.
     AffineMap getAffineMap() { return getAffineMapAttr().getValue(); }
     AffineMapAttr getAffineMapAttr() {
-      return getProperties().map;
+      return ::llvm::cast<AffineMapAttr>((*this)->getAttr(getMapAttrStrName()));
     }
 
-    /// Implements the AffineMapAccessInterface.
+    /// Impelements the AffineMapAccessInterface.
     /// Returns the AffineMapAttr associated with 'memref'.
     NamedAttribute getAffineMapAttrForMemRef(Value mref) {
       assert(mref == getMemref() &&
@@ -840,7 +875,7 @@ class AffineStoreOpBase<string mnemonic, list<Trait> traits = []> :
 
     /// Returns the affine map used to index the memref for this operation.
     AffineMapAttr getAffineMapAttr() {
-      return getProperties().map;
+      return ::llvm::cast<AffineMapAttr>((*this)->getAttr(getMapAttrStrName()));
     }
 
     static StringRef getMapAttrStrName() { return "map"; }
@@ -878,8 +913,7 @@ def AffineStoreOp : AffineStoreOpBase<"store"> {
   let arguments = (ins AnyType:$value,
       Arg<AnyMemRef, "the reference to store to",
       [MemWrite]>:$memref,
-      Variadic<Index>:$indices,
-      AffineMapAttr:$map);
+      Variadic<Index>:$indices);
 
   let skipDefaultBuilders = 1;
   let builders = [
@@ -1032,8 +1066,7 @@ def AffineVectorStoreOp : AffineStoreOpBase<"vector_store"> {
   let arguments = (ins AnyVector:$value,
       Arg<AnyMemRef, "the reference to store to",
       [MemWrite]>:$memref,
-      Variadic<Index>:$indices,
-      AffineMapAttr:$map);
+      Variadic<Index>:$indices);
 
   let skipDefaultBuilders = 1;
   let builders = [
@@ -1059,7 +1092,7 @@ def AffineVectorStoreOp : AffineStoreOpBase<"vector_store"> {
 //===----------------------------------------------------------------------===//
 
 def AffineDelinearizeIndexOp : Affine_Op<"delinearize_index",
-    [Pure, DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
+    [Pure]> {
   let summary = "delinearize an index";
   let description = [{
     The `affine.delinearize_index` operation takes a single index value and

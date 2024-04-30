@@ -6,6 +6,9 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "clang/AST/DeclCXX.h"
+#include "clang/AST/DeclGroup.h"
+#include "clang/Frontend/FrontendAction.h"
 #include "clang/Tooling/CompilationDatabase.h"
 #include "clang/Tooling/FileMatchTrie.h"
 #include "clang/Tooling/JSONCompilationDatabase.h"
@@ -21,8 +24,6 @@ namespace tooling {
 
 using testing::ElementsAre;
 using testing::EndsWith;
-using testing::IsEmpty;
-using testing::UnorderedElementsAreArray;
 
 static void expectFailure(StringRef JSONDatabase, StringRef Explanation) {
   std::string ErrorMessage;
@@ -82,8 +83,8 @@ getAllCompileCommands(JSONCommandLineSyntax Syntax, StringRef JSONDatabase,
 
 TEST(JSONCompilationDatabase, GetAllFiles) {
   std::string ErrorMessage;
-  EXPECT_THAT(getAllFiles("[]", ErrorMessage, JSONCommandLineSyntax::Gnu),
-              IsEmpty())
+  EXPECT_EQ(std::vector<std::string>(),
+            getAllFiles("[]", ErrorMessage, JSONCommandLineSyntax::Gnu))
       << ErrorMessage;
 
   std::vector<std::string> expected_files;
@@ -96,7 +97,8 @@ TEST(JSONCompilationDatabase, GetAllFiles) {
   expected_files.push_back(std::string(PathStorage.str()));
   llvm::sys::path::native("//net/file1", PathStorage);
   expected_files.push_back(std::string(PathStorage.str()));
-  EXPECT_THAT(getAllFiles(R"json(
+  EXPECT_EQ(expected_files,
+            getAllFiles(R"json(
             [
               {
                 "directory": "//net/dir",
@@ -119,8 +121,7 @@ TEST(JSONCompilationDatabase, GetAllFiles) {
                 "file": "//net/dir/foo/../file3"
               }
             ])json",
-                          ErrorMessage, JSONCommandLineSyntax::Gnu),
-              UnorderedElementsAreArray(expected_files))
+                        ErrorMessage, JSONCommandLineSyntax::Gnu))
       << ErrorMessage;
 }
 
@@ -549,7 +550,7 @@ TEST(FixedCompilationDatabase, GetAllFiles) {
   CommandLine.push_back("two");
   FixedCompilationDatabase Database(".", CommandLine);
 
-  EXPECT_THAT(Database.getAllFiles(), IsEmpty());
+  EXPECT_EQ(0ul, Database.getAllFiles().size());
 }
 
 TEST(FixedCompilationDatabase, GetAllCompileCommands) {
@@ -647,30 +648,12 @@ TEST(ParseFixedCompilationDatabase, HandlesPositionalArgs) {
       FixedCompilationDatabase::loadFromCommandLine(Argc, Argv, ErrorMsg);
   ASSERT_TRUE((bool)Database);
   ASSERT_TRUE(ErrorMsg.empty());
-  std::vector<CompileCommand> Result = Database->getCompileCommands("source");
-  ASSERT_EQ(1ul, Result.size());
-  ASSERT_EQ(".", Result[0].Directory);
-  ASSERT_THAT(Result[0].CommandLine,
-              ElementsAre(EndsWith("clang-tool"), "-c", "-DDEF3", "source"));
-  EXPECT_EQ(2, Argc);
-}
-
-TEST(ParseFixedCompilationDatabase, HandlesPositionalArgsHeader) {
-  const char *Argv[] = {"1",  "2",          "--",    "-xc++-header",
-                        "-c", "somefile.h", "-DDEF3"};
-  int Argc = std::size(Argv);
-  std::string ErrorMsg;
-  std::unique_ptr<FixedCompilationDatabase> Database =
-      FixedCompilationDatabase::loadFromCommandLine(Argc, Argv, ErrorMsg);
-  ASSERT_TRUE((bool)Database);
-  ASSERT_TRUE(ErrorMsg.empty());
   std::vector<CompileCommand> Result =
     Database->getCompileCommands("source");
   ASSERT_EQ(1ul, Result.size());
   ASSERT_EQ(".", Result[0].Directory);
   ASSERT_THAT(Result[0].CommandLine,
-              ElementsAre(EndsWith("clang-tool"), "-xc++-header", "-c",
-                          "-DDEF3", "source"));
+              ElementsAre(EndsWith("clang-tool"), "-c", "-DDEF3", "source"));
   EXPECT_EQ(2, Argc);
 }
 

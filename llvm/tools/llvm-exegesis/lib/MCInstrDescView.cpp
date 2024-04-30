@@ -9,6 +9,7 @@
 #include "MCInstrDescView.h"
 
 #include <iterator>
+#include <map>
 #include <tuple>
 
 #include "llvm/ADT/STLExtras.h"
@@ -105,7 +106,7 @@ std::unique_ptr<Instruction>
 Instruction::create(const MCInstrInfo &InstrInfo,
                     const RegisterAliasingTrackerCache &RATC,
                     const BitVectorCache &BVC, unsigned Opcode) {
-  const MCInstrDesc *const Description = &InstrInfo.get(Opcode);
+  const llvm::MCInstrDesc *const Description = &InstrInfo.get(Opcode);
   unsigned OpIndex = 0;
   SmallVector<Operand, 8> Operands;
   SmallVector<Variable, 4> Variables;

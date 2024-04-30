@@ -226,10 +226,8 @@ protected:
   static ParseResult genericParseProperties(OpAsmParser &parser,
                                             Attribute &result);
 
-  /// Print the properties as a Attribute with names not included within
-  /// 'elidedProps'
-  static void genericPrintProperties(OpAsmPrinter &p, Attribute properties,
-                                     ArrayRef<StringRef> elidedProps = {});
+  /// Print the properties as a Attribute.
+  static void genericPrintProperties(OpAsmPrinter &p, Attribute properties);
 
   /// Print an operation name, eliding the dialect prefix if necessary.
   static void printOpName(Operation *op, OpAsmPrinter &p,
@@ -270,11 +268,6 @@ class OpFoldResult : public PointerUnion<Attribute, Value> {
 
 public:
   void dump() const { llvm::errs() << *this << "\n"; }
-
-  MLIRContext *getContext() const {
-    return is<Attribute>() ? get<Attribute>().getContext()
-                           : get<Value>().getContext();
-  }
 };
 
 // Temporarily exit the MLIR namespace to add casting support as later code in
@@ -348,7 +341,6 @@ LogicalResult verifySameOperandsAndResultShape(Operation *op);
 LogicalResult verifySameOperandsElementType(Operation *op);
 LogicalResult verifySameOperandsAndResultElementType(Operation *op);
 LogicalResult verifySameOperandsAndResultType(Operation *op);
-LogicalResult verifySameOperandsAndResultRank(Operation *op);
 LogicalResult verifyResultsAreBoolLike(Operation *op);
 LogicalResult verifyResultsAreFloatLike(Operation *op);
 LogicalResult verifyResultsAreSignlessIntegerLike(Operation *op);
@@ -951,9 +943,9 @@ public:
 template <typename TerminatorOpType>
 struct SingleBlockImplicitTerminator {
   template <typename ConcreteType>
-  class Impl : public TraitBase<ConcreteType, SingleBlockImplicitTerminator<
-                                                  TerminatorOpType>::Impl> {
+  class Impl : public SingleBlock<ConcreteType> {
   private:
+    using Base = SingleBlock<ConcreteType>;
     /// Builds a terminator operation without relying on OpBuilder APIs to avoid
     /// cyclic header inclusion.
     static Operation *buildTerminator(OpBuilder &builder, Location loc) {
@@ -967,6 +959,8 @@ struct SingleBlockImplicitTerminator {
     using ImplicitTerminatorOpT = TerminatorOpType;
 
     static LogicalResult verifyRegionTrait(Operation *op) {
+      if (failed(Base::verifyTrait(op)))
+        return failure();
       for (unsigned i = 0, e = op->getNumRegions(); i < e; ++i) {
         Region &region = op->getRegion(i);
         // Empty regions are fine.
@@ -1003,6 +997,37 @@ struct SingleBlockImplicitTerminator {
                                  Location loc) {
       ::mlir::impl::ensureRegionTerminator(region, builder, loc,
                                            buildTerminator);
+    }
+
+    //===------------------------------------------------------------------===//
+    // Single Region Utilities
+    //===------------------------------------------------------------------===//
+    using Base::getBody;
+
+    template <typename OpT, typename T = void>
+    using enable_if_single_region =
+        std::enable_if_t<OpT::template hasTrait<OneRegion>(), T>;
+
+    /// Insert the operation into the back of the body, before the terminator.
+    template <typename OpT = ConcreteType>
+    enable_if_single_region<OpT> push_back(Operation *op) {
+      insert(Block::iterator(getBody()->getTerminator()), op);
+    }
+
+    /// Insert the operation at the given insertion point. Note: The operation
+    /// is never inserted after the terminator, even if the insertion point is
+    /// end().
+    template <typename OpT = ConcreteType>
+    enable_if_single_region<OpT> insert(Operation *insertPt, Operation *op) {
+      insert(Block::iterator(insertPt), op);
+    }
+    template <typename OpT = ConcreteType>
+    enable_if_single_region<OpT> insert(Block::iterator insertPt,
+                                        Operation *op) {
+      auto *body = getBody();
+      if (insertPt == body->end())
+        insertPt = Block::iterator(body->getTerminator());
+      body->getOperations().insert(insertPt, op);
     }
   };
 };
@@ -1089,17 +1114,6 @@ class SameOperandsAndResultType
 public:
   static LogicalResult verifyTrait(Operation *op) {
     return impl::verifySameOperandsAndResultType(op);
-  }
-};
-
-/// This class verifies that op has same ranks for all
-/// operands and results types, if known.
-template <typename ConcreteType>
-class SameOperandsAndResultRank
-    : public TraitBase<ConcreteType, SameOperandsAndResultRank> {
-public:
-  static LogicalResult verifyTrait(Operation *op) {
-    return impl::verifySameOperandsAndResultRank(op);
   }
 };
 
@@ -1731,7 +1745,8 @@ public:
   template <typename... Models>
   static void attachInterface(MLIRContext &context) {
     std::optional<RegisteredOperationName> info =
-        RegisteredOperationName::lookup(TypeID::get<ConcreteType>(), &context);
+        RegisteredOperationName::lookup(ConcreteType::getOperationName(),
+                                        &context);
     if (!info)
       llvm::report_fatal_error(
           "Attempting to attach an interface to an unregistered operation " +
@@ -1745,10 +1760,9 @@ public:
   /// the namespace where the properties are defined. It can also be overridden
   /// in the derived ConcreteOp.
   template <typename PropertiesTy>
-  static LogicalResult
-  setPropertiesFromAttr(PropertiesTy &prop, Attribute attr,
-                        function_ref<InFlightDiagnostic()> emitError) {
-    return setPropertiesFromAttribute(prop, attr, emitError);
+  static LogicalResult setPropertiesFromAttr(PropertiesTy &prop, Attribute attr,
+                                             InFlightDiagnostic *diag) {
+    return setPropertiesFromAttribute(prop, attr, diag);
   }
   /// Convert the provided properties to an attribute. This default
   /// implementation forwards to a free function `getPropertiesAsAttribute` that
@@ -1807,13 +1821,10 @@ private:
   template <typename T>
   using detect_has_print = llvm::is_detected<has_print, T>;
 
-  /// Trait to check if printProperties(OpAsmPrinter, T, ArrayRef<StringRef>)
-  /// exist
+  /// Trait to check if printProperties(OpAsmPrinter, T) exist
   template <typename T, typename... Args>
-  using has_print_properties =
-      decltype(printProperties(std::declval<OpAsmPrinter &>(),
-                               std::declval<T>(),
-                               std::declval<ArrayRef<StringRef>>()));
+  using has_print_properties = decltype(printProperties(
+      std::declval<OpAsmPrinter &>(), std::declval<T>()));
   template <typename T>
   using detect_has_print_properties =
       llvm::is_detected<has_print_properties, T>;
@@ -1904,8 +1915,15 @@ private:
                        SmallVectorImpl<OpFoldResult> &results) {
     OpFoldResult result;
     if constexpr (has_fold_adaptor_single_result_v<ConcreteOpT>) {
-      result = cast<ConcreteOpT>(op).fold(
-          typename ConcreteOpT::FoldAdaptor(operands, cast<ConcreteOpT>(op)));
+      if constexpr (hasProperties()) {
+        result = cast<ConcreteOpT>(op).fold(typename ConcreteOpT::FoldAdaptor(
+            operands, op->getDiscardableAttrDictionary(),
+            cast<ConcreteOpT>(op).getProperties(), op->getRegions()));
+      } else {
+        result = cast<ConcreteOpT>(op).fold(typename ConcreteOpT::FoldAdaptor(
+            operands, op->getDiscardableAttrDictionary(), {},
+            op->getRegions()));
+      }
     } else {
       result = cast<ConcreteOpT>(op).fold(operands);
     }
@@ -1928,9 +1946,19 @@ private:
                                 SmallVectorImpl<OpFoldResult> &results) {
     auto result = LogicalResult::failure();
     if constexpr (has_fold_adaptor_v<ConcreteOpT>) {
-      result = cast<ConcreteOpT>(op).fold(
-          typename ConcreteOpT::FoldAdaptor(operands, cast<ConcreteOpT>(op)),
-          results);
+      if constexpr (hasProperties()) {
+        result = cast<ConcreteOpT>(op).fold(
+            typename ConcreteOpT::FoldAdaptor(
+                operands, op->getDiscardableAttrDictionary(),
+                cast<ConcreteOpT>(op).getProperties(), op->getRegions()),
+            results);
+      } else {
+        result = cast<ConcreteOpT>(op).fold(
+            typename ConcreteOpT::FoldAdaptor(
+                operands, op->getDiscardableAttrDictionary(), {},
+                op->getRegions()),
+            results);
+      }
     } else {
       result = cast<ConcreteOpT>(op).fold(operands, results);
     }
@@ -1970,7 +1998,7 @@ public:
     if constexpr (!hasProperties())
       return getEmptyProperties();
     return *getOperation()
-                ->getPropertiesStorageUnsafe()
+                ->getPropertiesStorage()
                 .template as<InferredProperties<T> *>();
   }
 
@@ -1979,24 +2007,20 @@ public:
   static void populateDefaultProperties(OperationName opName,
                                         InferredProperties<T> &properties) {}
 
-  /// Print the operation properties with names not included within
-  /// 'elidedProps'. Unless overridden, this method will try to dispatch to a
-  /// `printProperties` free-function if it exists, and otherwise by converting
-  /// the properties to an Attribute.
+  /// Print the operation properties. Unless overridden, this method will try to
+  /// dispatch to a `printProperties` free-function if it exists, and otherwise
+  /// by converting the properties to an Attribute.
   template <typename T>
   static void printProperties(MLIRContext *ctx, OpAsmPrinter &p,
-                              const T &properties,
-                              ArrayRef<StringRef> elidedProps = {}) {
+                              const T &properties) {
     if constexpr (detect_has_print_properties<T>::value)
-      return printProperties(p, properties, elidedProps);
-    genericPrintProperties(
-        p, ConcreteType::getPropertiesAsAttr(ctx, properties), elidedProps);
+      return printProperties(p, properties);
+    genericPrintProperties(p,
+                           ConcreteType::getPropertiesAsAttr(ctx, properties));
   }
 
-  /// Parses 'prop-dict' for the operation. Unless overridden, the method will
-  /// parse the properties using the generic property dictionary using the
-  /// '<{ ... }>' syntax. The resulting properties are stored within the
-  /// property structure of 'result', accessible via 'getOrAddProperties'.
+  /// Parser the properties. Unless overridden, this method will print by
+  /// converting the properties to an Attribute.
   template <typename T = ConcreteType>
   static ParseResult parseProperties(OpAsmParser &parser,
                                      OperationState &result) {
@@ -2004,31 +2028,7 @@ public:
       return parseProperties(
           parser, result.getOrAddProperties<InferredProperties<T>>());
     }
-
-    Attribute propertyDictionary;
-    if (genericParseProperties(parser, propertyDictionary))
-      return failure();
-
-    // The generated 'setPropertiesFromParsedAttr', like
-    // 'setPropertiesFromAttr', expects a 'DictionaryAttr' that is not null.
-    // Use an empty dictionary in the case that the whole dictionary is
-    // optional.
-    if (!propertyDictionary)
-      propertyDictionary = DictionaryAttr::get(result.getContext());
-
-    auto emitError = [&]() {
-      return mlir::emitError(result.location, "invalid properties ")
-             << propertyDictionary << " for op " << result.name.getStringRef()
-             << ": ";
-    };
-
-    // Copy the data from the dictionary attribute into the property struct of
-    // the operation. This method is generated by ODS by default if there are
-    // any occurrences of 'prop-dict' in the assembly format and should set
-    // any properties that aren't parsed elsewhere.
-    return ConcreteOpType::setPropertiesFromParsedAttr(
-        result.getOrAddProperties<InferredProperties<T>>(), propertyDictionary,
-        emitError);
+    return genericParseProperties(parser, result.propertiesAttr);
   }
 
 private:
@@ -2095,7 +2095,7 @@ protected:
     // given operation.
     if (Dialect *dialect = name.getDialect()) {
       dialect_extension_detail::handleUseOfUndefinedPromisedInterface(
-          *dialect, name.getTypeID(), ConcreteType::getInterfaceID(),
+          *dialect, ConcreteType::getInterfaceID(),
           llvm::getTypeName<ConcreteType>());
     }
 #endif

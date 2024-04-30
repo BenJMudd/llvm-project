@@ -1,8 +1,4 @@
-; RUN: llc -O0 -mtriple=spirv32-unknown-unknown %s -o - | FileCheck %s --check-prefix=CHECK-SPIRV
-; RUN: %if spirv-tools %{ llc -O0 -mtriple=spirv32-unknown-unknown %s -o - -filetype=obj | spirv-val %}
-
-; TODO(#60133): Requires updates following opaque pointer migration.
-; XFAIL: *
+; RUN: llc -O0 -opaque-pointers=0 -mtriple=spirv32-unknown-unknown %s -o - | FileCheck %s --check-prefix=CHECK-SPIRV
 
 ; CHECK-SPIRV: OpEntryPoint Kernel %[[#BlockKer1:]] "__device_side_enqueue_block_invoke_kernel"
 ; CHECK-SPIRV: OpEntryPoint Kernel %[[#BlockKer2:]] "__device_side_enqueue_block_invoke_2_kernel"

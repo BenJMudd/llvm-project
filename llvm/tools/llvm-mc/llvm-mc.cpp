@@ -66,6 +66,11 @@ static cl::opt<bool> ShowEncoding("show-encoding",
                                   cl::desc("Show instruction encodings"),
                                   cl::cat(MCCategory));
 
+static cl::opt<bool> RelaxELFRel(
+    "relax-relocations", cl::init(true),
+    cl::desc("Emit R_X86_64_GOTPCRELX instead of R_X86_64_GOTPCREL"),
+    cl::cat(MCCategory));
+
 static cl::opt<DebugCompressionType> CompressDebugSections(
     "compress-debug-sections", cl::ValueOptional,
     cl::init(DebugCompressionType::None),
@@ -211,7 +216,6 @@ enum ActionType {
   AC_Assemble,
   AC_Disassemble,
   AC_MDisassemble,
-  AC_CDisassemble,
 };
 
 static cl::opt<ActionType> Action(
@@ -222,9 +226,7 @@ static cl::opt<ActionType> Action(
                clEnumValN(AC_Disassemble, "disassemble",
                           "Disassemble strings of hex bytes"),
                clEnumValN(AC_MDisassemble, "mdis",
-                          "Marked up disassembly of strings of hex bytes"),
-               clEnumValN(AC_CDisassemble, "cdis",
-                          "Colored disassembly of strings of hex bytes")),
+                          "Marked up disassembly of strings of hex bytes")),
     cl::cat(MCCategory));
 
 static const Target *GetTarget(const char *ProgName) {
@@ -358,10 +360,9 @@ int main(int argc, char **argv) {
 
   cl::HideUnrelatedOptions({&MCCategory, &getColorCategory()});
   cl::ParseCommandLineOptions(argc, argv, "llvm machine code playground\n");
-  MCTargetOptions MCOptions = mc::InitMCTargetOptionsFromFlags();
-  MCOptions.CompressDebugSections = CompressDebugSections.getValue();
-
+  const MCTargetOptions MCOptions = mc::InitMCTargetOptionsFromFlags();
   setDwarfDebugFlags(argc, argv);
+
   setDwarfDebugProducer();
 
   const char *ProgName = argv[0];
@@ -397,6 +398,7 @@ int main(int argc, char **argv) {
       TheTarget->createMCAsmInfo(*MRI, TripleName, MCOptions));
   assert(MAI && "Unable to create target asm info!");
 
+  MAI->setRelaxELFRelocations(RelaxELFRel);
   if (CompressDebugSections != DebugCompressionType::None) {
     if (const char *Reason = compression::getReasonIfUnsupported(
             compression::formatFor(CompressDebugSections))) {
@@ -405,6 +407,7 @@ int main(int argc, char **argv) {
       return 1;
     }
   }
+  MAI->setCompressDebugSections(CompressDebugSections);
   MAI->setPreserveAsmComments(PreserveComments);
 
   // Package up features to be passed to target/subtarget
@@ -583,11 +586,8 @@ int main(int argc, char **argv) {
                         *MCII, MCOptions);
     break;
   case AC_MDisassemble:
+    assert(IP && "Expected assembly output");
     IP->setUseMarkup(true);
-    disassemble = true;
-    break;
-  case AC_CDisassemble:
-    IP->setUseColor(true);
     disassemble = true;
     break;
   case AC_Disassemble:
@@ -596,7 +596,7 @@ int main(int argc, char **argv) {
   }
   if (disassemble)
     Res = Disassembler::disassemble(*TheTarget, TripleName, *STI, *Str, *Buffer,
-                                    SrcMgr, Ctx, MCOptions);
+                                    SrcMgr, Ctx, Out->os(), MCOptions);
 
   // Keep output if no errors.
   if (Res == 0) {

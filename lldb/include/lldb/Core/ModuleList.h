@@ -47,26 +47,6 @@ class UUID;
 class VariableList;
 struct ModuleFunctionSearchOptions;
 
-static constexpr OptionEnumValueElement g_auto_download_enum_values[] = {
-    {
-        lldb::eSymbolDownloadOff,
-        "off",
-        "Disable automatically downloading symbols.",
-    },
-    {
-        lldb::eSymbolDownloadBackground,
-        "background",
-        "Download symbols in the background for images as they appear in the "
-        "backtrace.",
-    },
-    {
-        lldb::eSymbolDownloadForeground,
-        "foreground",
-        "Download symbols in the foreground for images as they appear in the "
-        "backtrace.",
-    },
-};
-
 class ModuleListProperties : public Properties {
   mutable llvm::sys::RWMutex m_symlink_paths_mutex;
   PathMappingList m_symlink_paths;
@@ -80,6 +60,7 @@ public:
   bool SetClangModulesCachePath(const FileSpec &path);
   bool GetEnableExternalLookup() const;
   bool SetEnableExternalLookup(bool new_value);
+  bool GetEnableBackgroundLookup() const;
   bool GetEnableLLDBIndexCache() const;
   bool SetEnableLLDBIndexCache(bool new_value);
   uint64_t GetLLDBIndexCacheMaxByteSize();
@@ -89,8 +70,6 @@ public:
   bool SetLLDBIndexCachePath(const FileSpec &path);
 
   bool GetLoadSymbolOnDemand();
-
-  lldb::SymbolDownload GetSymbolAutoDownload() const;
 
   PathMappingList GetSymlinkMappings() const;
 };
@@ -361,22 +340,26 @@ public:
                                        lldb::SymbolType symbol_type,
                                        SymbolContextList &sc_list) const;
 
-  /// Find types using a type-matching object that contains all search
-  /// parameters.
+  /// Find types by name.
   ///
   /// \param[in] search_first
   ///     If non-null, this module will be searched before any other
   ///     modules.
   ///
-  /// \param[in] query
-  ///     A type matching object that contains all of the details of the type
-  ///     search.
+  /// \param[in] name
+  ///     The name of the type we are looking for.
   ///
-  /// \param[in] results
-  ///     Any matching types will be populated into the \a results object using
-  ///     TypeMap::InsertUnique(...).
-  void FindTypes(Module *search_first, const TypeQuery &query,
-                 lldb_private::TypeResults &results) const;
+  /// \param[in] max_matches
+  ///     Allow the number of matches to be limited to \a
+  ///     max_matches. Specify UINT32_MAX to get all possible matches.
+  ///
+  /// \param[out] types
+  ///     A type list gets populated with any matches.
+  ///
+  void FindTypes(Module *search_first, ConstString name,
+                 bool name_is_fully_qualified, size_t max_matches,
+                 llvm::DenseSet<SymbolFile *> &searched_symbol_files,
+                 TypeList &types) const;
 
   bool FindSourceFile(const FileSpec &orig_spec, FileSpec &new_spec) const;
 
@@ -496,9 +479,6 @@ public:
   /// This function is thread-safe.
   bool AnyOf(
       std::function<bool(lldb_private::Module &module)> const &callback) const;
-
-  /// Atomically swaps the contents of this module list with \a other.
-  void Swap(ModuleList &other);
 
 protected:
   // Class typedefs.

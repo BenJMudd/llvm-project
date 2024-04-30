@@ -87,7 +87,7 @@ bool matchesAnyBase(const CXXRecordDecl &Node,
       [Finder, Builder, &BaseSpecMatcher](const CXXBaseSpecifier *BaseSpec,
                                           CXXBasePath &IgnoredParam) {
         BoundNodesTreeBuilder Result(*Builder);
-        if (BaseSpecMatcher.matches(*BaseSpec, Finder, &Result)) {
+        if (BaseSpecMatcher.matches(*BaseSpec, Finder, Builder)) {
           *Builder = std::move(Result);
           return true;
         }
@@ -136,7 +136,8 @@ public:
   bool dynMatches(const DynTypedNode &DynNode, ASTMatchFinder *Finder,
                   BoundNodesTreeBuilder *Builder) const override {
     bool Result = InnerMatcher->dynMatches(DynNode, Finder, Builder);
-    if (Result) Builder->setBinding(ID, DynNode);
+    if (Result)
+      Builder->setBinding(ID, DynNode);
     return Result;
   }
 
@@ -354,7 +355,8 @@ bool DynTypedMatcher::canConvertTo(ASTNodeKind To) const {
   auto TypeKind = ASTNodeKind::getFromNodeKind<Type>();
   /// Mimic the implicit conversions of Matcher<>.
   /// - From Matcher<Type> to Matcher<QualType>
-  if (From.isSame(TypeKind) && To.isSame(QualKind)) return true;
+  if (From.isSame(TypeKind) && To.isSame(QualKind))
+    return true;
   /// - From Matcher<Base> to Matcher<Derived>
   return From.isBaseOf(To);
 }
@@ -440,8 +442,8 @@ optionallyVariadicOperator(const DynTypedNode &DynNode, ASTMatchFinder *Finder,
   return true;
 }
 
-inline static
-std::vector<std::string> vectorFromRefs(ArrayRef<const StringRef *> NameRefs) {
+inline static std::vector<std::string>
+vectorFromRefs(ArrayRef<const StringRef *> NameRefs) {
   std::vector<std::string> Names;
   Names.reserve(NameRefs.size());
   for (auto *Name : NameRefs)
@@ -454,8 +456,8 @@ Matcher<NamedDecl> hasAnyNameFunc(ArrayRef<const StringRef *> NameRefs) {
       new internal::HasNameMatcher(vectorFromRefs(NameRefs)));
 }
 
-Matcher<ObjCMessageExpr> hasAnySelectorFunc(
-    ArrayRef<const StringRef *> NameRefs) {
+Matcher<ObjCMessageExpr>
+hasAnySelectorFunc(ArrayRef<const StringRef *> NameRefs) {
   return hasAnySelectorMatcher(vectorFromRefs(NameRefs));
 }
 
@@ -480,11 +482,11 @@ HasNameMatcher::HasNameMatcher(std::vector<std::string> N)
 
 static bool consumeNameSuffix(StringRef &FullName, StringRef Suffix) {
   StringRef Name = FullName;
-  if (!Name.ends_with(Suffix))
+  if (!Name.endswith(Suffix))
     return false;
   Name = Name.drop_back(Suffix.size());
   if (!Name.empty()) {
-    if (!Name.ends_with("::"))
+    if (!Name.endswith("::"))
       return false;
     Name = Name.drop_back(2);
   }
@@ -530,7 +532,7 @@ public:
   PatternSet(ArrayRef<std::string> Names) {
     Patterns.reserve(Names.size());
     for (StringRef Name : Names)
-      Patterns.push_back({Name, Name.starts_with("::")});
+      Patterns.push_back({Name, Name.startswith("::")});
   }
 
   /// Consumes the name suffix from each pattern in the set and removes the ones
@@ -652,11 +654,11 @@ bool HasNameMatcher::matchesNodeFullSlow(const NamedDecl &Node) const {
     const StringRef FullName = OS.str();
 
     for (const StringRef Pattern : Names) {
-      if (Pattern.starts_with("::")) {
+      if (Pattern.startswith("::")) {
         if (FullName == Pattern)
           return true;
-      } else if (FullName.ends_with(Pattern) &&
-                 FullName.drop_back(Pattern.size()).ends_with("::")) {
+      } else if (FullName.endswith(Pattern) &&
+                 FullName.drop_back(Pattern.size()).endswith("::")) {
         return true;
       }
     }
@@ -733,7 +735,8 @@ const internal::VariadicDynCastAllOfMatcher<Decl, TypeAliasDecl> typeAliasDecl;
 const internal::VariadicDynCastAllOfMatcher<Decl, TypeAliasTemplateDecl>
     typeAliasTemplateDecl;
 const internal::VariadicAllOfMatcher<Decl> decl;
-const internal::VariadicDynCastAllOfMatcher<Decl, DecompositionDecl> decompositionDecl;
+const internal::VariadicDynCastAllOfMatcher<Decl, DecompositionDecl>
+    decompositionDecl;
 const internal::VariadicDynCastAllOfMatcher<Decl, BindingDecl> bindingDecl;
 const internal::VariadicDynCastAllOfMatcher<Decl, LinkageSpecDecl>
     linkageSpecDecl;
@@ -817,6 +820,7 @@ const internal::VariadicDynCastAllOfMatcher<Stmt, UnresolvedMemberExpr>
 const internal::VariadicDynCastAllOfMatcher<Stmt, CXXDependentScopeMemberExpr>
     cxxDependentScopeMemberExpr;
 const internal::VariadicDynCastAllOfMatcher<Stmt, CallExpr> callExpr;
+const internal::VariadicDynCastAllOfMatcher<Stmt, AsTypeExpr> asTypeExpr;
 const internal::VariadicDynCastAllOfMatcher<Stmt, LambdaExpr> lambdaExpr;
 const internal::VariadicDynCastAllOfMatcher<Stmt, CXXMemberCallExpr>
     cxxMemberCallExpr;
@@ -834,8 +838,7 @@ const internal::VariadicDynCastAllOfMatcher<Decl, ObjCCategoryImplDecl>
     objcCategoryImplDecl;
 const internal::VariadicDynCastAllOfMatcher<Decl, ObjCMethodDecl>
     objcMethodDecl;
-const internal::VariadicDynCastAllOfMatcher<Decl, BlockDecl>
-    blockDecl;
+const internal::VariadicDynCastAllOfMatcher<Decl, BlockDecl> blockDecl;
 const internal::VariadicDynCastAllOfMatcher<Decl, ObjCIvarDecl> objcIvarDecl;
 const internal::VariadicDynCastAllOfMatcher<Decl, ObjCPropertyDecl>
     objcPropertyDecl;
@@ -893,10 +896,10 @@ const internal::VariadicDynCastAllOfMatcher<Stmt, CXXOperatorCallExpr>
     cxxOperatorCallExpr;
 const internal::VariadicDynCastAllOfMatcher<Stmt, CXXRewrittenBinaryOperator>
     cxxRewrittenBinaryOperator;
-const internal::VariadicDynCastAllOfMatcher<Stmt, CXXFoldExpr> cxxFoldExpr;
 const internal::VariadicDynCastAllOfMatcher<Stmt, Expr> expr;
 const internal::VariadicDynCastAllOfMatcher<Stmt, DeclRefExpr> declRefExpr;
-const internal::VariadicDynCastAllOfMatcher<Stmt, ObjCIvarRefExpr> objcIvarRefExpr;
+const internal::VariadicDynCastAllOfMatcher<Stmt, ObjCIvarRefExpr>
+    objcIvarRefExpr;
 const internal::VariadicDynCastAllOfMatcher<Stmt, BlockExpr> blockExpr;
 const internal::VariadicDynCastAllOfMatcher<Stmt, IfStmt> ifStmt;
 const internal::VariadicDynCastAllOfMatcher<Stmt, ForStmt> forStmt;
@@ -926,13 +929,15 @@ const internal::VariadicDynCastAllOfMatcher<Stmt, AsmStmt> asmStmt;
 const internal::VariadicDynCastAllOfMatcher<Stmt, CXXBoolLiteralExpr>
     cxxBoolLiteral;
 const internal::VariadicDynCastAllOfMatcher<Stmt, StringLiteral> stringLiteral;
-const internal::VariadicDynCastAllOfMatcher<Stmt, ObjCStringLiteral> objcStringLiteral;
+const internal::VariadicDynCastAllOfMatcher<Stmt, ObjCStringLiteral>
+    objcStringLiteral;
 const internal::VariadicDynCastAllOfMatcher<Stmt, CharacterLiteral>
     characterLiteral;
 const internal::VariadicDynCastAllOfMatcher<Stmt, IntegerLiteral>
     integerLiteral;
 const internal::VariadicDynCastAllOfMatcher<Stmt, FloatingLiteral> floatLiteral;
-const internal::VariadicDynCastAllOfMatcher<Stmt, ImaginaryLiteral> imaginaryLiteral;
+const internal::VariadicDynCastAllOfMatcher<Stmt, ImaginaryLiteral>
+    imaginaryLiteral;
 const internal::VariadicDynCastAllOfMatcher<Stmt, FixedPointLiteral>
     fixedPointLiteral;
 const internal::VariadicDynCastAllOfMatcher<Stmt, UserDefinedLiteral>
@@ -942,14 +947,10 @@ const internal::VariadicDynCastAllOfMatcher<Stmt, CompoundLiteralExpr>
 const internal::VariadicDynCastAllOfMatcher<Stmt, CXXNullPtrLiteralExpr>
     cxxNullPtrLiteralExpr;
 const internal::VariadicDynCastAllOfMatcher<Stmt, ChooseExpr> chooseExpr;
-const internal::VariadicDynCastAllOfMatcher<Stmt, ConvertVectorExpr>
-    convertVectorExpr;
-const internal::VariadicDynCastAllOfMatcher<Stmt, CoawaitExpr>
-    coawaitExpr;
+const internal::VariadicDynCastAllOfMatcher<Stmt, CoawaitExpr> coawaitExpr;
 const internal::VariadicDynCastAllOfMatcher<Stmt, DependentCoawaitExpr>
     dependentCoawaitExpr;
-const internal::VariadicDynCastAllOfMatcher<Stmt, CoyieldExpr>
-    coyieldExpr;
+const internal::VariadicDynCastAllOfMatcher<Stmt, CoyieldExpr> coyieldExpr;
 const internal::VariadicDynCastAllOfMatcher<Stmt, GNUNullExpr> gnuNullExpr;
 const internal::VariadicDynCastAllOfMatcher<Stmt, GenericSelectionExpr>
     genericSelectionExpr;
@@ -1049,7 +1050,6 @@ const AstTypeMatcher<ConstantArrayType> constantArrayType;
 const AstTypeMatcher<DeducedTemplateSpecializationType>
     deducedTemplateSpecializationType;
 const AstTypeMatcher<DependentSizedArrayType> dependentSizedArrayType;
-const AstTypeMatcher<DependentSizedExtVectorType> dependentSizedExtVectorType;
 const AstTypeMatcher<IncompleteArrayType> incompleteArrayType;
 const AstTypeMatcher<VariableArrayType> variableArrayType;
 const AstTypeMatcher<AtomicType> atomicType;
@@ -1059,7 +1059,6 @@ const AstTypeMatcher<FunctionType> functionType;
 const AstTypeMatcher<FunctionProtoType> functionProtoType;
 const AstTypeMatcher<ParenType> parenType;
 const AstTypeMatcher<BlockPointerType> blockPointerType;
-const AstTypeMatcher<MacroQualifiedType> macroQualifiedType;
 const AstTypeMatcher<MemberPointerType> memberPointerType;
 const AstTypeMatcher<PointerType> pointerType;
 const AstTypeMatcher<ObjCObjectPointerType> objcObjectPointerType;

@@ -14,6 +14,7 @@
 #include "bolt/Core/BinaryBasicBlock.h"
 #include "bolt/Passes/DataflowInfoManager.h"
 #include "bolt/Passes/FrameAnalysis.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/MC/MCInstPrinter.h"
 #include <optional>
 #include <queue>
@@ -280,16 +281,18 @@ bool ValidateInternalCalls::analyzeFunction(BinaryFunction &Function) const {
           LLVM_DEBUG({
             dbgs() << "Detected out-of-range PIC reference in " << Function
                    << "\nReturn address load: ";
-            BC.dump(*TargetInst);
-            dbgs() << "Use: ";
-            BC.dump(Use);
+            BC.InstPrinter->printInst(TargetInst, 0, "", *BC.STI, dbgs());
+            dbgs() << "\nUse: ";
+            BC.InstPrinter->printInst(&Use, 0, "", *BC.STI, dbgs());
+            dbgs() << "\n";
             Function.dump();
           });
           return false;
         }
         LLVM_DEBUG({
           dbgs() << "Validated access: ";
-          BC.dump(Use);
+          BC.InstPrinter->printInst(&Use, 0, "", *BC.STI, dbgs());
+          dbgs() << "\n";
         });
       }
       if (!UseDetected) {
@@ -301,9 +304,9 @@ bool ValidateInternalCalls::analyzeFunction(BinaryFunction &Function) const {
   return true;
 }
 
-Error ValidateInternalCalls::runOnFunctions(BinaryContext &BC) {
+void ValidateInternalCalls::runOnFunctions(BinaryContext &BC) {
   if (!BC.isX86())
-    return Error::success();
+    return;
 
   // Look for functions that need validation. This should be pretty rare.
   std::set<BinaryFunction *> NeedsValidation;
@@ -322,7 +325,7 @@ Error ValidateInternalCalls::runOnFunctions(BinaryContext &BC) {
 
   // Skip validation for non-relocation mode
   if (!BC.HasRelocations)
-    return Error::success();
+    return;
 
   // Since few functions need validation, we can work with our most expensive
   // algorithms here. Fix the CFG treating internal calls as unconditional
@@ -338,15 +341,13 @@ Error ValidateInternalCalls::runOnFunctions(BinaryContext &BC) {
   }
 
   if (!Invalid.empty()) {
-    BC.errs()
-        << "BOLT-WARNING: will skip the following function(s) as unsupported"
-           " internal calls were detected:\n";
+    errs() << "BOLT-WARNING: will skip the following function(s) as unsupported"
+              " internal calls were detected:\n";
     for (BinaryFunction *Function : Invalid) {
-      BC.errs() << "              " << *Function << "\n";
+      errs() << "              " << *Function << "\n";
       Function->setIgnored();
     }
   }
-  return Error::success();
 }
 
 } // namespace bolt

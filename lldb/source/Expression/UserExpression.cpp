@@ -14,6 +14,7 @@
 #include <string>
 
 #include "lldb/Core/Module.h"
+#include "lldb/Core/StreamFile.h"
 #include "lldb/Core/ValueObjectConstResult.h"
 #include "lldb/Expression/DiagnosticManager.h"
 #include "lldb/Expression/ExpressionVariable.h"
@@ -35,11 +36,11 @@
 #include "lldb/Target/Target.h"
 #include "lldb/Target/ThreadPlan.h"
 #include "lldb/Target/ThreadPlanCallUserExpression.h"
+#include "lldb/Utility/ConstString.h"
 #include "lldb/Utility/LLDBLog.h"
 #include "lldb/Utility/Log.h"
 #include "lldb/Utility/State.h"
 #include "lldb/Utility/StreamString.h"
-#include "llvm/BinaryFormat/Dwarf.h"
 
 using namespace lldb_private;
 
@@ -47,7 +48,8 @@ char UserExpression::ID;
 
 UserExpression::UserExpression(ExecutionContextScope &exe_scope,
                                llvm::StringRef expr, llvm::StringRef prefix,
-                               SourceLanguage language, ResultType desired_type,
+                               lldb::LanguageType language,
+                               ResultType desired_type,
                                const EvaluateExpressionOptions &options)
     : Expression(exe_scope), m_expr_text(std::string(expr)),
       m_expr_prefix(std::string(prefix)), m_language(language),
@@ -98,12 +100,13 @@ bool UserExpression::MatchesContext(ExecutionContext &exe_ctx) {
 }
 
 lldb::ValueObjectSP UserExpression::GetObjectPointerValueObject(
-    lldb::StackFrameSP frame_sp, llvm::StringRef object_name, Status &err) {
+    lldb::StackFrameSP frame_sp, ConstString const &object_name, Status &err) {
   err.Clear();
 
   if (!frame_sp) {
-    err.SetErrorStringWithFormatv(
-        "Couldn't load '{0}' because the context is incomplete", object_name);
+    err.SetErrorStringWithFormat(
+        "Couldn't load '%s' because the context is incomplete",
+        object_name.AsCString());
     return {};
   }
 
@@ -111,7 +114,7 @@ lldb::ValueObjectSP UserExpression::GetObjectPointerValueObject(
   lldb::ValueObjectSP valobj_sp;
 
   return frame_sp->GetValueForVariableExpressionPath(
-      object_name, lldb::eNoDynamicValues,
+      object_name.GetStringRef(), lldb::eNoDynamicValues,
       StackFrame::eExpressionPathOptionCheckPtrVsMember |
           StackFrame::eExpressionPathOptionsNoFragileObjcIvar |
           StackFrame::eExpressionPathOptionsNoSyntheticChildren |
@@ -120,7 +123,7 @@ lldb::ValueObjectSP UserExpression::GetObjectPointerValueObject(
 }
 
 lldb::addr_t UserExpression::GetObjectPointer(lldb::StackFrameSP frame_sp,
-                                              llvm::StringRef object_name,
+                                              ConstString &object_name,
                                               Status &err) {
   auto valobj_sp =
       GetObjectPointerValueObject(std::move(frame_sp), object_name, err);
@@ -131,9 +134,9 @@ lldb::addr_t UserExpression::GetObjectPointer(lldb::StackFrameSP frame_sp,
   lldb::addr_t ret = valobj_sp->GetValueAsUnsigned(LLDB_INVALID_ADDRESS);
 
   if (ret == LLDB_INVALID_ADDRESS) {
-    err.SetErrorStringWithFormatv(
-        "Couldn't load '{0}' because its value couldn't be evaluated",
-        object_name);
+    err.SetErrorStringWithFormat(
+        "Couldn't load '%s' because its value couldn't be evaluated",
+        object_name.AsCString());
     return LLDB_INVALID_ADDRESS;
   }
 
@@ -176,7 +179,7 @@ UserExpression::Evaluate(ExecutionContext &exe_ctx,
   }
 
   lldb_private::ExecutionPolicy execution_policy = options.GetExecutionPolicy();
-  SourceLanguage language = options.GetLanguage();
+  lldb::LanguageType language = options.GetLanguage();
   const ResultType desired_type = options.DoesCoerceToId()
                                       ? UserExpression::eResultTypeId
                                       : UserExpression::eResultTypeAny;
@@ -242,7 +245,7 @@ UserExpression::Evaluate(ExecutionContext &exe_ctx,
   // If the language was not specified in the expression command, set it to the
   // language in the target's properties if specified, else default to the
   // langage for the frame.
-  if (!language) {
+  if (language == lldb::eLanguageTypeUnknown) {
     if (target->GetLanguage() != lldb::eLanguageTypeUnknown)
       language = target->GetLanguage();
     else if (StackFrame *frame = exe_ctx.GetFramePtr())
@@ -253,7 +256,7 @@ UserExpression::Evaluate(ExecutionContext &exe_ctx,
       target->GetUserExpressionForLanguage(expr, full_prefix, language,
                                            desired_type, options, ctx_obj,
                                            error));
-  if (error.Fail() || !user_expression_sp) {
+  if (error.Fail()) {
     LLDB_LOG(log, "== [UserExpression::Evaluate] Getting expression: {0} ==",
              error.AsCString());
     return lldb::eExpressionSetupError;
@@ -384,8 +387,7 @@ UserExpression::Evaluate(ExecutionContext &exe_ctx,
       } else {
         if (expr_result) {
           result_valobj_sp = expr_result->GetValueObject();
-          result_valobj_sp->SetPreferredDisplayLanguage(
-              language.AsLanguageType());
+          result_valobj_sp->SetPreferredDisplayLanguage(language);
 
           LLDB_LOG(log,
                    "== [UserExpression::Evaluate] Execution completed "
@@ -427,8 +429,7 @@ UserExpression::Execute(DiagnosticManager &diagnostic_manager,
   Target *target = exe_ctx.GetTargetPtr();
   if (options.GetSuppressPersistentResult() && result_var && target) {
     if (auto *persistent_state =
-            target->GetPersistentExpressionStateForLanguage(
-                m_language.AsLanguageType()))
+            target->GetPersistentExpressionStateForLanguage(m_language))
       persistent_state->RemovePersistentVariable(result_var);
   }
   return expr_result;

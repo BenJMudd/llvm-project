@@ -7,26 +7,11 @@
 //===----------------------------------------------------------------------===//
 
 #include "mlir/Analysis/Presburger/Simplex.h"
-#include "mlir/Analysis/Presburger/Fraction.h"
-#include "mlir/Analysis/Presburger/IntegerRelation.h"
-#include "mlir/Analysis/Presburger/MPInt.h"
 #include "mlir/Analysis/Presburger/Matrix.h"
-#include "mlir/Analysis/Presburger/PresburgerSpace.h"
-#include "mlir/Analysis/Presburger/Utils.h"
-#include "mlir/Support/LLVM.h"
-#include "mlir/Support/LogicalResult.h"
-#include "llvm/ADT/STLExtras.h"
-#include "llvm/ADT/SmallBitVector.h"
-#include "llvm/ADT/SmallVector.h"
+#include "mlir/Support/MathExtras.h"
 #include "llvm/Support/Compiler.h"
-#include "llvm/Support/ErrorHandling.h"
-#include "llvm/Support/raw_ostream.h"
-#include <cassert>
-#include <functional>
-#include <limits>
+#include <numeric>
 #include <optional>
-#include <tuple>
-#include <utility>
 
 using namespace mlir;
 using namespace presburger;
@@ -203,7 +188,7 @@ Direction flippedDirection(Direction direction) {
 /// greater, so A*y + b is always equal to or lexicographically greater than b.
 /// Thus, since we can attain x = b, that is the lexicographic minimum.
 ///
-/// We have that every column in A is lexicopositive, i.e., has at least
+/// We have that that every column in A is lexicopositive, i.e., has at least
 /// one non-zero element, with the first such element being positive. Since for
 /// the tableau to be consistent we must have non-negative sample values not
 /// only for the constraints but also for the variables, we also have x >= 0 and
@@ -450,9 +435,9 @@ LogicalResult SymbolicLexSimplex::addSymbolicCut(unsigned row) {
   return moveRowUnknownToColumn(cutRow);
 }
 
-void SymbolicLexSimplex::recordOutput(SymbolicLexOpt &result) const {
-  IntMatrix output(0, domainPoly.getNumVars() + 1);
-  output.reserveRows(result.lexopt.getNumOutputs());
+void SymbolicLexSimplex::recordOutput(SymbolicLexMin &result) const {
+  Matrix output(0, domainPoly.getNumVars() + 1);
+  output.reserveRows(result.lexmin.getNumOutputs());
   for (const Unknown &u : var) {
     if (u.isSymbol)
       continue;
@@ -484,10 +469,10 @@ void SymbolicLexSimplex::recordOutput(SymbolicLexOpt &result) const {
   }
 
   // Store the output in a MultiAffineFunction and add it the result.
-  PresburgerSpace funcSpace = result.lexopt.getSpace();
+  PresburgerSpace funcSpace = result.lexmin.getSpace();
   funcSpace.insertVar(VarKind::Local, 0, domainPoly.getNumLocalVars());
 
-  result.lexopt.addPiece(
+  result.lexmin.addPiece(
       {PresburgerSet(domainPoly),
        MultiAffineFunction(funcSpace, output, domainPoly.getLocalReprs())});
 }
@@ -530,8 +515,8 @@ LogicalResult SymbolicLexSimplex::doNonBranchingPivots() {
   return success();
 }
 
-SymbolicLexOpt SymbolicLexSimplex::computeSymbolicIntegerLexMin() {
-  SymbolicLexOpt result(PresburgerSpace::getRelationSpace(
+SymbolicLexMin SymbolicLexSimplex::computeSymbolicIntegerLexMin() {
+  SymbolicLexMin result(PresburgerSpace::getRelationSpace(
       /*numDomain=*/domainPoly.getNumDimVars(),
       /*numRange=*/var.size() - nSymbol,
       /*numSymbols=*/domainPoly.getNumSymbolVars()));
@@ -1816,7 +1801,7 @@ private:
 ///
 /// When incrementing i, no cached f values get invalidated. However, the cached
 /// duals do get invalidated as the duals for the higher levels are different.
-void Simplex::reduceBasis(IntMatrix &basis, unsigned level) {
+void Simplex::reduceBasis(Matrix &basis, unsigned level) {
   const Fraction epsilon(3, 4);
 
   if (level == basis.getNumRows() - 1)
@@ -1990,7 +1975,7 @@ std::optional<SmallVector<MPInt, 8>> Simplex::findIntegerSample() {
     return {};
 
   unsigned nDims = var.size();
-  IntMatrix basis = IntMatrix::identity(nDims);
+  Matrix basis = Matrix::identity(nDims);
 
   unsigned level = 0;
   // The snapshot just before constraining a direction to a value at each level.
@@ -2102,19 +2087,6 @@ Simplex::computeIntegerBounds(ArrayRef<MPInt> coeffs) {
   MaybeOptimum<MPInt> maxRoundedDown(
       computeOptimum(Simplex::Direction::Up, coeffs).map(floor));
   return {minRoundedUp, maxRoundedDown};
-}
-
-bool Simplex::isFlatAlong(ArrayRef<MPInt> coeffs) {
-  assert(!isEmpty() && "cannot check for flatness of empty simplex!");
-  auto upOpt = computeOptimum(Simplex::Direction::Up, coeffs);
-  auto downOpt = computeOptimum(Simplex::Direction::Down, coeffs);
-
-  if (!upOpt.isBounded())
-    return false;
-  if (!downOpt.isBounded())
-    return false;
-
-  return *upOpt == *downOpt;
 }
 
 void SimplexBase::print(raw_ostream &os) const {

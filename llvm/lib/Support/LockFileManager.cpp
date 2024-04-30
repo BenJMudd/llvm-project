@@ -11,7 +11,6 @@
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/Errc.h"
 #include "llvm/Support/ErrorOr.h"
-#include "llvm/Support/ExponentialBackoff.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Process.h"
@@ -21,6 +20,7 @@
 #include <chrono>
 #include <ctime>
 #include <memory>
+#include <random>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <system_error>
@@ -87,7 +87,7 @@ static std::error_code getHostID(SmallVectorImpl<char> &HostID) {
   struct timespec wait = {1, 0}; // 1 second.
   uuid_t uuid;
   if (gethostuuid(uuid, &wait) != 0)
-    return errnoAsErrorCode();
+    return std::error_code(errno, std::system_category());
 
   uuid_string_t UUIDStr;
   uuid_unparse(uuid, UUIDStr);
@@ -162,7 +162,7 @@ LockFileManager::LockFileManager(StringRef FileName)
   this->FileName = FileName;
   if (std::error_code EC = sys::fs::make_absolute(this->FileName)) {
     std::string S("failed to obtain absolute path for ");
-    S.append(std::string(this->FileName));
+    S.append(std::string(this->FileName.str()));
     setError(EC, S);
     return;
   }
@@ -181,7 +181,7 @@ LockFileManager::LockFileManager(StringRef FileName)
   if (std::error_code EC = sys::fs::createUniqueFile(
           UniqueLockFileName, UniqueLockFileID, UniqueLockFileName)) {
     std::string S("failed to create unique file ");
-    S.append(std::string(UniqueLockFileName));
+    S.append(std::string(UniqueLockFileName.str()));
     setError(EC, S);
     return;
   }
@@ -202,11 +202,9 @@ LockFileManager::LockFileManager(StringRef FileName)
       // We failed to write out PID, so report the error, remove the
       // unique lock file, and fail.
       std::string S("failed to write to ");
-      S.append(std::string(UniqueLockFileName));
+      S.append(std::string(UniqueLockFileName.str()));
       setError(Out.error(), S);
       sys::fs::remove(UniqueLockFileName);
-      // Don't call report_fatal_error.
-      Out.clear_error();
       return;
     }
   }
@@ -250,7 +248,7 @@ LockFileManager::LockFileManager(StringRef FileName)
     // ownership.
     if ((EC = sys::fs::remove(LockFileName))) {
       std::string S("failed to remove lockfile ");
-      S.append(std::string(UniqueLockFileName));
+      S.append(std::string(UniqueLockFileName.str()));
       setError(EC, S);
       return;
     }
@@ -297,15 +295,29 @@ LockFileManager::waitForUnlock(const unsigned MaxSeconds) {
     return Res_Success;
 
   // Since we don't yet have an event-based method to wait for the lock file,
-  // use randomized exponential backoff, similar to Ethernet collision
+  // implement randomized exponential backoff, similar to Ethernet collision
   // algorithm. This improves performance on machines with high core counts
   // when the file lock is heavily contended by multiple clang processes
-  using namespace std::chrono_literals;
-  ExponentialBackoff Backoff(std::chrono::seconds(MaxSeconds), 10ms, 500ms);
+  const unsigned long MinWaitDurationMS = 10;
+  const unsigned long MaxWaitMultiplier = 50; // 500ms max wait
+  unsigned long WaitMultiplier = 1;
+  unsigned long ElapsedTimeSeconds = 0;
 
-  // Wait first as this is only called when the lock is known to be held.
-  while (Backoff.waitForNextAttempt()) {
+  std::random_device Device;
+  std::default_random_engine Engine(Device());
+
+  auto StartTime = std::chrono::steady_clock::now();
+
+  do {
     // FIXME: implement event-based waiting
+
+    // Sleep for the designated interval, to allow the owning process time to
+    // finish up and remove the lock file.
+    std::uniform_int_distribution<unsigned long> Distribution(1,
+                                                              WaitMultiplier);
+    unsigned long WaitDurationMS = MinWaitDurationMS * Distribution(Engine);
+    std::this_thread::sleep_for(std::chrono::milliseconds(WaitDurationMS));
+
     if (sys::fs::access(LockFileName.c_str(), sys::fs::AccessMode::Exist) ==
         errc::no_such_file_or_directory) {
       // If the original file wasn't created, somone thought the lock was dead.
@@ -317,7 +329,17 @@ LockFileManager::waitForUnlock(const unsigned MaxSeconds) {
     // If the process owning the lock died without cleaning up, just bail out.
     if (!processStillExecuting((*Owner).first, (*Owner).second))
       return Res_OwnerDied;
-  }
+
+    WaitMultiplier *= 2;
+    if (WaitMultiplier > MaxWaitMultiplier) {
+      WaitMultiplier = MaxWaitMultiplier;
+    }
+
+    ElapsedTimeSeconds = std::chrono::duration_cast<std::chrono::seconds>(
+                             std::chrono::steady_clock::now() - StartTime)
+                             .count();
+
+  } while (ElapsedTimeSeconds < MaxSeconds);
 
   // Give up.
   return Res_Timeout;

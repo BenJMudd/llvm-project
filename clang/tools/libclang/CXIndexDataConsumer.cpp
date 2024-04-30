@@ -431,16 +431,14 @@ bool CXIndexDataConsumer::isFunctionLocalDecl(const Decl *D) {
 
   if (const NamedDecl *ND = dyn_cast<NamedDecl>(D)) {
     switch (ND->getFormalLinkage()) {
-    case Linkage::Invalid:
-      llvm_unreachable("Linkage hasn't been computed!");
-    case Linkage::None:
-    case Linkage::Internal:
+    case NoLinkage:
+    case InternalLinkage:
       return true;
-    case Linkage::VisibleNone:
-    case Linkage::UniqueExternal:
+    case VisibleNoLinkage:
+    case UniqueExternalLinkage:
       llvm_unreachable("Not a sema linkage");
-    case Linkage::Module:
-    case Linkage::External:
+    case ModuleLinkage:
+    case ExternalLinkage:
       return false;
     }
   }
@@ -1074,8 +1072,8 @@ CXIndexDataConsumer::getClientContainerForDC(const DeclContext *DC) const {
   return DC ? ContainerMap.lookup(DC) : nullptr;
 }
 
-CXIdxClientFile CXIndexDataConsumer::getIndexFile(OptionalFileEntryRef File) {
-  return File ? FileMap.lookup(*File) : nullptr;
+CXIdxClientFile CXIndexDataConsumer::getIndexFile(const FileEntry *File) {
+  return File ? FileMap.lookup(File) : nullptr;
 }
 
 CXIdxLoc CXIndexDataConsumer::getIndexLoc(SourceLocation Loc) const {
@@ -1104,8 +1102,8 @@ void CXIndexDataConsumer::translateLoc(SourceLocation Loc,
 
   if (FID.isInvalid())
     return;
-
-  OptionalFileEntryRef FE = SM.getFileEntryRefForID(FID);
+  
+  OptionalFileEntryRefDegradesToFileEntryPtr FE = SM.getFileEntryRefForID(FID);
   if (indexFile)
     *indexFile = getIndexFile(FE);
   if (file)

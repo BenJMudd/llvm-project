@@ -253,7 +253,7 @@ bool isYAML(const StringRef Filename) {
   if (std::error_code EC = MB.getError())
     report_error(Filename, EC);
   StringRef Buffer = MB.get()->getBuffer();
-  if (Buffer.starts_with("---\n"))
+  if (Buffer.startswith("---\n"))
     return true;
   return false;
 }
@@ -279,7 +279,7 @@ void mergeLegacyProfiles(const SmallVectorImpl<std::string> &Filenames) {
     {
       std::lock_guard<std::mutex> Lock(BoltedCollectionMutex);
       // Check if the string "boltedcollection" is in the first line
-      if (Buf.starts_with("boltedcollection\n")) {
+      if (Buf.startswith("boltedcollection\n")) {
         if (!BoltedCollection.value_or(true))
           report_error(
               Filename,
@@ -316,9 +316,8 @@ void mergeLegacyProfiles(const SmallVectorImpl<std::string> &Filenames) {
   // least 4 tasks.
   ThreadPoolStrategy S = optimal_concurrency(
       std::max(Filenames.size() / 4, static_cast<size_t>(1)));
-  DefaultThreadPool Pool(S);
-  DenseMap<llvm::thread::id, ProfileTy> ParsedProfiles(
-      Pool.getMaxConcurrency());
+  ThreadPool Pool(S);
+  DenseMap<llvm::thread::id, ProfileTy> ParsedProfiles(Pool.getThreadCount());
   for (const auto &Filename : Filenames)
     Pool.async(ParseProfile, std::cref(Filename), std::ref(ParsedProfiles));
   Pool.wait();
@@ -330,7 +329,7 @@ void mergeLegacyProfiles(const SmallVectorImpl<std::string> &Filenames) {
       MergedProfile.insert_or_assign(Key, Count);
     }
 
-  if (BoltedCollection.value_or(false))
+  if (BoltedCollection)
     output() << "boltedcollection\n";
   for (const auto &[Key, Value] : MergedProfile)
     output() << Key << " " << Value << "\n";

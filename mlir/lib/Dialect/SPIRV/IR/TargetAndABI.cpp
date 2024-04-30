@@ -10,9 +10,9 @@
 #include "mlir/Dialect/SPIRV/IR/SPIRVEnums.h"
 #include "mlir/Dialect/SPIRV/IR/SPIRVTypes.h"
 #include "mlir/IR/Builders.h"
+#include "mlir/IR/FunctionInterfaces.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/SymbolTable.h"
-#include "mlir/Interfaces/FunctionInterfaces.h"
 #include <optional>
 
 using namespace mlir;
@@ -120,16 +120,17 @@ bool spirv::needsInterfaceVarABIAttrs(spirv::TargetEnvAttr targetAttr) {
 
 StringRef spirv::getEntryPointABIAttrName() { return "spirv.entry_point_abi"; }
 
-spirv::EntryPointABIAttr spirv::getEntryPointABIAttr(
-    MLIRContext *context, ArrayRef<int32_t> workgroupSize,
-    std::optional<int> subgroupSize, std::optional<int> targetWidth) {
+spirv::EntryPointABIAttr
+spirv::getEntryPointABIAttr(MLIRContext *context,
+                            ArrayRef<int32_t> workgroupSize,
+                            std::optional<int> subgroupSize) {
   DenseI32ArrayAttr workgroupSizeAttr;
   if (!workgroupSize.empty()) {
     assert(workgroupSize.size() == 3);
     workgroupSizeAttr = DenseI32ArrayAttr::get(context, workgroupSize);
   }
-  return spirv::EntryPointABIAttr::get(context, workgroupSizeAttr, subgroupSize,
-                                       targetWidth);
+  return spirv::EntryPointABIAttr::get(context, workgroupSizeAttr,
+                                       subgroupSize);
 }
 
 spirv::EntryPointABIAttr spirv::lookupEntryPointABI(Operation *op) {
@@ -165,8 +166,7 @@ spirv::getDefaultResourceLimits(MLIRContext *context) {
       /*subgroup_size=*/32,
       /*min_subgroup_size=*/std::nullopt,
       /*max_subgroup_size=*/std::nullopt,
-      /*cooperative_matrix_properties_khr=*/ArrayAttr{},
-      /*cooperative_matrix_properties_nv=*/ArrayAttr{});
+      /*cooperative_matrix_properties_nv=*/ArrayAttr());
 }
 
 StringRef spirv::getTargetEnvAttrName() { return "spirv.target_env"; }

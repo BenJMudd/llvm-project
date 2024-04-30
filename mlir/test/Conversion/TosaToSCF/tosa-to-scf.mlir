@@ -4,29 +4,30 @@
 // CHECK-SAME: ([[ARG0:%.+]]: tensor<i32>)
 func.func @while_test(%arg0 : tensor<i32>) -> (tensor<i32>) {
   // CHECK: [[WHILE:%.+]] = scf.while ([[ARG1:%.+]] = [[ARG0]])
-  %0 = tosa.while_loop (%arg1 = %arg0) : (tensor<i32>) -> tensor<i32> {
-    // CHECK: tosa.const
-    %1 = "tosa.const"() {value = dense<3> : tensor<i32>} : () -> tensor<i32>
+  %1 = "tosa.while_loop"(%arg0) ({
+  ^bb0(%arg2: tensor<i32>):
+    // CHECK: "tosa.const"
+    %2 = "tosa.const"() {value = dense<3> : tensor<i32>} : () -> tensor<i32>
 
-    // CHECK: [[COMPARE:%.+]] = tosa.greater_equal
-    %2 = tosa.greater_equal %1, %arg1 : (tensor<i32>, tensor<i32>) -> tensor<i1>
+    // CHECK: [[COMPARE:%.+]] = "tosa.greater_equal"
+    %3 = "tosa.greater_equal"(%2, %arg2) : (tensor<i32>, tensor<i32>) -> tensor<i1>
 
     // CHECK: [[EX:%.+]] = tensor.extract [[COMPARE]]
     // CHECK: scf.condition([[EX]]) [[ARG1]]
-    tosa.yield %2 : tensor<i1>
-  } do {
+    "tosa.yield"(%3) : (tensor<i1>) -> ()
+  },  {
   // CHECK: ^bb0([[ARG1:%.+]]: tensor<i32>)
-  ^bb0(%arg1: tensor<i32>):
+  ^bb0(%arg2: tensor<i32>):
     // CHECK: tosa.const
-    %1 = "tosa.const"() {value = dense<1> : tensor<i32>} : () -> tensor<i32>
+    %2 = "tosa.const"() {value = dense<1> : tensor<i32>} : () -> tensor<i32>
 
-    // CHECK: [[ADD:%.+]] = tosa.add
-    %2 = tosa.add %arg1, %1 : (tensor<i32>, tensor<i32>) -> tensor<i32>
+    // CHECK: [[ADD:%.+]] = "tosa.add"
+    %3 = "tosa.add"(%arg2, %2) : (tensor<i32>, tensor<i32>) -> tensor<i32>
 
     // CHECK: scf.yield [[ADD]]
-    tosa.yield %2 : tensor<i32>
-  }
-  return %0 : tensor<i32>
+    "tosa.yield"(%3) : (tensor<i32>) -> ()
+  }) : (tensor<i32>) -> (tensor<i32>)
+  return %1 : tensor<i32>
 }
 
 // -----
@@ -36,20 +37,22 @@ func.func @while_test(%arg0 : tensor<i32>) -> (tensor<i32>) {
 func.func @if_test(%arg0 : tensor<f32>, %arg1 : tensor<f32>, %arg2 : tensor<i1>) -> (tensor<f32>) {
   // CHECK: [[EX:%.+]] = tensor.extract [[ARG2]]
   // CHECK: [[IF:%.+]] = scf.if [[EX]] -> (tensor<f32>) {
-  %0 = tosa.cond_if %arg2 -> (tensor<f32>) {
+  %0 = "tosa.cond_if"(%arg2, %arg0, %arg1) ({
 
   // CHECK:   scf.yield [[ARG0]]
-    tosa.yield %arg0 : tensor<f32>
+  ^bb1(%arg3 : tensor<f32>, %arg4 : tensor<f32>):
+    "tosa.yield"(%arg3) : (tensor<f32>) -> ()
 
   // CHECK: } else {
-  } else {
+  }, {
 
   // CHECK:   scf.yield [[ARG1]]
-    tosa.yield %arg1 : tensor<f32>
+  ^bb1(%arg5 : tensor<f32>, %arg6 : tensor<f32>):
+    "tosa.yield"(%arg6) : (tensor<f32>) -> ()
 
   // CHECK: }
   // CHECK: return [[IF]]
-  }
+  }) : (tensor<i1>, tensor<f32>, tensor<f32>) -> (tensor<f32>)
 
   return %0 : tensor<f32>
 }

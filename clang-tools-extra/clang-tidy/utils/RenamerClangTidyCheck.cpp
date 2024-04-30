@@ -31,12 +31,13 @@ struct DenseMapInfo<clang::tidy::RenamerClangTidyCheck::NamingCheckId> {
   using NamingCheckId = clang::tidy::RenamerClangTidyCheck::NamingCheckId;
 
   static inline NamingCheckId getEmptyKey() {
-    return {DenseMapInfo<clang::SourceLocation>::getEmptyKey(), "EMPTY"};
+    return NamingCheckId(DenseMapInfo<clang::SourceLocation>::getEmptyKey(),
+                         "EMPTY");
   }
 
   static inline NamingCheckId getTombstoneKey() {
-    return {DenseMapInfo<clang::SourceLocation>::getTombstoneKey(),
-            "TOMBSTONE"};
+    return NamingCheckId(DenseMapInfo<clang::SourceLocation>::getTombstoneKey(),
+                         "TOMBSTONE");
   }
 
   static unsigned getHashValue(NamingCheckId Val) {
@@ -169,14 +170,14 @@ public:
       return;
     if (SM.isWrittenInCommandLineFile(MacroNameTok.getLocation()))
       return;
-    Check->checkMacro(MacroNameTok, Info, SM);
+    Check->checkMacro(SM, MacroNameTok, Info);
   }
 
   /// MacroExpands calls expandMacro for macros in the main file
   void MacroExpands(const Token &MacroNameTok, const MacroDefinition &MD,
                     SourceRange /*Range*/,
                     const MacroArgs * /*Args*/) override {
-    Check->expandMacro(MacroNameTok, MD.getMacroInfo(), SM);
+    Check->expandMacro(MacroNameTok, MD.getMacroInfo());
   }
 
 private:
@@ -187,7 +188,7 @@ private:
 class RenamerClangTidyVisitor
     : public RecursiveASTVisitor<RenamerClangTidyVisitor> {
 public:
-  RenamerClangTidyVisitor(RenamerClangTidyCheck *Check, const SourceManager &SM,
+  RenamerClangTidyVisitor(RenamerClangTidyCheck *Check, const SourceManager *SM,
                           bool AggressiveDependentMemberLookup)
       : Check(Check), SM(SM),
         AggressiveDependentMemberLookup(AggressiveDependentMemberLookup) {}
@@ -255,10 +256,30 @@ public:
       return true;
     }
 
+    // Fix type aliases in value declarations.
+    if (const auto *Value = dyn_cast<ValueDecl>(Decl)) {
+      if (const Type *TypePtr = Value->getType().getTypePtrOrNull()) {
+        if (const auto *Typedef = TypePtr->getAs<TypedefType>())
+          Check->addUsage(Typedef->getDecl(), Value->getSourceRange(), SM);
+      }
+    }
+
+    // Fix type aliases in function declarations.
+    if (const auto *Value = dyn_cast<FunctionDecl>(Decl)) {
+      if (const auto *Typedef =
+              Value->getReturnType().getTypePtr()->getAs<TypedefType>())
+        Check->addUsage(Typedef->getDecl(), Value->getSourceRange(), SM);
+      for (const ParmVarDecl *Param : Value->parameters()) {
+        if (const TypedefType *Typedef =
+                Param->getType().getTypePtr()->getAs<TypedefType>())
+          Check->addUsage(Typedef->getDecl(), Value->getSourceRange(), SM);
+      }
+    }
+
     // Fix overridden methods
     if (const auto *Method = dyn_cast<CXXMethodDecl>(Decl)) {
       if (const CXXMethodDecl *Overridden = getOverrideMethod(Method)) {
-        Check->addUsage(Overridden, Method->getLocation(), SM);
+        Check->addUsage(Overridden, Method->getLocation());
         return true; // Don't try to add the actual decl as a Failure.
       }
     }
@@ -268,7 +289,7 @@ public:
     if (isa<ClassTemplateSpecializationDecl>(Decl))
       return true;
 
-    Check->checkNamedDecl(Decl, SM);
+    Check->checkNamedDecl(Decl, *SM);
     return true;
   }
 
@@ -319,11 +340,6 @@ public:
     return true;
   }
 
-  bool VisitTypedefTypeLoc(const TypedefTypeLoc &Loc) {
-    Check->addUsage(Loc.getTypedefNameDecl(), Loc.getSourceRange(), SM);
-    return true;
-  }
-
   bool VisitTagTypeLoc(const TagTypeLoc &Loc) {
     Check->addUsage(Loc.getDecl(), Loc.getSourceRange(), SM);
     return true;
@@ -366,26 +382,9 @@ public:
     return true;
   }
 
-  bool VisitDesignatedInitExpr(DesignatedInitExpr *Expr) {
-    for (const DesignatedInitExpr::Designator &D : Expr->designators()) {
-      if (!D.isFieldDesignator())
-        continue;
-      const FieldDecl *FD = D.getFieldDecl();
-      if (!FD)
-        continue;
-      const IdentifierInfo *II = FD->getIdentifier();
-      if (!II)
-        continue;
-      SourceRange FixLocation{D.getFieldLoc(), D.getFieldLoc()};
-      Check->addUsage(FD, FixLocation, SM);
-    }
-
-    return true;
-  }
-
 private:
   RenamerClangTidyCheck *Check;
-  const SourceManager &SM;
+  const SourceManager *SM;
   const bool AggressiveDependentMemberLookup;
 };
 
@@ -415,7 +414,7 @@ void RenamerClangTidyCheck::registerPPCallbacks(
 
 void RenamerClangTidyCheck::addUsage(
     const RenamerClangTidyCheck::NamingCheckId &Decl, SourceRange Range,
-    const SourceManager &SourceMgr) {
+    const SourceManager *SourceMgr) {
   // Do nothing if the provided range is invalid.
   if (Range.isInvalid())
     return;
@@ -425,7 +424,8 @@ void RenamerClangTidyCheck::addUsage(
   // spelling location to different source locations, and we only want to fix
   // the token once, before it is expanded by the macro.
   SourceLocation FixLocation = Range.getBegin();
-  FixLocation = SourceMgr.getSpellingLoc(FixLocation);
+  if (SourceMgr)
+    FixLocation = SourceMgr->getSpellingLoc(FixLocation);
   if (FixLocation.isInvalid())
     return;
 
@@ -439,15 +439,15 @@ void RenamerClangTidyCheck::addUsage(
   if (!Failure.shouldFix())
     return;
 
-  if (SourceMgr.isWrittenInScratchSpace(FixLocation))
+  if (SourceMgr && SourceMgr->isWrittenInScratchSpace(FixLocation))
     Failure.FixStatus = RenamerClangTidyCheck::ShouldFixStatus::InsideMacro;
 
-  if (!utils::rangeCanBeFixed(Range, &SourceMgr))
+  if (!utils::rangeCanBeFixed(Range, SourceMgr))
     Failure.FixStatus = RenamerClangTidyCheck::ShouldFixStatus::InsideMacro;
 }
 
 void RenamerClangTidyCheck::addUsage(const NamedDecl *Decl, SourceRange Range,
-                                     const SourceManager &SourceMgr) {
+                                     const SourceManager *SourceMgr) {
   // Don't keep track for non-identifier names.
   auto *II = Decl->getIdentifier();
   if (!II)
@@ -488,24 +488,18 @@ void RenamerClangTidyCheck::checkNamedDecl(const NamedDecl *Decl,
   }
 
   Failure.Info = std::move(Info);
-  addUsage(Decl, Range, SourceMgr);
+  addUsage(Decl, Range);
 }
 
 void RenamerClangTidyCheck::check(const MatchFinder::MatchResult &Result) {
-  if (!Result.SourceManager) {
-    // In principle SourceManager is not null but going only by the definition
-    // of MatchResult it must be handled. Cannot rename anything without a
-    // SourceManager.
-    return;
-  }
-  RenamerClangTidyVisitor Visitor(this, *Result.SourceManager,
+  RenamerClangTidyVisitor Visitor(this, Result.SourceManager,
                                   AggressiveDependentMemberLookup);
   Visitor.TraverseAST(*Result.Context);
 }
 
-void RenamerClangTidyCheck::checkMacro(const Token &MacroNameTok,
-                                       const MacroInfo *MI,
-                                       const SourceManager &SourceMgr) {
+void RenamerClangTidyCheck::checkMacro(const SourceManager &SourceMgr,
+                                       const Token &MacroNameTok,
+                                       const MacroInfo *MI) {
   std::optional<FailureInfo> MaybeFailure =
       getMacroFailureInfo(MacroNameTok, SourceMgr);
   if (!MaybeFailure)
@@ -520,12 +514,11 @@ void RenamerClangTidyCheck::checkMacro(const Token &MacroNameTok,
     Failure.FixStatus = ShouldFixStatus::FixInvalidIdentifier;
 
   Failure.Info = std::move(Info);
-  addUsage(ID, Range, SourceMgr);
+  addUsage(ID, Range);
 }
 
 void RenamerClangTidyCheck::expandMacro(const Token &MacroNameTok,
-                                        const MacroInfo *MI,
-                                        const SourceManager &SourceMgr) {
+                                        const MacroInfo *MI) {
   StringRef Name = MacroNameTok.getIdentifierInfo()->getName();
   NamingCheckId ID(MI->getDefinitionLoc(), Name);
 
@@ -534,7 +527,7 @@ void RenamerClangTidyCheck::expandMacro(const Token &MacroNameTok,
     return;
 
   SourceRange Range(MacroNameTok.getLocation(), MacroNameTok.getEndLoc());
-  addUsage(ID, Range, SourceMgr);
+  addUsage(ID, Range);
 }
 
 static std::string

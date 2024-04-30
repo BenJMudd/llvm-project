@@ -59,7 +59,6 @@ struct SpecialTypeDescriptor {
     STK_Sampler,
     STK_Pipe,
     STK_DeviceEvent,
-    STK_Pointer,
     STK_Last = -1
   };
   SpecialTypeKind Kind;
@@ -161,23 +160,6 @@ struct DeviceEventTypeDescriptor : public SpecialTypeDescriptor {
     return TD->Kind == SpecialTypeKind::STK_DeviceEvent;
   }
 };
-
-struct PointerTypeDescriptor : public SpecialTypeDescriptor {
-  const Type *ElementType;
-  unsigned AddressSpace;
-
-  PointerTypeDescriptor() = delete;
-  PointerTypeDescriptor(const Type *ElementType, unsigned AddressSpace)
-      : SpecialTypeDescriptor(SpecialTypeKind::STK_Pointer),
-        ElementType(ElementType), AddressSpace(AddressSpace) {
-    Hash = (DenseMapInfo<Type *>().getHashValue(ElementType) & 0xffff) ^
-           ((AddressSpace << 8) | Kind);
-  }
-
-  static bool classof(const SpecialTypeDescriptor *TD) {
-    return TD->Kind == SpecialTypeKind::STK_Pointer;
-  }
-};
 } // namespace SPIRV
 
 template <> struct DenseMapInfo<SPIRV::SpecialTypeDescriptor> {
@@ -262,7 +244,6 @@ class SPIRVGeneralDuplicatesTracker {
   SPIRVDuplicatesTracker<GlobalVariable> GT;
   SPIRVDuplicatesTracker<Function> FT;
   SPIRVDuplicatesTracker<Argument> AT;
-  SPIRVDuplicatesTracker<MachineInstr> MT;
   SPIRVDuplicatesTracker<SPIRV::SpecialTypeDescriptor> ST;
 
   // NOTE: using MOs instead of regs to get rid of MF dependency to be able
@@ -281,14 +262,8 @@ public:
   void buildDepsGraph(std::vector<SPIRV::DTSortableEntry *> &Graph,
                       MachineModuleInfo *MMI);
 
-  void add(const Type *Ty, const MachineFunction *MF, Register R) {
-    TT.add(Ty, MF, R);
-  }
-
-  void add(const Type *PointerElementType, unsigned AddressSpace,
-           const MachineFunction *MF, Register R) {
-    ST.add(SPIRV::PointerTypeDescriptor(PointerElementType, AddressSpace), MF,
-           R);
+  void add(const Type *T, const MachineFunction *MF, Register R) {
+    TT.add(T, MF, R);
   }
 
   void add(const Constant *C, const MachineFunction *MF, Register R) {
@@ -307,23 +282,13 @@ public:
     AT.add(Arg, MF, R);
   }
 
-  void add(const MachineInstr *MI, const MachineFunction *MF, Register R) {
-    MT.add(MI, MF, R);
-  }
-
   void add(const SPIRV::SpecialTypeDescriptor &TD, const MachineFunction *MF,
            Register R) {
     ST.add(TD, MF, R);
   }
 
-  Register find(const Type *Ty, const MachineFunction *MF) {
-    return TT.find(const_cast<Type *>(Ty), MF);
-  }
-
-  Register find(const Type *PointerElementType, unsigned AddressSpace,
-                const MachineFunction *MF) {
-    return ST.find(
-        SPIRV::PointerTypeDescriptor(PointerElementType, AddressSpace), MF);
+  Register find(const Type *T, const MachineFunction *MF) {
+    return TT.find(const_cast<Type *>(T), MF);
   }
 
   Register find(const Constant *C, const MachineFunction *MF) {
@@ -340,10 +305,6 @@ public:
 
   Register find(const Argument *Arg, const MachineFunction *MF) {
     return AT.find(const_cast<Argument *>(Arg), MF);
-  }
-
-  Register find(const MachineInstr *MI, const MachineFunction *MF) {
-    return MT.find(const_cast<MachineInstr *>(MI), MF);
   }
 
   Register find(const SPIRV::SpecialTypeDescriptor &TD,

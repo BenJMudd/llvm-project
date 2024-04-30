@@ -21,17 +21,15 @@ namespace Fortran::runtime {
 // Runtime data structure to hold information about the storage of
 // an array constructor being constructed.
 struct ArrayConstructorVector {
-  RT_API_ATTRS ArrayConstructorVector(class Descriptor &to,
-      SubscriptValue nextValuePosition, SubscriptValue actualAllocationSize,
-      const char *sourceFile, int sourceLine, bool useValueLengthParameters)
+  ArrayConstructorVector(class Descriptor &to, SubscriptValue nextValuePosition,
+      SubscriptValue actualAllocationSize, const char *sourceFile,
+      int sourceLine, bool useValueLengthParameters)
       : to{to}, nextValuePosition{nextValuePosition},
         actualAllocationSize{actualAllocationSize}, sourceFile{sourceFile},
-        sourceLine{sourceLine},
-        useValueLengthParameters_{useValueLengthParameters} {}
+        sourceLine{sourceLine}, useValueLengthParameters_{
+                                    useValueLengthParameters} {}
 
-  RT_API_ATTRS bool useValueLengthParameters() const {
-    return useValueLengthParameters_;
-  }
+  bool useValueLengthParameters() const { return useValueLengthParameters_; }
 
   class Descriptor &to;
   SubscriptValue nextValuePosition;
@@ -97,13 +95,13 @@ extern "C" {
 // the target the runtime is compiled for). This avoids the need for the runtime
 // to maintain a state, or to use dynamic allocation for it. "vectorClassSize"
 // is used to validate that lowering allocated enough space for it.
-void RTDECL(InitArrayConstructorVector)(ArrayConstructorVector &vector,
+void RTNAME(InitArrayConstructorVector)(ArrayConstructorVector &vector,
     Descriptor &to, bool useValueLengthParameters, int vectorClassSize,
     const char *sourceFile = nullptr, int sourceLine = 0);
 
 // Generic API to push any kind of entity into the array constructor (any
 // Fortran type and any rank).
-void RTDECL(PushArrayConstructorValue)(
+void RTNAME(PushArrayConstructorValue)(
     ArrayConstructorVector &vector, const Descriptor &from);
 
 // API to push scalar array constructor value of:
@@ -111,7 +109,7 @@ void RTDECL(PushArrayConstructorValue)(
 //   - or a derived type that has no length parameters, and no allocatable
 //   component (that would require deep copies).
 // It requires no descriptor for the value that is passed via its base address.
-void RTDECL(PushArrayConstructorSimpleScalar)(
+void RTNAME(PushArrayConstructorSimpleScalar)(
     ArrayConstructorVector &vector, void *from);
 } // extern "C"
 } // namespace Fortran::runtime

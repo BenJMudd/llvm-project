@@ -166,7 +166,6 @@ document soon.
    error_handling_script
    Partitions
    ReleaseNotes
-   ELF/large_sections
    ELF/linker_script
    ELF/start-stop-gc
    ELF/warn_backrefs

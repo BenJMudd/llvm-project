@@ -112,7 +112,7 @@ static Register performCopyPropagation(Register Reg,
                                        bool &IsKill, const TargetInstrInfo &TII,
                                        const TargetRegisterInfo &TRI) {
   // First check if statepoint itself uses Reg in non-meta operands.
-  int Idx = RI->findRegisterUseOperandIdx(Reg, &TRI, false);
+  int Idx = RI->findRegisterUseOperandIdx(Reg, false, &TRI);
   if (Idx >= 0 && (unsigned)Idx < StatepointOpers(&*RI).getNumDeoptArgsIdx()) {
     IsKill = false;
     return Reg;
@@ -461,8 +461,7 @@ public:
 
       if (EHPad && !RC.hasReload(Reg, RegToSlotIdx[Reg], EHPad)) {
         RC.recordReload(Reg, RegToSlotIdx[Reg], EHPad);
-        auto EHPadInsertPoint =
-            EHPad->SkipPHIsLabelsAndDebug(EHPad->begin(), Reg);
+        auto EHPadInsertPoint = EHPad->SkipPHIsLabelsAndDebug(EHPad->begin());
         insertReloadBefore(Reg, EHPadInsertPoint, EHPad);
         LLVM_DEBUG(dbgs() << "...also reload at EHPad "
                           << printMBBReference(*EHPad) << "\n");

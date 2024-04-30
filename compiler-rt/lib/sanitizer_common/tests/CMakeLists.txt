@@ -124,6 +124,8 @@ endif()
 
 set(SANITIZER_TEST_LINK_LIBS)
 append_list_if(COMPILER_RT_HAS_LIBLOG log SANITIZER_TEST_LINK_LIBS)
+# NDK r10 requires -latomic almost always.
+append_list_if(ANDROID atomic SANITIZER_TEST_LINK_LIBS)
 
 append_list_if(COMPILER_RT_HAS_LIBDL -ldl SANITIZER_TEST_LINK_FLAGS_COMMON)
 append_list_if(COMPILER_RT_HAS_LIBRT -lrt SANITIZER_TEST_LINK_FLAGS_COMMON)
@@ -176,6 +178,7 @@ macro(add_sanitizer_tests_for_arch arch)
     RUNTIME "${SANITIZER_COMMON_LIB}"
     SOURCES ${SANITIZER_UNITTESTS} ${COMPILER_RT_GTEST_SOURCE} ${COMPILER_RT_GMOCK_SOURCE}
     COMPILE_DEPS ${SANITIZER_TEST_HEADERS}
+    DEPS llvm_gtest
     CFLAGS  ${SANITIZER_TEST_CFLAGS_COMMON} ${extra_flags}
     LINK_FLAGS ${SANITIZER_TEST_LINK_FLAGS_COMMON} ${TARGET_LINK_FLAGS} ${extra_flags})
 
@@ -217,8 +220,7 @@ if(COMPILER_RT_CAN_EXECUTE_TESTS AND NOT ANDROID)
       add_sanitizer_common_lib("RTSanitizerCommon.test.${arch}"
                                $<TARGET_OBJECTS:RTSanitizerCommon.${arch}>
                                $<TARGET_OBJECTS:RTSanitizerCommonLibc.${arch}>
-                               $<TARGET_OBJECTS:RTSanitizerCommonSymbolizer.${arch}>
-                               $<TARGET_OBJECTS:RTSanitizerCommonSymbolizerInternal.${arch}>)
+                               $<TARGET_OBJECTS:RTSanitizerCommonSymbolizer.${arch}>)
     endforeach()
   endif()
   foreach(arch ${SANITIZER_UNITTEST_SUPPORTED_ARCH})
@@ -234,8 +236,7 @@ if(ANDROID)
       ${COMPILER_RT_GMOCK_SOURCE}
       $<TARGET_OBJECTS:RTSanitizerCommon.${arch}>
       $<TARGET_OBJECTS:RTSanitizerCommonLibc.${arch}>
-      $<TARGET_OBJECTS:RTSanitizerCommonSymbolizer.${arch}>
-      $<TARGET_OBJECTS:RTSanitizerCommonSymbolizerInternal.${arch}>)
+      $<TARGET_OBJECTS:RTSanitizerCommonSymbolizer.${arch}>)
     set_target_compile_flags(SanitizerTest ${SANITIZER_TEST_CFLAGS_COMMON})
     # Setup correct output directory and link flags.
     set_target_properties(SanitizerTest PROPERTIES

@@ -22,15 +22,14 @@ ClangTidyCheck::ClangTidyCheck(StringRef CheckName, ClangTidyContext *Context)
   assert(!CheckName.empty());
 }
 
-DiagnosticBuilder ClangTidyCheck::diag(SourceLocation Loc,
-                                       StringRef Description,
+DiagnosticBuilder ClangTidyCheck::diag(SourceLocation Loc, StringRef Message,
                                        DiagnosticIDs::Level Level) {
-  return Context->diag(CheckName, Loc, Description, Level);
+  return Context->diag(CheckName, Loc, Message, Level);
 }
 
-DiagnosticBuilder ClangTidyCheck::diag(StringRef Description,
+DiagnosticBuilder ClangTidyCheck::diag(StringRef Message,
                                        DiagnosticIDs::Level Level) {
-  return Context->diag(CheckName, Description, Level);
+  return Context->diag(CheckName, Message, Level);
 }
 
 DiagnosticBuilder
@@ -94,10 +93,10 @@ static std::optional<bool> getAsBool(StringRef Value,
                                      const llvm::Twine &LookupName) {
 
   if (std::optional<bool> Parsed = llvm::yaml::parseBool(Value))
-    return Parsed;
+    return *Parsed;
   // To maintain backwards compatability, we support parsing numbers as
   // booleans, even though its not supported in YAML.
-  long long Number = 0;
+  long long Number;
   if (!Value.getAsInteger(10, Number))
     return Number != 0;
   return std::nullopt;
@@ -137,12 +136,6 @@ void ClangTidyCheck::OptionsView::storeInt(ClangTidyOptions::OptionMap &Options,
                                            StringRef LocalName,
                                            int64_t Value) const {
   store(Options, LocalName, llvm::itostr(Value));
-}
-
-void ClangTidyCheck::OptionsView::storeUnsigned(
-    ClangTidyOptions::OptionMap &Options, StringRef LocalName,
-    uint64_t Value) const {
-  store(Options, LocalName, llvm::utostr(Value));
 }
 
 template <>

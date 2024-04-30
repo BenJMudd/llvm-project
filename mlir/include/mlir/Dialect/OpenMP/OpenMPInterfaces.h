@@ -21,9 +21,6 @@
 #include "mlir/Interfaces/ControlFlowInterfaces.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 
-#define GET_OP_FWD_DEFINES
-#include "mlir/Dialect/OpenMP/OpenMPOps.h.inc"
-
 #include "mlir/Dialect/OpenMP/OpenMPOpsInterfaces.h.inc"
 
 namespace mlir::omp {
@@ -38,6 +35,11 @@ template <typename T>
 struct DeclareTargetDefaultModel
     : public DeclareTargetInterface::ExternalModel<DeclareTargetDefaultModel<T>,
                                                    T> {};
+
+template <typename T>
+struct EarlyOutliningDefaultModel
+    : public EarlyOutliningInterface::ExternalModel<
+          EarlyOutliningDefaultModel<T>, T> {};
 
 } // namespace mlir::omp
 

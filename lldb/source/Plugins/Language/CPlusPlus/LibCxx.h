@@ -59,10 +59,6 @@ bool LibcxxWStringViewSummaryProvider(
     ValueObject &valobj, Stream &stream,
     const TypeSummaryOptions &options); // libc++ std::wstring_view
 
-bool LibcxxStdSliceArraySummaryProvider(
-    ValueObject &valobj, Stream &stream,
-    const TypeSummaryOptions &options); // libc++ std::slice_array
-
 bool LibcxxSmartPointerSummaryProvider(
     ValueObject &valobj, Stream &stream,
     const TypeSummaryOptions
@@ -91,11 +87,11 @@ class LibCxxMapIteratorSyntheticFrontEnd : public SyntheticChildrenFrontEnd {
 public:
   LibCxxMapIteratorSyntheticFrontEnd(lldb::ValueObjectSP valobj_sp);
 
-  llvm::Expected<uint32_t> CalculateNumChildren() override;
+  size_t CalculateNumChildren() override;
 
-  lldb::ValueObjectSP GetChildAtIndex(uint32_t idx) override;
+  lldb::ValueObjectSP GetChildAtIndex(size_t idx) override;
 
-  lldb::ChildCacheState Update() override;
+  bool Update() override;
 
   bool MightHaveChildren() override;
 
@@ -139,11 +135,11 @@ public:
 
   ~LibCxxUnorderedMapIteratorSyntheticFrontEnd() override = default;
 
-  llvm::Expected<uint32_t> CalculateNumChildren() override;
+  size_t CalculateNumChildren() override;
 
-  lldb::ValueObjectSP GetChildAtIndex(uint32_t idx) override;
+  lldb::ValueObjectSP GetChildAtIndex(size_t idx) override;
 
-  lldb::ChildCacheState Update() override;
+  bool Update() override;
 
   bool MightHaveChildren() override;
 
@@ -170,11 +166,11 @@ class LibcxxSharedPtrSyntheticFrontEnd : public SyntheticChildrenFrontEnd {
 public:
   LibcxxSharedPtrSyntheticFrontEnd(lldb::ValueObjectSP valobj_sp);
 
-  llvm::Expected<uint32_t> CalculateNumChildren() override;
+  size_t CalculateNumChildren() override;
 
-  lldb::ValueObjectSP GetChildAtIndex(uint32_t idx) override;
+  lldb::ValueObjectSP GetChildAtIndex(size_t idx) override;
 
-  lldb::ChildCacheState Update() override;
+  bool Update() override;
 
   bool MightHaveChildren() override;
 
@@ -190,11 +186,11 @@ class LibcxxUniquePtrSyntheticFrontEnd : public SyntheticChildrenFrontEnd {
 public:
   LibcxxUniquePtrSyntheticFrontEnd(lldb::ValueObjectSP valobj_sp);
 
-  llvm::Expected<uint32_t> CalculateNumChildren() override;
+  size_t CalculateNumChildren() override;
 
-  lldb::ValueObjectSP GetChildAtIndex(uint32_t idx) override;
+  lldb::ValueObjectSP GetChildAtIndex(size_t idx) override;
 
-  lldb::ChildCacheState Update() override;
+  bool Update() override;
 
   bool MightHaveChildren() override;
 
@@ -222,18 +218,6 @@ LibcxxUniquePtrSyntheticFrontEndCreator(CXXSyntheticChildren *,
 SyntheticChildrenFrontEnd *
 LibcxxStdVectorSyntheticFrontEndCreator(CXXSyntheticChildren *,
                                         lldb::ValueObjectSP);
-
-SyntheticChildrenFrontEnd *
-LibcxxStdValarraySyntheticFrontEndCreator(CXXSyntheticChildren *,
-                                          lldb::ValueObjectSP);
-
-SyntheticChildrenFrontEnd *
-LibcxxStdSliceArraySyntheticFrontEndCreator(CXXSyntheticChildren *,
-                                            lldb::ValueObjectSP);
-
-SyntheticChildrenFrontEnd *
-LibcxxStdProxyArraySyntheticFrontEndCreator(CXXSyntheticChildren *,
-                                            lldb::ValueObjectSP);
 
 SyntheticChildrenFrontEnd *
 LibcxxStdListSyntheticFrontEndCreator(CXXSyntheticChildren *,
@@ -276,34 +260,6 @@ LibcxxStdSpanSyntheticFrontEndCreator(CXXSyntheticChildren *,
 SyntheticChildrenFrontEnd *
 LibcxxStdRangesRefViewSyntheticFrontEndCreator(CXXSyntheticChildren *,
                                                lldb::ValueObjectSP);
-
-bool LibcxxChronoSysSecondsSummaryProvider(
-    ValueObject &valobj, Stream &stream,
-    const TypeSummaryOptions &options); // libc++ std::chrono::sys_seconds
-
-bool LibcxxChronoSysDaysSummaryProvider(
-    ValueObject &valobj, Stream &stream,
-    const TypeSummaryOptions &options); // libc++ std::chrono::sys_days
-
-bool LibcxxChronoLocalSecondsSummaryProvider(
-    ValueObject &valobj, Stream &stream,
-    const TypeSummaryOptions &options); // libc++ std::chrono::local_seconds
-
-bool LibcxxChronoLocalDaysSummaryProvider(
-    ValueObject &valobj, Stream &stream,
-    const TypeSummaryOptions &options); // libc++ std::chrono::local_days
-
-bool LibcxxChronoMonthSummaryProvider(
-    ValueObject &valobj, Stream &stream,
-    const TypeSummaryOptions &options); // libc++ std::chrono::month
-
-bool LibcxxChronoWeekdaySummaryProvider(
-    ValueObject &valobj, Stream &stream,
-    const TypeSummaryOptions &options); // libc++ std::chrono::weekday
-
-bool LibcxxChronoYearMonthDaySummaryProvider(
-    ValueObject &valobj, Stream &stream,
-    const TypeSummaryOptions &options); // libc++ std::chrono::year_month_day
 
 } // namespace formatters
 } // namespace lldb_private

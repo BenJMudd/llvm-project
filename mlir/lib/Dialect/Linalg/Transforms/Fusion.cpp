@@ -29,8 +29,8 @@
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 
-#include <optional>
 #include <set>
+#include <optional>
 
 #define DEBUG_TYPE "linalg-fusion"
 
@@ -87,10 +87,10 @@ getShapeDefiningLoopRange(LinalgOp op, unsigned loopDepth,
                << "getShapeDefiningLoopRange map: " << map << "\n");
     SmallVector<Value, 8> shapeRanges(map.getNumResults(), nullptr);
     for (const auto &en : llvm::enumerate(map.getResults())) {
-      auto dimExpr = dyn_cast<AffineDimExpr>(en.value());
+      auto dimExpr = en.value().dyn_cast<AffineDimExpr>();
       if (!dimExpr)
         continue;
-      if (loopDepth == cast<AffineDimExpr>(en.value()).getPosition()) {
+      if (loopDepth == en.value().cast<AffineDimExpr>().getPosition()) {
         LLVM_DEBUG(llvm::dbgs() << "getShapeDefiningLoopRange loopDepth: "
                                 << loopDepth << "\n");
         LLVM_DEBUG(llvm::dbgs() << "getShapeDefiningLoopRange shape: "
@@ -144,17 +144,27 @@ static LinalgOp fuse(OpBuilder &b, LinalgOp producer,
       b, loc, producer, getTiledOperands(producer), ivs, tileSizes, sizeBounds,
       /**omitPartialTileCheck=*/false));
 
-  // Take result types from the tiled init operands.
-  MutableOperandRange producerDpsInits = producer.getDpsInitsMutable();
+  // Iterate over the results in order.
+  // Extract the subtensor type from the linearized range.
+  // Since we do not enforce any canonicalizations on the fly, this is always
+  // fully dynamic at construction time.
   SmallVector<Type, 4> resultTypes;
   resultTypes.reserve(producer->getNumResults());
-  int64_t firstInitOperandIdx =
-      producerDpsInits.getAsOperandRange().getBeginOperandIndex();
-  for (int64_t i = 0, e = producer->getNumResults(); i < e; ++i) {
-    resultTypes.push_back(clonedShapes[firstInitOperandIdx + i].getType());
+  for (OpOperand *operand : producer.getDpsInitOperands()) {
+    auto tensorType = dyn_cast<RankedTensorType>(operand->get().getType());
+    if (!tensorType)
+      continue;
+    unsigned rank = tensorType.getRank();
+    SmallVector<int64_t, 4> staticOffsetsVector(
+        rank, ShapedType::kDynamic);
+    SmallVector<int64_t, 4> staticSizesVector(rank, ShapedType::kDynamic);
+    SmallVector<int64_t, 4> staticStridesVector(
+        rank, ShapedType::kDynamic);
+    resultTypes.push_back(tensor::ExtractSliceOp::inferResultType(
+        tensorType, staticOffsetsVector, staticSizesVector,
+        staticStridesVector));
   }
 
-  // Clone the producer with new operands and result types.
   LinalgOp clonedOp = clone(b, producer, resultTypes, clonedShapes);
 
   // Shift all IndexOp results by the tile offset.
@@ -186,7 +196,7 @@ static LinalgOp fuse(OpBuilder &b, LinalgOp producerOp, AffineMap producerMap,
   DenseMap<unsigned, Range> fusedLoopsAndRanges;
   Value shapedOperand = consumerOpOperand.get();
   for (const auto &en : llvm::enumerate(producerMap.getResults())) {
-    unsigned posInProducerLoop = cast<AffineDimExpr>(en.value()).getPosition();
+    unsigned posInProducerLoop = en.value().cast<AffineDimExpr>().getPosition();
     fusedLoopsAndRanges[posInProducerLoop] = getRangeFromOperandShape(
         b, consumerOpOperand.getOwner()->getLoc(), shapedOperand, en.index());
   }
@@ -215,7 +225,7 @@ static void getProducerOfTensor(Value tensor, OpResult &opResult) {
     }
     if (auto blockArg = dyn_cast<BlockArgument>(tensor)) {
       if (auto forOp = blockArg.getDefiningOp<scf::ForOp>()) {
-        tensor = forOp.getInitArgs()[blockArg.getArgNumber()];
+        tensor = *(forOp.getIterOperands().begin() + blockArg.getArgNumber());
         continue;
       }
     }

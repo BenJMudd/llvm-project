@@ -515,7 +515,8 @@ struct Allocator {
     return ptr;
   }
 
-  void CommitBack(MemprofThreadLocalMallocStorage *ms) {
+  void CommitBack(MemprofThreadLocalMallocStorage *ms,
+                  BufferedStackTrace *stack) {
     AllocatorCache *ac = GetAllocatorCache(ms);
     allocator.SwallowCache(ac);
   }
@@ -560,7 +561,7 @@ struct Allocator {
     return reinterpret_cast<MemprofChunk *>(p - kChunkHeaderSize)->UsedSize();
   }
 
-  void Purge() { allocator.ForceReleaseToOS(); }
+  void Purge(BufferedStackTrace *stack) { allocator.ForceReleaseToOS(); }
 
   void PrintStats() { allocator.PrintStats(); }
 
@@ -582,7 +583,8 @@ static MemprofAllocator &get_allocator() { return instance.allocator; }
 void InitializeAllocator() { instance.InitLinkerInitialized(); }
 
 void MemprofThreadLocalMallocStorage::CommitBack() {
-  instance.CommitBack(this);
+  GET_STACK_TRACE_MALLOC;
+  instance.CommitBack(this, &stack);
 }
 
 void PrintInternalAllocatorStats() { instance.PrintStats(); }
@@ -697,7 +699,7 @@ static const void *memprof_malloc_begin(const void *p) {
   return (const void *)m->Beg();
 }
 
-uptr memprof_malloc_usable_size(const void *ptr) {
+uptr memprof_malloc_usable_size(const void *ptr, uptr pc, uptr bp) {
   if (!ptr)
     return 0;
   uptr usable_size = instance.AllocationSize(reinterpret_cast<uptr>(ptr));
@@ -712,7 +714,7 @@ using namespace __memprof;
 uptr __sanitizer_get_estimated_allocated_size(uptr size) { return size; }
 
 int __sanitizer_get_ownership(const void *p) {
-  return memprof_malloc_usable_size(p) != 0;
+  return memprof_malloc_usable_size(p, 0, 0) != 0;
 }
 
 const void *__sanitizer_get_allocated_begin(const void *p) {
@@ -720,7 +722,7 @@ const void *__sanitizer_get_allocated_begin(const void *p) {
 }
 
 uptr __sanitizer_get_allocated_size(const void *p) {
-  return memprof_malloc_usable_size(p);
+  return memprof_malloc_usable_size(p, 0, 0);
 }
 
 uptr __sanitizer_get_allocated_size_fast(const void *p) {
@@ -730,21 +732,9 @@ uptr __sanitizer_get_allocated_size_fast(const void *p) {
   return ret;
 }
 
-void __sanitizer_purge_allocator() { instance.Purge(); }
-
 int __memprof_profile_dump() {
   instance.FinishAndWrite();
   // In the future we may want to return non-zero if there are any errors
   // detected during the dumping process.
   return 0;
-}
-
-void __memprof_profile_reset() {
-  if (report_file.fd != kInvalidFd && report_file.fd != kStdoutFd &&
-      report_file.fd != kStderrFd) {
-    CloseFile(report_file.fd);
-    // Setting the file descriptor to kInvalidFd ensures that we will reopen the
-    // file when invoking Write again.
-    report_file.fd = kInvalidFd;
-  }
 }

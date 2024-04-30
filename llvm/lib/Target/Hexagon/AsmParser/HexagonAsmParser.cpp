@@ -43,7 +43,6 @@
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/Format.h"
-#include "llvm/Support/HexagonAttributes.h"
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/SMLoc.h"
 #include "llvm/Support/SourceMgr.h"
@@ -80,7 +79,7 @@ static cl::opt<bool> ErrorNoncontigiousRegister(
     "merror-noncontigious-register",
     cl::desc("Error for register names that aren't contigious"),
     cl::init(false));
-static cl::opt<bool> AddBuildAttributes("hexagon-add-build-attributes");
+
 namespace {
 
 struct HexagonOperand;
@@ -116,14 +115,12 @@ class HexagonAsmParser : public MCTargetAsmParser {
   bool Error(SMLoc L, const Twine &Msg) { return Parser.Error(L, Msg); }
   bool ParseDirectiveFalign(unsigned Size, SMLoc L);
 
-  bool parseRegister(MCRegister &Reg, SMLoc &StartLoc, SMLoc &EndLoc) override;
-  ParseStatus tryParseRegister(MCRegister &Reg, SMLoc &StartLoc,
-                               SMLoc &EndLoc) override;
+  bool parseRegister(MCRegister &RegNo, SMLoc &StartLoc,
+                     SMLoc &EndLoc) override;
+  OperandMatchResultTy tryParseRegister(MCRegister &RegNo, SMLoc &StartLoc,
+                                        SMLoc &EndLoc) override;
   bool ParseDirectiveSubsection(SMLoc L);
   bool ParseDirectiveComm(bool IsLocal, SMLoc L);
-
-  bool parseDirectiveAttribute(SMLoc L);
-
   bool RegisterMatchesArch(unsigned MatchNum) const;
 
   bool matchBundleOptions();
@@ -168,9 +165,6 @@ public:
     Parser.addAliasForDirective(".word", ".4byte");
 
     MCAsmParserExtension::Initialize(_Parser);
-
-    if (AddBuildAttributes)
-      getTargetStreamer().emitTargetAttributes(*STI);
   }
 
   bool splitIdentifier(OperandVector &Operands);
@@ -245,7 +239,7 @@ public:
   /// getEndLoc - Get the location of the last token of this operand.
   SMLoc getEndLoc() const override { return EndLoc; }
 
-  MCRegister getReg() const override {
+  unsigned getReg() const override {
     assert(Kind == Register && "Invalid access!");
     return Reg.RegNum;
   }
@@ -659,56 +653,6 @@ bool HexagonAsmParser::MatchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
     return finishBundle(IDLoc, Out);
   return false;
 }
-/// parseDirectiveAttribute
-///  ::= .attribute int, int
-///  ::= .attribute Tag_name, int
-bool HexagonAsmParser::parseDirectiveAttribute(SMLoc L) {
-  MCAsmParser &Parser = getParser();
-  int64_t Tag;
-  SMLoc TagLoc = Parser.getTok().getLoc();
-  if (Parser.getTok().is(AsmToken::Identifier)) {
-    StringRef Name = Parser.getTok().getIdentifier();
-    std::optional<unsigned> Ret = ELFAttrs::attrTypeFromString(
-        Name, HexagonAttrs::getHexagonAttributeTags());
-    if (!Ret)
-      return Error(TagLoc, "attribute name not recognized: " + Name);
-    Tag = *Ret;
-    Parser.Lex();
-  } else {
-    const MCExpr *AttrExpr;
-
-    TagLoc = Parser.getTok().getLoc();
-    if (Parser.parseExpression(AttrExpr))
-      return true;
-
-    const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(AttrExpr);
-    if (check(!CE, TagLoc, "expected numeric constant"))
-      return true;
-
-    Tag = CE->getValue();
-  }
-
-  if (Parser.parseComma())
-    return true;
-
-  // We currently only have integer values.
-  int64_t IntegerValue = 0;
-  SMLoc ValueExprLoc = Parser.getTok().getLoc();
-  const MCExpr *ValueExpr;
-  if (Parser.parseExpression(ValueExpr))
-    return true;
-
-  const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(ValueExpr);
-  if (!CE)
-    return Error(ValueExprLoc, "expected numeric constant");
-  IntegerValue = CE->getValue();
-
-  if (Parser.parseEOL())
-    return true;
-
-  getTargetStreamer().emitAttribute(Tag, IntegerValue);
-  return false;
-}
 
 /// ParseDirective parses the Hexagon specific directives
 bool HexagonAsmParser::ParseDirective(AsmToken DirectiveID) {
@@ -721,8 +665,6 @@ bool HexagonAsmParser::ParseDirective(AsmToken DirectiveID) {
     return ParseDirectiveComm(false, DirectiveID.getLoc());
   if (IDVal.lower() == ".subsection")
     return ParseDirectiveSubsection(DirectiveID.getLoc());
-  if (IDVal == ".attribute")
-    return parseDirectiveAttribute(DirectiveID.getLoc());
 
   return true;
 }
@@ -1021,13 +963,14 @@ bool HexagonAsmParser::handleNoncontigiousRegister(bool Contigious,
   return false;
 }
 
-bool HexagonAsmParser::parseRegister(MCRegister &Reg, SMLoc &StartLoc,
+bool HexagonAsmParser::parseRegister(MCRegister &RegNo, SMLoc &StartLoc,
                                      SMLoc &EndLoc) {
-  return !tryParseRegister(Reg, StartLoc, EndLoc).isSuccess();
+  return tryParseRegister(RegNo, StartLoc, EndLoc) != MatchOperand_Success;
 }
 
-ParseStatus HexagonAsmParser::tryParseRegister(MCRegister &Reg, SMLoc &StartLoc,
-                                               SMLoc &EndLoc) {
+OperandMatchResultTy HexagonAsmParser::tryParseRegister(MCRegister &RegNo,
+                                                        SMLoc &StartLoc,
+                                                        SMLoc &EndLoc) {
   MCAsmLexer &Lexer = getLexer();
   StartLoc = getLexer().getLoc();
   SmallVector<AsmToken, 5> Lookahead;
@@ -1059,20 +1002,20 @@ ParseStatus HexagonAsmParser::tryParseRegister(MCRegister &Reg, SMLoc &StartLoc,
   unsigned DotReg = matchRegister(DotSplit.first.lower());
   if (DotReg != Hexagon::NoRegister && RegisterMatchesArch(DotReg)) {
     if (DotSplit.second.empty()) {
-      Reg = DotReg;
+      RegNo = DotReg;
       EndLoc = Lexer.getLoc();
       if (handleNoncontigiousRegister(!NeededWorkaround, StartLoc))
-        return ParseStatus::NoMatch;
-      return ParseStatus::Success;
+        return MatchOperand_NoMatch;
+      return MatchOperand_Success;
     } else {
-      Reg = DotReg;
+      RegNo = DotReg;
       size_t First = RawString.find('.');
       StringRef DotString (RawString.data() + First, RawString.size() - First);
       Lexer.UnLex(AsmToken(AsmToken::Identifier, DotString));
       EndLoc = Lexer.getLoc();
       if (handleNoncontigiousRegister(!NeededWorkaround, StartLoc))
-        return ParseStatus::NoMatch;
-      return ParseStatus::Success;
+        return MatchOperand_NoMatch;
+      return MatchOperand_Success;
     }
   }
   std::pair<StringRef, StringRef> ColonSplit = StringRef(FullString).split(':');
@@ -1081,16 +1024,16 @@ ParseStatus HexagonAsmParser::tryParseRegister(MCRegister &Reg, SMLoc &StartLoc,
     do {
       Lexer.UnLex(Lookahead.pop_back_val());
     } while (!Lookahead.empty() && !Lexer.is(AsmToken::Colon));
-    Reg = ColonReg;
+    RegNo = ColonReg;
     EndLoc = Lexer.getLoc();
     if (handleNoncontigiousRegister(!NeededWorkaround, StartLoc))
-      return ParseStatus::NoMatch;
-    return ParseStatus::Success;
+      return MatchOperand_NoMatch;
+    return MatchOperand_Success;
   }
   while (!Lookahead.empty()) {
     Lexer.UnLex(Lookahead.pop_back_val());
   }
-  return ParseStatus::NoMatch;
+  return MatchOperand_NoMatch;
 }
 
 bool HexagonAsmParser::implicitExpressionLocation(OperandVector &Operands) {

@@ -53,9 +53,9 @@ static MCStreamer *
 createSPIRVMCStreamer(const Triple &T, MCContext &Ctx,
                       std::unique_ptr<MCAsmBackend> &&MAB,
                       std::unique_ptr<MCObjectWriter> &&OW,
-                      std::unique_ptr<MCCodeEmitter> &&Emitter) {
+                      std::unique_ptr<MCCodeEmitter> &&Emitter, bool RelaxAll) {
   return createSPIRVStreamer(Ctx, std::move(MAB), std::move(OW),
-                             std::move(Emitter));
+                             std::move(Emitter), RelaxAll);
 }
 
 static MCTargetStreamer *createTargetAsmStreamer(MCStreamer &S,
@@ -88,8 +88,7 @@ static MCInstrAnalysis *createSPIRVInstrAnalysis(const MCInstrInfo *Info) {
 }
 
 extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeSPIRVTargetMC() {
-  for (Target *T : {&getTheSPIRV32Target(), &getTheSPIRV64Target(),
-                    &getTheSPIRVLogicalTarget()}) {
+  for (Target *T : {&getTheSPIRV32Target(), &getTheSPIRV64Target()}) {
     RegisterMCAsmInfo<SPIRVMCAsmInfo> X(*T);
     TargetRegistry::RegisterMCInstrInfo(*T, createSPIRVMCInstrInfo);
     TargetRegistry::RegisterMCRegInfo(*T, createSPIRVMCRegisterInfo);

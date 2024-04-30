@@ -12,8 +12,7 @@
 #include "Plugins/SymbolFile/DWARF/DWARFIndex.h"
 #include "llvm/DebugInfo/DWARF/DWARFAcceleratorTable.h"
 
-namespace lldb_private::plugin {
-namespace dwarf {
+namespace lldb_private {
 class AppleDWARFIndex : public DWARFIndex {
 public:
   static std::unique_ptr<AppleDWARFIndex>
@@ -25,19 +24,11 @@ public:
                   std::unique_ptr<llvm::AppleAcceleratorTable> apple_names,
                   std::unique_ptr<llvm::AppleAcceleratorTable> apple_namespaces,
                   std::unique_ptr<llvm::AppleAcceleratorTable> apple_types,
-                  std::unique_ptr<llvm::AppleAcceleratorTable> apple_objc,
-                  lldb::DataBufferSP apple_names_storage,
-                  lldb::DataBufferSP apple_namespaces_storage,
-                  lldb::DataBufferSP apple_types_storage,
-                  lldb::DataBufferSP apple_objc_storage)
+                  std::unique_ptr<llvm::AppleAcceleratorTable> apple_objc)
       : DWARFIndex(module), m_apple_names_up(std::move(apple_names)),
         m_apple_namespaces_up(std::move(apple_namespaces)),
         m_apple_types_up(std::move(apple_types)),
-        m_apple_objc_up(std::move(apple_objc)),
-        m_apple_names_storage(apple_names_storage),
-        m_apple_namespaces_storage(apple_namespaces_storage),
-        m_apple_types_storage(apple_types_storage),
-        m_apple_objc_storage(apple_objc_storage) {}
+        m_apple_objc_up(std::move(apple_objc)) {}
 
   void Preload() override {}
 
@@ -75,14 +66,6 @@ private:
   std::unique_ptr<llvm::AppleAcceleratorTable> m_apple_namespaces_up;
   std::unique_ptr<llvm::AppleAcceleratorTable> m_apple_types_up;
   std::unique_ptr<llvm::AppleAcceleratorTable> m_apple_objc_up;
-  /// The following storage variables hold the data that the apple accelerator
-  /// tables tables above point to.
-  /// {
-  lldb::DataBufferSP m_apple_names_storage;
-  lldb::DataBufferSP m_apple_namespaces_storage;
-  lldb::DataBufferSP m_apple_types_storage;
-  lldb::DataBufferSP m_apple_objc_storage;
-  /// }
 
   /// Search for entries whose name is `name` in `table`, calling `callback` for
   /// each match. If `search_for_tag` is provided, ignore entries whose tag is
@@ -94,7 +77,6 @@ private:
                  std::optional<dw_tag_t> search_for_tag = std::nullopt,
                  std::optional<uint32_t> search_for_qualhash = std::nullopt);
 };
-} // namespace dwarf
-} // namespace lldb_private::plugin
+} // namespace lldb_private
 
 #endif // LLDB_SOURCE_PLUGINS_SYMBOLFILE_DWARF_APPLEDWARFINDEX_H

@@ -9,7 +9,6 @@ target datalayout = "e-m:e-i64:64-i128:128-n32:64-S128"
 define void @sink_replicate_region_1(i32 %x, ptr %ptr, ptr noalias %dst) optsize {
 ; CHECK-LABEL: sink_replicate_region_1
 ; CHECK:      VPlan 'Initial VPlan for VF={2},UF>=1' {
-; CHECK-NEXT: Live-in vp<[[VFxUF:%.+]]> = VF * UF
 ; CHECK-NEXT: Live-in vp<[[VEC_TC:%.+]]> = vector-trip-count
 ; CHECK-NEXT: Live-in vp<[[BTC:%.+]]> = backedge-taken count
 ; CHECK-NEXT: Live-in ir<20001> = original trip-count
@@ -23,7 +22,7 @@ define void @sink_replicate_region_1(i32 %x, ptr %ptr, ptr noalias %dst) optsize
 ; CHECK-NEXT:   FIRST-ORDER-RECURRENCE-PHI ir<%0> = phi ir<0>, ir<%conv>
 ; CHECK-NEXT:   WIDEN-INDUCTION %iv = phi 0, %iv.next, ir<1>
 ; CHECK-NEXT:   vp<[[STEPS:%.]]> = SCALAR-STEPS vp<[[CAN_IV]]>, ir<1>
-; CHECK-NEXT:   EMIT vp<[[MASK:%.+]]> = icmp ule ir<%iv>, vp<[[BTC]]>
+; CHECK-NEXT:   EMIT vp<[[MASK:%.+]]> = icmp ule ir<%iv> vp<[[BTC]]>
 ; CHECK-NEXT: Successor(s): pred.load
 ; CHECK-EMPTY:
 ; CHECK-NEXT: <xVFxUF> pred.load: {
@@ -44,7 +43,7 @@ define void @sink_replicate_region_1(i32 %x, ptr %ptr, ptr noalias %dst) optsize
 ; CHECK-EMPTY:
 ; CHECK-NEXT: loop.0:
 ; CHECK-NEXT:   WIDEN-CAST ir<%conv> = sext vp<[[PRED1]]> to i32
-; CHECK-NEXT:   EMIT vp<[[SPLICE:%.+]]> = first-order splice ir<%0>, ir<%conv>
+; CHECK-NEXT:   EMIT vp<[[SPLICE:%.+]]> = first-order splice ir<%0> ir<%conv>
 ; CHECK-NEXT: Successor(s): pred.store
 ; CHECK-EMPTY:
 ; CHECK-NEXT: <xVFxUF> pred.store: {
@@ -66,8 +65,8 @@ define void @sink_replicate_region_1(i32 %x, ptr %ptr, ptr noalias %dst) optsize
 ; CHECK-NEXT: Successor(s): loop.2
 ; CHECK-EMPTY:
 ; CHECK-NEXT: loop.2:
-; CHECK-NEXT:   EMIT vp<[[CAN_IV_NEXT:%.+]]> = add vp<[[CAN_IV]]>, vp<[[VFxUF]]>
-; CHECK-NEXT:   EMIT branch-on-count vp<[[CAN_IV_NEXT]]>, vp<[[VEC_TC]]>
+; CHECK-NEXT:   EMIT vp<[[CAN_IV_NEXT:%.+]]> = VF * UF + vp<[[CAN_IV]]>
+; CHECK-NEXT:   EMIT branch-on-count vp<[[CAN_IV_NEXT]]> vp<[[VEC_TC]]>
 ; CHECK-NEXT: No successors
 ; CHECK-NEXT: }
 ; CHECK-NEXT: Successor(s): middle.block
@@ -100,7 +99,6 @@ exit:
 define void @sink_replicate_region_2(i32 %x, i8 %y, ptr %ptr) optsize {
 ; CHECK-LABEL: sink_replicate_region_2
 ; CHECK:      VPlan 'Initial VPlan for VF={2},UF>=1' {
-; CHECK-NEXT: Live-in vp<[[VFxUF:%.+]]> = VF * UF
 ; CHECK-NEXT: Live-in vp<[[VEC_TC:%.+]]> = vector-trip-count
 ; CHECK-NEXT: Live-in vp<[[BTC:%.+]]> = backedge-taken count
 ; CHECK-NEXT: Live-in ir<20001> = original trip-count
@@ -113,9 +111,9 @@ define void @sink_replicate_region_2(i32 %x, i8 %y, ptr %ptr) optsize {
 ; CHECK-NEXT:   EMIT vp<[[CAN_IV:%.+]]> = CANONICAL-INDUCTION
 ; CHECK-NEXT:   FIRST-ORDER-RECURRENCE-PHI ir<%recur> = phi ir<0>, ir<%recur.next>
 ; CHECK-NEXT:   WIDEN-INDUCTION %iv = phi 0, %iv.next, ir<1>
-; CHECK-NEXT:   EMIT vp<[[MASK:%.+]]> = icmp ule ir<%iv>, vp<[[BTC]]>
+; CHECK-NEXT:   EMIT vp<[[MASK:%.+]]> = icmp ule ir<%iv> vp<[[BTC]]>
 ; CHECK-NEXT:   WIDEN-CAST ir<%recur.next> = sext ir<%y> to i32
-; CHECK-NEXT:   EMIT vp<[[SPLICE:%.+]]> = first-order splice ir<%recur>, ir<%recur.next>
+; CHECK-NEXT:   EMIT vp<[[SPLICE:%.+]]> = first-order splice ir<%recur> ir<%recur.next>
 ; CHECK-NEXT:   Successor(s): pred.store
 ; CHECK-EMPTY:
 ; CHECK-NEXT: <xVFxUF> pred.store: {
@@ -138,8 +136,8 @@ define void @sink_replicate_region_2(i32 %x, i8 %y, ptr %ptr) optsize {
 ; CHECK-NEXT: Successor(s): loop.1
 ; CHECK-EMPTY:
 ; CHECK-NEXT: loop.1:
-; CHECK-NEXT:   EMIT vp<[[CAN_IV_NEXT:%.+]]> = add vp<[[CAN_IV]]>, vp<[[VFxUF]]>
-; CHECK-NEXT:   EMIT branch-on-count vp<[[CAN_IV_NEXT]]>, vp<[[VEC_TC]]>
+; CHECK-NEXT:   EMIT vp<[[CAN_IV_NEXT:%.+]]> = VF * UF + vp<[[CAN_IV]]>
+; CHECK-NEXT:   EMIT branch-on-count vp<[[CAN_IV_NEXT]]> vp<[[VEC_TC]]>
 ; CHECK-NEXT: No successors
 ; CHECK-NEXT: }
 ; CHECK-NEXT: Successor(s): middle.block
@@ -170,7 +168,6 @@ exit:
 define i32 @sink_replicate_region_3_reduction(i32 %x, i8 %y, ptr %ptr) optsize {
 ; CHECK-LABEL: sink_replicate_region_3_reduction
 ; CHECK:      VPlan 'Initial VPlan for VF={2},UF>=1' {
-; CHECK-NEXT: Live-in vp<[[VFxUF:%.+]]> = VF * UF
 ; CHECK-NEXT: Live-in vp<[[VEC_TC:%.+]]> = vector-trip-count
 ; CHECK-NEXT: Live-in vp<[[BTC:%.+]]> = backedge-taken count
 ; CHECK-NEXT: Live-in ir<20001> = original trip-count
@@ -184,9 +181,9 @@ define i32 @sink_replicate_region_3_reduction(i32 %x, i8 %y, ptr %ptr) optsize {
 ; CHECK-NEXT:   FIRST-ORDER-RECURRENCE-PHI ir<%recur> = phi ir<0>, ir<%recur.next>
 ; CHECK-NEXT:   WIDEN-REDUCTION-PHI ir<%and.red> = phi ir<1234>, ir<%and.red.next>
 ; CHECK-NEXT:   EMIT vp<[[WIDEN_CAN:%.+]]> = WIDEN-CANONICAL-INDUCTION vp<[[CAN_IV]]>
-; CHECK-NEXT:   EMIT vp<[[MASK:%.+]]> = icmp ule vp<[[WIDEN_CAN]]>, vp<[[BTC]]>
+; CHECK-NEXT:   EMIT vp<[[MASK:%.+]]> = icmp ule vp<[[WIDEN_CAN]]> vp<[[BTC]]>
 ; CHECK-NEXT:   WIDEN-CAST ir<%recur.next> = sext ir<%y> to i32
-; CHECK-NEXT:   EMIT vp<[[SPLICE:%.+]]> = first-order splice ir<%recur>, ir<%recur.next>
+; CHECK-NEXT:   EMIT vp<[[SPLICE:%.+]]> = first-order splice ir<%recur> ir<%recur.next>
 ; CHECK-NEXT: Successor(s): pred.srem
 ; CHECK-EMPTY:
 ; CHECK-NEXT: <xVFxUF> pred.srem: {
@@ -207,18 +204,17 @@ define i32 @sink_replicate_region_3_reduction(i32 %x, i8 %y, ptr %ptr) optsize {
 ; CHECK-NEXT: loop.0:
 ; CHECK-NEXT:   WIDEN ir<%add> = add vp<[[PRED]]>, ir<%recur.next>
 ; CHECK-NEXT:   WIDEN ir<%and.red.next> = and ir<%and.red>, ir<%add>
-; CHECK-NEXT:   EMIT vp<[[SEL:%.+]]> = select vp<[[MASK]]>, ir<%and.red.next>, ir<%and.red>
-; CHECK-NEXT:   EMIT vp<[[CAN_IV_NEXT:%.+]]> = add vp<[[CAN_IV]]>, vp<[[VFxUF]]>
-; CHECK-NEXT:   EMIT branch-on-count vp<[[CAN_IV_NEXT]]>, vp<[[VEC_TC]]>
+; CHECK-NEXT:   EMIT vp<[[SEL:%.+]]> = select vp<[[MASK]]> ir<%and.red.next> ir<%and.red>
+; CHECK-NEXT:   EMIT vp<[[CAN_IV_NEXT:%.+]]> = VF * UF + vp<[[CAN_IV]]>
+; CHECK-NEXT:   EMIT branch-on-count vp<[[CAN_IV_NEXT]]> vp<[[VEC_TC]]>
 ; CHECK-NEXT: No successors
 ; CHECK-NEXT: }
 ; CHECK-NEXT: Successor(s): middle.block
 ; CHECK-EMPTY:
 ; CHECK-NEXT: middle.block:
-; CHECK-NEXT:  EMIT vp<[[RED_RES:%.+]]> = compute-reduction-result ir<%and.red>, vp<[[SEL]]>
 ; CHECK-NEXT: No successors
 ; CHECK-EMPTY:
-; CHECK-NEXT: Live-out i32 %res = vp<[[RED_RES]]>
+; CHECK-NEXT: Live-out i32 %res = ir<%and.red.next>
 ; CHECK-NEXT: }
 ;
 entry:
@@ -246,7 +242,6 @@ exit:
 define void @sink_replicate_region_4_requires_split_at_end_of_block(i32 %x, ptr %ptr, ptr noalias %dst) optsize {
 ; CHECK-LABEL: sink_replicate_region_4_requires_split_at_end_of_block
 ; CHECK:      VPlan 'Initial VPlan for VF={2},UF>=1' {
-; CHECK-NEXT: Live-in vp<[[VFxUF:%.+]]> = VF * UF
 ; CHECK-NEXT: Live-in vp<[[VEC_TC:%.+]]> = vector-trip-count
 ; CHECK-NEXT: Live-in vp<[[BTC:%.+]]> = backedge-taken count
 ; CHECK-NEXT: Live-in ir<20001> = original trip-count
@@ -260,7 +255,7 @@ define void @sink_replicate_region_4_requires_split_at_end_of_block(i32 %x, ptr 
 ; CHECK-NEXT:   FIRST-ORDER-RECURRENCE-PHI ir<%0> = phi ir<0>, ir<%conv>
 ; CHECK-NEXT:   WIDEN-INDUCTION %iv = phi 0, %iv.next, ir<1>
 ; CHECK-NEXT:   vp<[[STEPS:%.+]]> = SCALAR-STEPS vp<[[CAN_IV]]>, ir<1>
-; CHECK-NEXT:   EMIT vp<[[MASK:%.+]]> = icmp ule ir<%iv>, vp<[[BTC]]>
+; CHECK-NEXT:   EMIT vp<[[MASK:%.+]]> = icmp ule ir<%iv> vp<[[BTC]]>
 ; CHECK-NEXT:   REPLICATE ir<%gep> = getelementptr ir<%ptr>, vp<[[STEPS]]>
 ; CHECK-NEXT: Successor(s): pred.load
 ; CHECK-EMPTY:
@@ -281,7 +276,7 @@ define void @sink_replicate_region_4_requires_split_at_end_of_block(i32 %x, ptr 
 ; CHECK-EMPTY:
 ; CHECK-NEXT: loop.0:
 ; CHECK-NEXT:   WIDEN-CAST ir<%conv> = sext vp<[[PRED]]> to i32
-; CHECK-NEXT:   EMIT vp<[[SPLICE:%.+]]> = first-order splice ir<%0>, ir<%conv>
+; CHECK-NEXT:   EMIT vp<[[SPLICE:%.+]]> = first-order splice ir<%0> ir<%conv>
 ; CHECK-NEXT: Successor(s): pred.store
 ; CHECK-EMPTY:
 ; CHECK:      <xVFxUF> pred.store: {
@@ -307,8 +302,8 @@ define void @sink_replicate_region_4_requires_split_at_end_of_block(i32 %x, ptr 
 ; CHECK-NEXT:   Successor(s): loop.3
 ; CHECK-EMPTY:
 ; CHECK:      loop.3:
-; CHECK-NEXT:   EMIT vp<[[CAN_IV_NEXT:%.+]]> = add vp<[[CAN_IV]]>, vp<[[VFxUF]]>
-; CHECK-NEXT:   EMIT branch-on-count vp<[[CAN_IV_NEXT]]>, vp<[[VEC_TC]]>
+; CHECK-NEXT:   EMIT vp<[[CAN_IV_NEXT:%.+]]> = VF * UF + vp<[[CAN_IV]]>
+; CHECK-NEXT:   EMIT branch-on-count vp<[[CAN_IV_NEXT]]> vp<[[VEC_TC]]>
 ; CHECK-NEXT: No successors
 ; CHECK-NEXT: }
 ; CHECK-NEXT: Successor(s): middle.block
@@ -345,7 +340,6 @@ exit:
 define void @sink_replicate_region_after_replicate_region(ptr %ptr, ptr noalias %dst.2, i32 %x, i8 %y) optsize {
 ; CHECK-LABEL: sink_replicate_region_after_replicate_region
 ; CHECK:      VPlan 'Initial VPlan for VF={2},UF>=1' {
-; CHECK-NEXT: Live-in vp<[[VFxUF:%.+]]> = VF * UF
 ; CHECK-NEXT: Live-in vp<[[VEC_TC:%.+]]> = vector-trip-count
 ; CHECK-NEXT: Live-in vp<[[BTC:%.+]]> = backedge-taken count
 ; CHECK-NEXT: vp<[[TC:%.+]]> = original trip-count
@@ -362,9 +356,9 @@ define void @sink_replicate_region_after_replicate_region(ptr %ptr, ptr noalias 
 ; CHECK-NEXT:   EMIT vp<[[CAN_IV:%.+]]> = CANONICAL-INDUCTION
 ; CHECK-NEXT:   FIRST-ORDER-RECURRENCE-PHI ir<%recur> = phi ir<0>, ir<%recur.next>
 ; CHECK-NEXT:   WIDEN-INDUCTION %iv = phi 0, %iv.next, ir<1>
-; CHECK-NEXT:   EMIT vp<[[MASK:%.+]]> = icmp ule ir<%iv>, vp<[[BTC]]>
+; CHECK-NEXT:   EMIT vp<[[MASK:%.+]]> = icmp ule ir<%iv> vp<[[BTC]]>
 ; CHECK-NEXT:   WIDEN-CAST ir<%recur.next> = sext ir<%y> to i32
-; CHECK-NEXT:   EMIT vp<[[SPLICE:%.+]]> = first-order splice ir<%recur>, ir<%recur.next>
+; CHECK-NEXT:   EMIT vp<[[SPLICE:%.+]]> = first-order splice ir<%recur> ir<%recur.next>
 ; CHECK-NEXT: Successor(s): pred.store
 ; CHECK-EMPTY:
 ; CHECK-NEXT: <xVFxUF> pred.store: {
@@ -390,8 +384,8 @@ define void @sink_replicate_region_after_replicate_region(ptr %ptr, ptr noalias 
 ; CHECK-NEXT: Successor(s): loop.3
 ; CHECK-EMPTY:
 ; CHECK-NEXT: loop.3:
-; CHECK-NEXT:   EMIT vp<[[CAN_IV_NEXT:%.+]]> = add vp<[[CAN_IV]]>, vp<[[VFxUF]]>
-; CHECK-NEXT:   EMIT branch-on-count vp<[[CAN_IV_NEXT]]>, vp<[[VEC_TC]]>
+; CHECK-NEXT:   EMIT vp<[[CAN_IV_NEXT:%.+]]> = VF * UF + vp<[[CAN_IV]]>
+; CHECK-NEXT:   EMIT branch-on-count vp<[[CAN_IV_NEXT]]> vp<[[VEC_TC]]>
 ; CHECK-NEXT: No successors
 ; CHECK-NEXT: }
 ; CHECK-NEXT: Successor(s): middle.block
@@ -424,7 +418,6 @@ exit:                                             ; preds = %loop
 define void @need_new_block_after_sinking_pr56146(i32 %x, ptr %src, ptr noalias %dst) {
 ; CHECK-LABEL: need_new_block_after_sinking_pr56146
 ; CHECK:      VPlan 'Initial VPlan for VF={2},UF>=1' {
-; CHECK-NEXT: Live-in vp<[[VFxUF:%.+]]> = VF * UF
 ; CHECK-NEXT: Live-in vp<[[VEC_TC:%.+]]> = vector-trip-count
 ; CHECK-NEXT: Live-in vp<[[BTC:%.+]]> = backedge-taken count
 ; CHECK-NEXT: Live-in ir<3> = original trip-count
@@ -438,9 +431,9 @@ define void @need_new_block_after_sinking_pr56146(i32 %x, ptr %src, ptr noalias 
 ; CHECK-NEXT:     FIRST-ORDER-RECURRENCE-PHI ir<%.pn> = phi ir<0>, ir<[[L:%.+]]>
 ; CHECK-NEXT:     vp<[[DERIVED_IV:%.+]]> = DERIVED-IV ir<2> + vp<[[CAN_IV]]> * ir<1>
 ; CHECK-NEXT:     EMIT vp<[[WIDE_IV:%.+]]> = WIDEN-CANONICAL-INDUCTION vp<[[CAN_IV]]>
-; CHECK-NEXT:     EMIT vp<[[CMP:%.+]]> = icmp ule vp<[[WIDE_IV]]>, vp<[[BTC]]>
+; CHECK-NEXT:     EMIT vp<[[CMP:%.+]]> = icmp ule vp<[[WIDE_IV]]> vp<[[BTC]]>
 ; CHECK-NEXT:     CLONE ir<[[L]]> = load ir<%src>
-; CHECK-NEXT:     EMIT vp<[[SPLICE:%.+]]> = first-order splice ir<%.pn>, ir<[[L]]>
+; CHECK-NEXT:     EMIT vp<[[SPLICE:%.+]]> = first-order splice ir<%.pn> ir<[[L]]>
 ; CHECK-NEXT:  Successor(s): pred.store
 ; CHECK-EMPTY:
 ; CHECK-NEXT:   <xVFxUF> pred.store: {
@@ -462,8 +455,8 @@ define void @need_new_block_after_sinking_pr56146(i32 %x, ptr %src, ptr noalias 
 ; CHECK-NEXT:   Successor(s): loop.1
 ; CHECK-EMPTY:
 ; CHECK-NEXT:   loop.1:
-; CHECK-NEXT:     EMIT vp<[[CAN_IV_NEXT:%.+]]> = add vp<[[CAN_IV]]>, vp<[[VFxUF]]>
-; CHECK-NEXT:     EMIT branch-on-count vp<[[CAN_IV_NEXT]]>, vp<[[VEC_TC]]>
+; CHECK-NEXT:     EMIT vp<[[CAN_IV_NEXT:%.+]]> = VF * UF +  vp<[[CAN_IV]]>
+; CHECK-NEXT:     EMIT branch-on-count  vp<[[CAN_IV_NEXT]]> vp<[[VEC_TC]]>
 ; CHECK-NEXT:   No successors
 ; CHECK-NEXT: }
 ; CHECK-NEXT: Successor(s): middle.block

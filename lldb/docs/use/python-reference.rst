@@ -10,6 +10,9 @@ command interpreter (we refer to this for brevity as the embedded interpreter).
 Of course, in this context it has full access to the LLDB API - with some
 additional conveniences we will call out in the FAQ.
 
+.. contents::
+   :local:
+
 Documentation
 --------------
 
@@ -491,17 +494,14 @@ which will work like all the natively defined lldb commands. This provides a
 very flexible and easy way to extend LLDB to meet your debugging requirements.
 
 To write a python function that implements a new LLDB command define the
-function to take five arguments as follows:
+function to take four arguments as follows:
 
 ::
 
-  def command_function(debugger, command, exe_ctx, result, internal_dict):
+  def command_function(debugger, command, result, internal_dict):
       # Your code goes here
 
-The meaning of the arguments is given in the table below.
-
-If you provide a Python docstring in your command function LLDB will use it
-when providing "long help" for your command, as in:
+Optionally, you can also provide a Python docstring, and LLDB will use it when providing help for your command, as in:
 
 ::
 
@@ -509,23 +509,18 @@ when providing "long help" for your command, as in:
       """This command takes a lot of options and does many fancy things"""
       # Your code goes here
 
-though providing help can also be done programmatically (see below).
+Since lldb 3.5.2, LLDB Python commands can also take an SBExecutionContext as an
+argument. This is useful in cases where the command's notion of where to act is
+independent of the currently-selected entities in the debugger.
 
-Prior to lldb 3.5.2 (April 2015), LLDB Python command definitions didn't take the SBExecutionContext
-argument. So you may still see commands where the command definition is:
+This feature is enabled if the command-implementing function can be recognized
+as taking 5 arguments, or a variable number of arguments, and it alters the
+signature as such:
 
 ::
 
-  def command_function(debugger, command, result, internal_dict):
+  def command_function(debugger, command, exe_ctx, result, internal_dict):
       # Your code goes here
-
-Using this form is strongly discouraged because it can only operate on the "currently selected"
-target, process, thread, frame.  The command will behave as expected when run
-directly on the command line.  But if the command is used in a stop-hook, breakpoint
-callback, etc. where the response to the callback determines whether we will select
-this or that particular process/frame/thread, the global "currently selected"
-entity is not necessarily the one the callback is meant to handle.  In that case, this
-command definition form can't do the right thing.
 
 +-------------------+--------------------------------+----------------------------------------------------------------------------------------------------------------------------------+
 | Argument          | Type                           | Description                                                                                                                      |
@@ -893,8 +888,8 @@ When the program is stopped at the beginning of the 'read' function in libc, we 
   (lldb) frame variable
   (int) fd = 3
 
-Writing Target Stop-Hooks in Python
------------------------------------
+Writing Target Stop-Hooks in Python:
+------------------------------------
 
 Stop hooks fire whenever the process stops just before control is returned to the
 user.  Stop hooks can either be a set of lldb command-line commands, or can

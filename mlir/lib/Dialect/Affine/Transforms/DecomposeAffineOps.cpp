@@ -71,10 +71,10 @@ void mlir::affine::reorderOperandsByHoistability(RewriterBase &rewriter,
                        op->getContext());
   canonicalizeMapAndOperands(&map, &operands);
 
-  rewriter.startOpModification(op);
+  rewriter.startRootUpdate(op);
   op.setMap(map);
   op->setOperands(operands);
-  rewriter.finalizeOpModification(op);
+  rewriter.finalizeRootUpdate(op);
 }
 
 /// Build an affine.apply that is a subexpression `expr` of `originalOp`s affine
@@ -102,12 +102,12 @@ FailureOr<AffineApplyOp> mlir::affine::decompose(RewriterBase &rewriter,
     return rewriter.notifyMatchFailure(op, "expected no dims");
 
   AffineExpr remainingExp = m.getResult(0);
-  auto binExpr = dyn_cast<AffineBinaryOpExpr>(remainingExp);
+  auto binExpr = remainingExp.dyn_cast<AffineBinaryOpExpr>();
   if (!binExpr)
     return rewriter.notifyMatchFailure(op, "terminal affine.apply");
 
-  if (!isa<AffineBinaryOpExpr>(binExpr.getLHS()) &&
-      !isa<AffineBinaryOpExpr>(binExpr.getRHS()))
+  if (!binExpr.getLHS().isa<AffineBinaryOpExpr>() &&
+      !binExpr.getRHS().isa<AffineBinaryOpExpr>())
     return rewriter.notifyMatchFailure(op, "terminal affine.apply");
 
   bool supportedKind = ((binExpr.getKind() == AffineExprKind::Add) ||
@@ -123,7 +123,7 @@ FailureOr<AffineApplyOp> mlir::affine::decompose(RewriterBase &rewriter,
   MLIRContext *ctx = op->getContext();
   SmallVector<AffineExpr> subExpressions;
   while (true) {
-    auto currentBinExpr = dyn_cast<AffineBinaryOpExpr>(remainingExp);
+    auto currentBinExpr = remainingExp.dyn_cast<AffineBinaryOpExpr>();
     if (!currentBinExpr || currentBinExpr.getKind() != binExpr.getKind()) {
       subExpressions.push_back(remainingExp);
       LLVM_DEBUG(DBGS() << "--terminal: " << subExpressions.back() << "\n");

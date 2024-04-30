@@ -47,8 +47,7 @@ public:
       return "<bits/stdc++.h>";
     if (Input.H.kind() != Header::Physical)
       return "";
-    llvm::StringRef AbsolutePath =
-        Input.H.physical().getFileEntry().tryGetRealPathName();
+    llvm::StringRef AbsolutePath = Input.H.physical()->tryGetRealPathName();
     std::string RootWithSeparator{testRoot()};
     RootWithSeparator += llvm::sys::path::get_separator();
     if (!AbsolutePath.consume_front(llvm::StringRef{RootWithSeparator}))
@@ -71,12 +70,10 @@ TEST(IncludeSpeller, IsRelativeToTestRoot) {
   const auto *MainFile = AST.sourceManager().getFileEntryForID(
       AST.sourceManager().getMainFileID());
 
-  EXPECT_EQ("\"foo.h\"",
-            spellHeader({Header{*FM.getOptionalFileRef(testPath("foo.h"))}, HS,
-                         MainFile}));
+  EXPECT_EQ("\"foo.h\"", spellHeader({Header{*FM.getFile(testPath("foo.h"))},
+                                      HS, MainFile}));
   EXPECT_EQ("<header.h>",
-            spellHeader({Header{*FM.getOptionalFileRef("dir/header.h")}, HS,
-                         MainFile}));
+            spellHeader({Header{*FM.getFile("dir/header.h")}, HS, MainFile}));
 }
 
 TEST(IncludeSpeller, CanOverrideSystemHeaders) {

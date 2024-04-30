@@ -59,7 +59,7 @@ Block *Value::getParentBlock() {
 /// the IR that uses 'this' to use the other value instead except if the user is
 /// listed in 'exceptions' .
 void Value::replaceAllUsesExcept(
-    Value newValue, const SmallPtrSetImpl<Operation *> &exceptions) {
+    Value newValue, const SmallPtrSetImpl<Operation *> &exceptions) const {
   for (OpOperand &use : llvm::make_early_inc_range(getUses())) {
     if (exceptions.count(use.getOwner()) == 0)
       use.set(newValue);
@@ -69,7 +69,8 @@ void Value::replaceAllUsesExcept(
 /// Replace all uses of 'this' value with 'newValue', updating anything in the
 /// IR that uses 'this' to use the other value instead except if the user is
 /// 'exceptedUser'.
-void Value::replaceAllUsesExcept(Value newValue, Operation *exceptedUser) {
+void Value::replaceAllUsesExcept(Value newValue,
+                                 Operation *exceptedUser) const {
   for (OpOperand &use : llvm::make_early_inc_range(getUses())) {
     if (use.getOwner() != exceptedUser)
       use.set(newValue);
@@ -86,7 +87,7 @@ void Value::replaceUsesWithIf(Value newValue,
 }
 
 /// Returns true if the value is used outside of the given block.
-bool Value::isUsedOutsideOfBlock(Block *block) const {
+bool Value::isUsedOutsideOfBlock(Block *block) {
   return llvm::any_of(getUsers(), [block](Operation *user) {
     return user->getBlock() != block;
   });

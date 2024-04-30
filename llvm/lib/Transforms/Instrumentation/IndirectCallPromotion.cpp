@@ -26,7 +26,6 @@
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/MDBuilder.h"
 #include "llvm/IR/PassManager.h"
-#include "llvm/IR/ProfDataUtils.h"
 #include "llvm/IR/Value.h"
 #include "llvm/ProfileData/InstrProf.h"
 #include "llvm/Support/Casting.h"
@@ -136,13 +135,11 @@ private:
       const CallBase &CB, const ArrayRef<InstrProfValueData> &ValueDataRef,
       uint64_t TotalCount, uint32_t NumCandidates);
 
-  // Promote a list of targets for one indirect-call callsite by comparing
-  // indirect callee with functions. Returns true if there are IR
-  // transformations and false otherwise.
-  bool tryToPromoteWithFuncCmp(
-      CallBase &CB, const std::vector<PromotionCandidate> &Candidates,
-      uint64_t TotalCount, ArrayRef<InstrProfValueData> ICallProfDataRef,
-      uint32_t NumCandidates);
+  // Promote a list of targets for one indirect-call callsite. Return
+  // the number of promotions.
+  uint32_t tryToPromote(CallBase &CB,
+                        const std::vector<PromotionCandidate> &Candidates,
+                        uint64_t &TotalCount);
 
 public:
   IndirectCallPromoter(Function &Func, InstrProfSymtab *Symtab, bool SamplePGO,
@@ -259,7 +256,10 @@ CallBase &llvm::pgo::promoteIndirectCall(CallBase &CB, Function *DirectCallee,
       promoteCallWithIfThenElse(CB, DirectCallee, BranchWeights);
 
   if (AttachProfToDirectCall) {
-    setBranchWeights(NewInst, {static_cast<uint32_t>(Count)});
+    MDBuilder MDB(NewInst.getContext());
+    NewInst.setMetadata(
+        LLVMContext::MD_prof,
+        MDB.createBranchWeights({static_cast<uint32_t>(Count)}));
   }
 
   using namespace ore;
@@ -275,10 +275,9 @@ CallBase &llvm::pgo::promoteIndirectCall(CallBase &CB, Function *DirectCallee,
 }
 
 // Promote indirect-call to conditional direct-call for one callsite.
-bool IndirectCallPromoter::tryToPromoteWithFuncCmp(
+uint32_t IndirectCallPromoter::tryToPromote(
     CallBase &CB, const std::vector<PromotionCandidate> &Candidates,
-    uint64_t TotalCount, ArrayRef<InstrProfValueData> ICallProfDataRef,
-    uint32_t NumCandidates) {
+    uint64_t &TotalCount) {
   uint32_t NumPromoted = 0;
 
   for (const auto &C : Candidates) {
@@ -290,22 +289,7 @@ bool IndirectCallPromoter::tryToPromoteWithFuncCmp(
     NumOfPGOICallPromotion++;
     NumPromoted++;
   }
-
-  if (NumPromoted == 0)
-    return false;
-
-  // Adjust the MD.prof metadata. First delete the old one.
-  CB.setMetadata(LLVMContext::MD_prof, nullptr);
-
-  assert(NumPromoted <= ICallProfDataRef.size() &&
-         "Number of promoted functions should not be greater than the number "
-         "of values in profile metadata");
-  // Annotate the remaining value profiles if counter is not zero.
-  if (TotalCount != 0)
-    annotateValueSite(*F.getParent(), CB, ICallProfDataRef.slice(NumPromoted),
-                      TotalCount, IPVK_IndirectCallTarget, NumCandidates);
-
-  return true;
+  return NumPromoted;
 }
 
 // Traverse all the indirect-call callsite and get the value profile
@@ -323,8 +307,19 @@ bool IndirectCallPromoter::processFunction(ProfileSummaryInfo *PSI) {
       continue;
     auto PromotionCandidates = getPromotionCandidatesForCallSite(
         *CB, ICallProfDataRef, TotalCount, NumCandidates);
-    Changed |= tryToPromoteWithFuncCmp(*CB, PromotionCandidates, TotalCount,
-                                       ICallProfDataRef, NumCandidates);
+    uint32_t NumPromoted = tryToPromote(*CB, PromotionCandidates, TotalCount);
+    if (NumPromoted == 0)
+      continue;
+
+    Changed = true;
+    // Adjust the MD.prof metadata. First delete the old one.
+    CB->setMetadata(LLVMContext::MD_prof, nullptr);
+    // If all promoted, we don't need the MD.prof metadata.
+    if (TotalCount == 0 || NumPromoted == NumVals)
+      continue;
+    // Otherwise we need update with the un-promoted records back.
+    annotateValueSite(*F.getParent(), *CB, ICallProfDataRef.slice(NumPromoted),
+                      TotalCount, IPVK_IndirectCallTarget, NumCandidates);
   }
   return Changed;
 }

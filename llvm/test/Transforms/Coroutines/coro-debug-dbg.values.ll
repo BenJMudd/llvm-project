@@ -1,6 +1,5 @@
 ; Tests whether resume function would remain dbg.value infomation.
 ; RUN: opt < %s -passes='module(coro-early),cgscc(coro-split,coro-split)' -S | FileCheck %s
-; RUN: opt --try-experimental-debuginfo-iterators < %s -passes='module(coro-early),cgscc(coro-split,coro-split)' -S | FileCheck %s
 ;
 ; This file is based on coro-debug-frame-variable.ll.
 ; CHECK-LABEL: define void @f(
@@ -9,11 +8,6 @@
 ; CHECK-SAME:    !DIExpression(DW_OP_plus_uconst, [[OffsetX:[0-9]*]]))
 ;                                                                   ^ No deref at the end, as this variable ("x") is an array;
 ;                                                                     its value is its address. The entire array is in the frame.
-; CHECK:       call void @llvm.dbg.assign(metadata ptr %[[frame]]
-; CHECK-SAME:    !DIExpression(DW_OP_plus_uconst, [[OffsetX]])
-;; FIXME: Should we be updating the addresses on assigns here as well?
-; CHECK-SAME:    , metadata ptr %[[frame]], metadata !DIExpression())
-
 ; CHECK:       call void @llvm.dbg.value(metadata ptr %[[frame]]
 ; CHECK-SAME:    !DIExpression(DW_OP_plus_uconst, [[OffsetSpill:[0-9]*]], DW_OP_deref))
 ; CHECK:       call void @llvm.dbg.value(metadata ptr %[[frame]]
@@ -83,7 +77,6 @@ init.ready:                                       ; preds = %init.suspend, %coro
   %i.init.ready.inc = add nsw i32 0, 1
   call void @llvm.dbg.value(metadata i32 %i.init.ready.inc, metadata !6, metadata !DIExpression()), !dbg !11
   call void @llvm.dbg.value(metadata ptr %x, metadata !12, metadata !DIExpression()), !dbg !17
-  call void @llvm.dbg.assign(metadata ptr %x, metadata !12, metadata !DIExpression(), metadata !30, metadata ptr %x, metadata !DIExpression()), !dbg !17
   call void @llvm.memset.p0.i64(ptr align 16 %x, i8 0, i64 40, i1 false), !dbg !17
   call void @print(i32 %i.init.ready.inc)
   %ready.again = call zeroext i1 @await_ready()
@@ -161,7 +154,7 @@ cleanup.cont:                                     ; preds = %after.coro.free
   br label %coro.ret
 
 coro.ret:                                         ; preds = %cleanup.cont, %after.coro.free, %final.suspend, %await.suspend, %init.suspend
-  %end = call i1 @llvm.coro.end(ptr null, i1 false, token none)
+  %end = call i1 @llvm.coro.end(ptr null, i1 false)
   ret void
 
 unreachable:                                      ; preds = %after.coro.free
@@ -193,7 +186,7 @@ declare i8 @llvm.coro.suspend(token, i1) #2
 declare ptr @llvm.coro.free(token, ptr nocapture readonly) #1
 
 ; Function Attrs: nounwind
-declare i1 @llvm.coro.end(ptr, i1, token) #2
+declare i1 @llvm.coro.end(ptr, i1) #2
 
 declare ptr @new(i64)
 
@@ -256,4 +249,3 @@ attributes #4 = { argmemonly nofree nosync nounwind willreturn writeonly }
 !21 = !DILocation(line: 43, column: 3, scope: !7)
 !22 = !DILocation(line: 43, column: 8, scope: !7)
 !23 = !DILocalVariable(name: "produced", scope: !7, file: !1, line:24, type: !10)
-!30 = distinct !DIAssignID()

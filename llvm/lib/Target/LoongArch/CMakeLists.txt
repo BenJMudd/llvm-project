@@ -42,7 +42,6 @@ add_llvm_target(LoongArchCodeGen
   Support
   Target
   TargetParser
-  TransformUtils
 
   ADD_TO_COMPONENT
   LoongArch

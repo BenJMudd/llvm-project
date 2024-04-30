@@ -7,6 +7,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "BitReaderTestCode.h"
+#include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/AsmParser/Parser.h"
@@ -160,7 +161,7 @@ TEST(BitReaderTest, MaterializeConstrainedFPStrictFP) {
   LLVMContext Context;
   std::unique_ptr<Module> M = getLazyModuleFromAssembly(
       Context, Mem,
-      "define double @foo(double %a) strictfp {\n"
+      "define double @foo(double %a) {\n"
       "  %result = call double @llvm.experimental.constrained.sqrt.f64(double "
       "%a, metadata !\"round.tonearest\", metadata !\"fpexcept.strict\") "
       "strictfp\n"

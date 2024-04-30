@@ -33,12 +33,6 @@ def rcp_sqrt_to_rsq : GICombineRule<
          [{ return matchRcpSqrtToRsq(*${rcp}, ${matchinfo}); }]),
   (apply [{ Helper.applyBuildFn(*${rcp}, ${matchinfo}); }])>;
 
-def fdiv_by_sqrt_to_rsq_f16 : GICombineRule<
-  (defs root:$root),
-  (match (G_FSQRT f16:$sqrt, $x, (MIFlags FmContract)),
-         (G_FDIV f16:$dst, $y, $sqrt, (MIFlags FmContract)):$root,
-         [{ return matchFDivSqrtToRsqF16(*${root}); }]),
-  (apply [{ applyFDivSqrtToRsqF16(*${root}, ${x}.getReg()); }])>;
 
 def cvt_f32_ubyteN_matchdata : GIDefMatchData<"CvtF32UByteMatchInfo">;
 
@@ -110,14 +104,7 @@ def foldable_fneg : GICombineRule<
          [{ return Helper.matchFoldableFneg(*${ffn}, ${matchinfo}); }]),
   (apply [{ Helper.applyFoldableFneg(*${ffn}, ${matchinfo}); }])>;
 
-// Detects s_mul_u64 instructions whose higher bits are zero/sign extended.
-def smulu64 : GICombineRule<
-  (defs root:$smul, unsigned_matchinfo:$matchinfo),
-  (match (wip_match_opcode G_MUL):$smul,
-         [{ return matchCombine_s_mul_u64(*${smul}, ${matchinfo}); }]),
-  (apply [{ applyCombine_s_mul_u64(*${smul}, ${matchinfo}); }])>;
-
-def sign_exension_in_reg_matchdata : GIDefMatchData<"std::pair<MachineInstr *, unsigned>">;
+def sign_exension_in_reg_matchdata : GIDefMatchData<"MachineInstr *">;
 
 def sign_extension_in_reg : GICombineRule<
   (defs root:$sign_inreg, sign_exension_in_reg_matchdata:$matchinfo),
@@ -152,21 +139,19 @@ def gfx6gfx7_combines : GICombineGroup<[fcmp_select_to_fmin_fmax_legacy]>;
 // Combines which should only apply on VI
 def gfx8_combines : GICombineGroup<[expand_promoted_fmed3]>;
 
-def AMDGPUPreLegalizerCombiner: GICombiner<
+def AMDGPUPreLegalizerCombiner: GICombinerHelper<
   "AMDGPUPreLegalizerCombinerImpl",
   [all_combines, clamp_i64_to_i16, foldable_fneg]> {
-  let CombineAllMethodName = "tryCombineAllImpl";
 }
 
-def AMDGPUPostLegalizerCombiner: GICombiner<
+def AMDGPUPostLegalizerCombiner: GICombinerHelper<
   "AMDGPUPostLegalizerCombinerImpl",
   [all_combines, gfx6gfx7_combines, gfx8_combines,
    uchar_to_float, cvt_f32_ubyteN, remove_fcanonicalize, foldable_fneg,
-   rcp_sqrt_to_rsq, fdiv_by_sqrt_to_rsq_f16, sign_extension_in_reg, smulu64]> {
-  let CombineAllMethodName = "tryCombineAllImpl";
+   rcp_sqrt_to_rsq, sign_extension_in_reg]> {
 }
 
-def AMDGPURegBankCombiner : GICombiner<
+def AMDGPURegBankCombiner : GICombinerHelper<
   "AMDGPURegBankCombinerImpl",
   [unmerge_merge, unmerge_cst, unmerge_undef,
    zext_trunc_fold, int_minmax_to_med3, ptr_add_immed_chain,

@@ -1,6 +1,5 @@
 add_mlir_translation_library(MLIRGPUToLLVMIRTranslation
   GPUToLLVMIRTranslation.cpp
-  SelectObjectAttr.cpp
 
   LINK_COMPONENTS
   Core

@@ -73,8 +73,7 @@ public:
     iPhone = 1,
     iPad = 2,
     appleTV = 3,
-    appleWatch = 4,
-    appleXR = 7,
+    appleWatch = 4
   };
 
   DeviceType();

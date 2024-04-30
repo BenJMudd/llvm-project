@@ -91,7 +91,6 @@
 using namespace llvm;
 using namespace polly;
 
-#include "polly/Support/PollyDebug.h"
 #define DEBUG_TYPE "polly-detect"
 
 // This option is set to a very high value, as analyzing such loops increases
@@ -407,8 +406,8 @@ inline bool ScopDetection::invalid(DetectionContext &Context, bool Assert,
     // canUseISLTripCount().
     Log.report(RejectReason);
 
-    POLLY_DEBUG(dbgs() << RejectReason->getMessage());
-    POLLY_DEBUG(dbgs() << "\n");
+    LLVM_DEBUG(dbgs() << RejectReason->getMessage());
+    LLVM_DEBUG(dbgs() << "\n");
   } else {
     assert(!Assert && "Verification of detected scop failed");
   }
@@ -705,8 +704,8 @@ bool ScopDetection::isValidCallInst(CallInst &CI,
     return false;
 
   if (isDebugCall(&CI)) {
-    POLLY_DEBUG(dbgs() << "Allow call to debug function: "
-                       << CalledFunction->getName() << '\n');
+    LLVM_DEBUG(dbgs() << "Allow call to debug function: "
+                      << CalledFunction->getName() << '\n');
     return true;
   }
 
@@ -1094,7 +1093,7 @@ bool ScopDetection::isValidAccess(Instruction *Inst, const SCEV *AF,
     Size = SE.getElementSize(Inst);
   } else {
     auto *SizeTy =
-        SE.getEffectiveSCEVType(PointerType::getUnqual(SE.getContext()));
+        SE.getEffectiveSCEVType(PointerType::getInt8PtrTy(SE.getContext()));
     Size = SE.getConstant(SizeTy, 8);
   }
 
@@ -1150,8 +1149,6 @@ bool ScopDetection::isValidAccess(Instruction *Inst, const SCEV *AF,
       // sure the base pointer is not an instruction defined inside the scop.
       // However, we can ignore loads that will be hoisted.
 
-      auto ASPointers = AS.getPointers();
-
       InvariantLoadsSetTy VariantLS, InvariantLS;
       // In order to detect loads which are dependent on other invariant loads
       // as invariant, we use fixed-point iteration method here i.e we iterate
@@ -1161,8 +1158,8 @@ bool ScopDetection::isValidAccess(Instruction *Inst, const SCEV *AF,
         const unsigned int VariantSize = VariantLS.size(),
                            InvariantSize = InvariantLS.size();
 
-        for (const Value *Ptr : ASPointers) {
-          Instruction *Inst = dyn_cast<Instruction>(const_cast<Value *>(Ptr));
+        for (const auto &Ptr : AS) {
+          Instruction *Inst = dyn_cast<Instruction>(Ptr.getValue());
           if (Inst && Context.CurRegion.contains(Inst)) {
             auto *Load = dyn_cast<LoadInst>(Inst);
             if (Load && InvariantLS.count(Load))
@@ -1487,7 +1484,7 @@ Region *ScopDetection::expandRegion(Region &R) {
   std::unique_ptr<Region> LastValidRegion;
   auto ExpandedRegion = std::unique_ptr<Region>(R.getExpandedRegion());
 
-  POLLY_DEBUG(dbgs() << "\tExpanding " << R.getNameStr() << "\n");
+  LLVM_DEBUG(dbgs() << "\tExpanding " << R.getNameStr() << "\n");
 
   while (ExpandedRegion) {
     BBPair P = getBBPairForRegion(ExpandedRegion.get());
@@ -1496,8 +1493,7 @@ Region *ScopDetection::expandRegion(Region &R) {
                                                /*Verifying=*/false);
     DetectionContext &Context = *Entry.get();
 
-    POLLY_DEBUG(dbgs() << "\t\tTrying " << ExpandedRegion->getNameStr()
-                       << "\n");
+    LLVM_DEBUG(dbgs() << "\t\tTrying " << ExpandedRegion->getNameStr() << "\n");
     // Only expand when we did not collect errors.
 
     if (!Context.Log.hasErrors()) {
@@ -1531,7 +1527,7 @@ Region *ScopDetection::expandRegion(Region &R) {
     }
   }
 
-  POLLY_DEBUG({
+  LLVM_DEBUG({
     if (LastValidRegion)
       dbgs() << "\tto " << LastValidRegion->getNameStr() << "\n";
     else
@@ -1752,11 +1748,10 @@ bool ScopDetection::isProfitableRegion(DetectionContext &Context) const {
 bool ScopDetection::isValidRegion(DetectionContext &Context) {
   Region &CurRegion = Context.CurRegion;
 
-  POLLY_DEBUG(dbgs() << "Checking region: " << CurRegion.getNameStr()
-                     << "\n\t");
+  LLVM_DEBUG(dbgs() << "Checking region: " << CurRegion.getNameStr() << "\n\t");
 
   if (!PollyAllowFullFunction && CurRegion.isTopLevelRegion()) {
-    POLLY_DEBUG(dbgs() << "Top level region is invalid\n");
+    LLVM_DEBUG(dbgs() << "Top level region is invalid\n");
     Context.IsInvalid = true;
     return false;
   }
@@ -1764,14 +1759,14 @@ bool ScopDetection::isValidRegion(DetectionContext &Context) {
   DebugLoc DbgLoc;
   if (CurRegion.getExit() &&
       isa<UnreachableInst>(CurRegion.getExit()->getTerminator())) {
-    POLLY_DEBUG(dbgs() << "Unreachable in exit\n");
+    LLVM_DEBUG(dbgs() << "Unreachable in exit\n");
     return invalid<ReportUnreachableInExit>(Context, /*Assert=*/true,
                                             CurRegion.getExit(), DbgLoc);
   }
 
   if (!OnlyRegion.empty() &&
       !CurRegion.getEntry()->getName().count(OnlyRegion)) {
-    POLLY_DEBUG({
+    LLVM_DEBUG({
       dbgs() << "Region entry does not match -polly-only-region";
       dbgs() << "\n";
     });
@@ -1805,7 +1800,7 @@ bool ScopDetection::isValidRegion(DetectionContext &Context) {
     return invalid<ReportIrreducibleRegion>(Context, /*Assert=*/true,
                                             &CurRegion, DbgLoc);
 
-  POLLY_DEBUG(dbgs() << "OK\n");
+  LLVM_DEBUG(dbgs() << "OK\n");
   return true;
 }
 

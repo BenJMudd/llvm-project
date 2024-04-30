@@ -29,7 +29,7 @@ public:
 
 private:
   const unsigned MaxConfiguredAlignment;
-  CharUnits computeRecommendedAlignment(CharUnits MinByteSize) const;
+  CharUnits computeRecommendedAlignment(CharUnits MinByteSize);
 };
 
 } // namespace clang::tidy::altera

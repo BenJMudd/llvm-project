@@ -14,7 +14,6 @@
 #include "flang/Lower/CallInterface.h"
 #include "flang/Lower/ConvertType.h"
 #include "flang/Lower/ConvertVariable.h"
-#include "flang/Lower/OpenMP.h"
 #include "flang/Lower/PFTBuilder.h"
 #include "flang/Lower/SymbolMap.h"
 #include "flang/Optimizer/Builder/Character.h"
@@ -74,11 +73,13 @@ static void bindCapturedSymbol(const Fortran::semantics::Symbol &sym,
                                fir::ExtendedValue val,
                                Fortran::lower::AbstractConverter &converter,
                                Fortran::lower::SymMap &symMap) {
-  if (converter.getLoweringOptions().getLowerToHighLevelFIR())
-    Fortran::lower::genDeclareSymbol(converter, symMap, sym, val,
-                                     fir::FortranVariableFlagsEnum::host_assoc);
-  else
+  if (converter.getLoweringOptions().getLowerToHighLevelFIR()) {
+    // TODO: add an indication that this is a host variable in the declare to
+    // allow alias analysis to detect this case.
+    Fortran::lower::genDeclareSymbol(converter, symMap, sym, val);
+  } else {
     symMap.addSymbol(sym, val);
+  }
 }
 
 namespace {
@@ -182,10 +183,10 @@ class CapturedProcedure : public CapturedSymbols<CapturedProcedure> {
 public:
   static mlir::Type getType(Fortran::lower::AbstractConverter &converter,
                             const Fortran::semantics::Symbol &sym) {
-    mlir::Type funTy = Fortran::lower::getDummyProcedureType(sym, converter);
     if (Fortran::semantics::IsPointer(sym))
-      return fir::ReferenceType::get(funTy);
-    return funTy;
+      TODO(converter.getCurrentLocation(),
+           "capture procedure pointer in internal procedure");
+    return Fortran::lower::getDummyProcedureType(sym, converter);
   }
 
   static void instantiateHostTuple(const InstantiateHostTuple &args,
@@ -219,7 +220,7 @@ public:
   static mlir::Type getType(Fortran::lower::AbstractConverter &converter,
                             const Fortran::semantics::Symbol &sym) {
     fir::KindTy kind =
-        mlir::cast<fir::CharacterType>(converter.genType(sym)).getFKind();
+        converter.genType(sym).cast<fir::CharacterType>().getFKind();
     return fir::BoxCharType::get(&converter.getMLIRContext(), kind);
   }
 
@@ -248,11 +249,9 @@ public:
   }
 };
 
-/// Class defining how polymorphic scalar entities are captured in internal
-/// procedures. Polymorphic entities are always boxed as a fir.class box.
-/// Polymorphic array can be handled in CapturedArrays directly
-class CapturedPolymorphicScalar
-    : public CapturedSymbols<CapturedPolymorphicScalar> {
+/// Class defining how polymorphic entities are captured in internal procedures.
+/// Polymorphic entities are always boxed as a fir.class box.
+class CapturedPolymorphic : public CapturedSymbols<CapturedPolymorphic> {
 public:
   static mlir::Type getType(Fortran::lower::AbstractConverter &converter,
                             const Fortran::semantics::Symbol &sym) {
@@ -260,50 +259,19 @@ public:
   }
   static void instantiateHostTuple(const InstantiateHostTuple &args,
                                    Fortran::lower::AbstractConverter &converter,
-                                   const Fortran::semantics::Symbol &sym) {
+                                   const Fortran::semantics::Symbol &) {
     fir::FirOpBuilder &builder = converter.getFirOpBuilder();
-    mlir::Location loc = args.loc;
     mlir::Type typeInTuple = fir::dyn_cast_ptrEleTy(args.addrInTuple.getType());
     assert(typeInTuple && "addrInTuple must be an address");
     mlir::Value castBox = builder.createConvert(args.loc, typeInTuple,
                                                 fir::getBase(args.hostValue));
-    if (Fortran::semantics::IsOptional(sym)) {
-      auto isPresent =
-          builder.create<fir::IsPresentOp>(loc, builder.getI1Type(), castBox);
-      builder.genIfThenElse(loc, isPresent)
-          .genThen([&]() {
-            builder.create<fir::StoreOp>(loc, castBox, args.addrInTuple);
-          })
-          .genElse([&]() {
-            mlir::Value null = fir::factory::createUnallocatedBox(
-                builder, loc, typeInTuple,
-                /*nonDeferredParams=*/mlir::ValueRange{});
-            builder.create<fir::StoreOp>(loc, null, args.addrInTuple);
-          })
-          .end();
-    } else {
-      builder.create<fir::StoreOp>(loc, castBox, args.addrInTuple);
-    }
+    builder.create<fir::StoreOp>(args.loc, castBox, args.addrInTuple);
   }
   static void getFromTuple(const GetFromTuple &args,
                            Fortran::lower::AbstractConverter &converter,
                            const Fortran::semantics::Symbol &sym,
                            const Fortran::lower::BoxAnalyzer &ba) {
-    fir::FirOpBuilder &builder = converter.getFirOpBuilder();
-    mlir::Location loc = args.loc;
-    mlir::Value box = args.valueInTuple;
-    if (Fortran::semantics::IsOptional(sym)) {
-      auto boxTy = mlir::cast<fir::BaseBoxType>(box.getType());
-      auto eleTy = boxTy.getEleTy();
-      if (!fir::isa_ref_type(eleTy))
-        eleTy = builder.getRefType(eleTy);
-      auto addr = builder.create<fir::BoxAddrOp>(loc, eleTy, box);
-      mlir::Value isPresent = builder.genIsNotNullAddr(loc, addr);
-      auto absentBox = builder.create<fir::AbsentOp>(loc, boxTy);
-      box =
-          builder.create<mlir::arith::SelectOp>(loc, isPresent, box, absentBox);
-    }
-    bindCapturedSymbol(sym, box, converter, args.symMap);
+    bindCapturedSymbol(sym, args.valueInTuple, converter, args.symMap);
   }
 };
 
@@ -315,11 +283,7 @@ class CapturedAllocatableAndPointer
 public:
   static mlir::Type getType(Fortran::lower::AbstractConverter &converter,
                             const Fortran::semantics::Symbol &sym) {
-    mlir::Type baseType = converter.genType(sym);
-    if (sym.GetUltimate().test(Fortran::semantics::Symbol::Flag::CrayPointee))
-      return fir::ReferenceType::get(
-          Fortran::lower::getCrayPointeeBoxType(baseType));
-    return fir::ReferenceType::get(baseType);
+    return fir::ReferenceType::get(converter.genType(sym));
   }
   static void instantiateHostTuple(const InstantiateHostTuple &args,
                                    Fortran::lower::AbstractConverter &converter,
@@ -380,12 +344,7 @@ public:
   static mlir::Type getType(Fortran::lower::AbstractConverter &converter,
                             const Fortran::semantics::Symbol &sym) {
     mlir::Type type = converter.genType(sym);
-    bool isPolymorphic = Fortran::semantics::IsPolymorphic(sym);
-    assert((mlir::isa<fir::SequenceType>(type) ||
-            (isPolymorphic && mlir::isa<fir::ClassType>(type))) &&
-           "must be a sequence type");
-    if (isPolymorphic)
-      return type;
+    assert(type.isa<fir::SequenceType>() && "must be a sequence type");
     return fir::BoxType::get(type);
   }
 
@@ -453,13 +412,13 @@ public:
                          fir::factory::readBoxValue(builder, loc, boxValue),
                          converter, args.symMap);
     } else {
-      // Keep variable as a fir.box/fir.class.
+      // Keep variable as a fir.box.
       // If this is an optional that is absent, the fir.box needs to be an
       // AbsentOp result, otherwise it will not work properly with IsPresentOp
       // (absent boxes are null descriptor addresses, not descriptors containing
       // a null base address).
       if (Fortran::semantics::IsOptional(sym)) {
-        auto boxTy = mlir::cast<fir::BaseBoxType>(box.getType());
+        auto boxTy = box.getType().cast<fir::BoxType>();
         auto eleTy = boxTy.getEleTy();
         if (!fir::isa_ref_type(eleTy))
           eleTy = builder.getRefType(eleTy);
@@ -511,13 +470,16 @@ walkCaptureCategories(T visitor, Fortran::lower::AbstractConverter &converter,
   if (Fortran::semantics::IsProcedure(sym))
     return CapturedProcedure::visit(visitor, converter, sym, ba);
   ba.analyze(sym);
-  if (Fortran::semantics::IsAllocatableOrPointer(sym) ||
-      sym.GetUltimate().test(Fortran::semantics::Symbol::Flag::CrayPointee))
+  if (Fortran::semantics::IsAllocatableOrPointer(sym))
     return CapturedAllocatableAndPointer::visit(visitor, converter, sym, ba);
+  if (Fortran::semantics::IsPolymorphic(sym)) {
+    if (ba.isArray() && !ba.lboundIsAllOnes())
+      TODO(converter.genLocation(sym.name()),
+           "polymorphic array with non default lower bound");
+    return CapturedPolymorphic::visit(visitor, converter, sym, ba);
+  }
   if (ba.isArray())
     return CapturedArrays::visit(visitor, converter, sym, ba);
-  if (Fortran::semantics::IsPolymorphic(sym))
-    return CapturedPolymorphicScalar::visit(visitor, converter, sym, ba);
   if (ba.isChar())
     return CapturedCharacterScalars::visit(visitor, converter, sym, ba);
   assert(ba.isTrivial() && "must be trivial scalar");
@@ -527,7 +489,7 @@ walkCaptureCategories(T visitor, Fortran::lower::AbstractConverter &converter,
 // `t` should be the result of getArgumentType, which has a type of
 // `!fir.ref<tuple<...>>`.
 static mlir::TupleType unwrapTupleTy(mlir::Type t) {
-  return mlir::cast<mlir::TupleType>(fir::dyn_cast_ptrEleTy(t));
+  return fir::dyn_cast_ptrEleTy(t).cast<mlir::TupleType>();
 }
 
 static mlir::Value genTupleCoor(fir::FirOpBuilder &builder, mlir::Location loc,
@@ -535,7 +497,7 @@ static mlir::Value genTupleCoor(fir::FirOpBuilder &builder, mlir::Location loc,
                                 mlir::Value offset) {
   // fir.ref<fir.ref> and fir.ptr<fir.ref> are forbidden. Use
   // fir.llvm_ptr if needed.
-  auto ty = mlir::isa<fir::ReferenceType>(varTy)
+  auto ty = varTy.isa<fir::ReferenceType>()
                 ? mlir::Type(fir::LLVMPointerType::get(varTy))
                 : mlir::Type(builder.getRefType(varTy));
   return builder.create<fir::CoordinateOp>(loc, ty, tupleArg, offset);
@@ -548,16 +510,12 @@ void Fortran::lower::HostAssociations::addSymbolsToBind(
          "must be initially empty");
   this->hostScope = &hostScope;
   for (const auto *s : symbols)
-    // GlobalOp are created for non-global threadprivate variable,
-    //  so considering them as globals.
-    if (Fortran::lower::symbolIsGlobal(*s) ||
-        (*s).test(Fortran::semantics::Symbol::Flag::OmpThreadprivate)) {
+    if (Fortran::lower::symbolIsGlobal(*s))
       // The ultimate symbol is stored here so that global symbols from the
       // host scope can later be searched in this set.
       globalSymbols.insert(&s->GetUltimate());
-    } else {
+    else
       tupleSymbols.insert(s);
-    }
 }
 
 void Fortran::lower::HostAssociations::hostProcedureBindings(
@@ -599,15 +557,9 @@ void Fortran::lower::HostAssociations::internalProcedureBindings(
     for (auto &hostVariable : pft::getScopeVariableList(*hostScope))
       if ((hostVariable.isAggregateStore() && hostVariable.isGlobal()) ||
           (hostVariable.hasSymbol() &&
-           globalSymbols.contains(&hostVariable.getSymbol().GetUltimate()))) {
+           globalSymbols.contains(&hostVariable.getSymbol().GetUltimate())))
         Fortran::lower::instantiateVariable(converter, hostVariable, symMap,
                                             storeMap);
-        // Generate threadprivate Op for host associated variables.
-        if (hostVariable.hasSymbol() &&
-            hostVariable.getSymbol().test(
-                Fortran::semantics::Symbol::Flag::OmpThreadprivate))
-          Fortran::lower::genThreadprivateOp(converter, hostVariable);
-      }
   }
   if (tupleSymbols.empty())
     return;

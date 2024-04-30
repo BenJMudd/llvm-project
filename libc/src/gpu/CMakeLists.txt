@@ -1,22 +1,21 @@
 add_entrypoint_object(
-  rpc_host_call
+  rpc_reset
   SRCS
-    rpc_host_call.cpp
+    rpc_reset.cpp
   HDRS
-    rpc_host_call.h
+    rpc_reset.h
   DEPENDS
     libc.src.__support.RPC.rpc_client
     libc.src.__support.GPU.utils
 )
 
 add_entrypoint_object(
-  rpc_fprintf
+  rpc_host_call
   SRCS
-    rpc_fprintf.cpp
+    rpc_host_call.cpp
   HDRS
-    rpc_fprintf.h
+    rpc_host_call.h
   DEPENDS
-    libc.src.stdio.gpu.gpu_file
     libc.src.__support.RPC.rpc_client
     libc.src.__support.GPU.utils
 )

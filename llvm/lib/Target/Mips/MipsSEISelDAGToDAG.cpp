@@ -76,7 +76,7 @@ void MipsSEDAGToDAGISel::addDSPCtrlRegOperands(bool IsDef, MachineInstr &MI,
 }
 
 unsigned MipsSEDAGToDAGISel::getMSACtrlReg(const SDValue RegIdx) const {
-  uint64_t RegNum = RegIdx->getAsZExtVal();
+  uint64_t RegNum = cast<ConstantSDNode>(RegIdx)->getZExtValue();
   return Mips::MSACtrlRegClass.getRegister(RegNum);
 }
 
@@ -741,8 +741,8 @@ bool MipsSEDAGToDAGISel::trySelect(SDNode *Node) {
   switch(Opcode) {
   default: break;
 
-  case MipsISD::DOUBLE_SELECT_I:
-  case MipsISD::DOUBLE_SELECT_I64: {
+  case Mips::PseudoD_SELECT_I:
+  case Mips::PseudoD_SELECT_I64: {
     MVT VT = Subtarget->isGP64bit() ? MVT::i64 : MVT::i32;
     SDValue cond = Node->getOperand(0);
     SDValue Hi1 = Node->getOperand(1);
@@ -831,7 +831,8 @@ bool MipsSEDAGToDAGISel::trySelect(SDNode *Node) {
   }
 
   case ISD::INTRINSIC_W_CHAIN: {
-    const unsigned IntrinsicOpcode = Node->getConstantOperandVal(1);
+    const unsigned IntrinsicOpcode =
+        cast<ConstantSDNode>(Node->getOperand(1))->getZExtValue();
     switch (IntrinsicOpcode) {
     default:
       break;
@@ -884,7 +885,7 @@ bool MipsSEDAGToDAGISel::trySelect(SDNode *Node) {
   }
 
   case ISD::INTRINSIC_WO_CHAIN: {
-    switch (Node->getConstantOperandVal(0)) {
+    switch (cast<ConstantSDNode>(Node->getOperand(0))->getZExtValue()) {
     default:
       break;
 
@@ -900,7 +901,8 @@ bool MipsSEDAGToDAGISel::trySelect(SDNode *Node) {
   }
 
   case ISD::INTRINSIC_VOID: {
-    const unsigned IntrinsicOpcode = Node->getConstantOperandVal(1);
+    const unsigned IntrinsicOpcode =
+        cast<ConstantSDNode>(Node->getOperand(1))->getZExtValue();
     switch (IntrinsicOpcode) {
     default:
       break;
@@ -1375,17 +1377,17 @@ bool MipsSEDAGToDAGISel::trySelect(SDNode *Node) {
   return false;
 }
 
-bool MipsSEDAGToDAGISel::SelectInlineAsmMemoryOperand(
-    const SDValue &Op, InlineAsm::ConstraintCode ConstraintID,
-    std::vector<SDValue> &OutOps) {
+bool MipsSEDAGToDAGISel::
+SelectInlineAsmMemoryOperand(const SDValue &Op, unsigned ConstraintID,
+                             std::vector<SDValue> &OutOps) {
   SDValue Base, Offset;
 
   switch(ConstraintID) {
   default:
     llvm_unreachable("Unexpected asm memory constraint");
   // All memory constraints can at least accept raw pointers.
-  case InlineAsm::ConstraintCode::m:
-  case InlineAsm::ConstraintCode::o:
+  case InlineAsm::Constraint_m:
+  case InlineAsm::Constraint_o:
     if (selectAddrRegImm16(Op, Base, Offset)) {
       OutOps.push_back(Base);
       OutOps.push_back(Offset);
@@ -1394,7 +1396,7 @@ bool MipsSEDAGToDAGISel::SelectInlineAsmMemoryOperand(
     OutOps.push_back(Op);
     OutOps.push_back(CurDAG->getTargetConstant(0, SDLoc(Op), MVT::i32));
     return false;
-  case InlineAsm::ConstraintCode::R:
+  case InlineAsm::Constraint_R:
     // The 'R' constraint is supposed to be much more complicated than this.
     // However, it's becoming less useful due to architectural changes and
     // ought to be replaced by other constraints such as 'ZC'.
@@ -1408,7 +1410,7 @@ bool MipsSEDAGToDAGISel::SelectInlineAsmMemoryOperand(
     OutOps.push_back(Op);
     OutOps.push_back(CurDAG->getTargetConstant(0, SDLoc(Op), MVT::i32));
     return false;
-  case InlineAsm::ConstraintCode::ZC:
+  case InlineAsm::Constraint_ZC:
     // ZC matches whatever the pref, ll, and sc instructions can handle for the
     // given subtarget.
     if (Subtarget->inMicroMipsMode()) {
@@ -1440,6 +1442,6 @@ bool MipsSEDAGToDAGISel::SelectInlineAsmMemoryOperand(
 }
 
 FunctionPass *llvm::createMipsSEISelDag(MipsTargetMachine &TM,
-                                        CodeGenOptLevel OptLevel) {
+                                        CodeGenOpt::Level OptLevel) {
   return new MipsSEDAGToDAGISel(TM, OptLevel);
 }

@@ -1,9 +1,7 @@
 add_object_library(
-  file
+  linux_file
   SRCS
     file.cpp
-  HDRS
-    file.h
   DEPENDS
     libc.include.fcntl
     libc.include.stdio
@@ -13,30 +11,6 @@ add_object_library(
     libc.src.errno.errno
     libc.src.__support.error_or
     libc.src.__support.File.file
-)
-
-add_object_library(
-  stdout
-  SRCS
-    stdout.cpp
-  DEPENDS
-    .file
-)
-
-add_object_library(
-  stdin
-  SRCS
-    stdin.cpp
-  DEPENDS
-    .file
-)
-
-add_object_library(
-  stderr
-  SRCS
-    stderr.cpp
-  DEPENDS
-    .file
 )
 
 add_object_library(

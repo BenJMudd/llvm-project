@@ -18,17 +18,16 @@
 #include "lldb/Core/PluginManager.h"
 #include "lldb/Core/Section.h"
 #include "lldb/Host/Host.h"
+#include "lldb/Symbol/LocateSymbolFile.h"
 #include "lldb/Symbol/ObjectFile.h"
 #include "lldb/Target/MemoryRegionInfo.h"
 #include "lldb/Target/SectionLoadList.h"
 #include "lldb/Target/Target.h"
 #include "lldb/Target/Thread.h"
-#include "lldb/Utility/AppleUuidCompatibility.h"
 #include "lldb/Utility/DataBuffer.h"
 #include "lldb/Utility/LLDBLog.h"
 #include "lldb/Utility/Log.h"
 #include "lldb/Utility/State.h"
-#include "lldb/Utility/UUID.h"
 
 #include "ProcessMachCore.h"
 #include "Plugins/Process/Utility/StopInfoMachException.h"
@@ -111,8 +110,8 @@ bool ProcessMachCore::CanDebug(lldb::TargetSP target_sp,
 ProcessMachCore::ProcessMachCore(lldb::TargetSP target_sp,
                                  ListenerSP listener_sp,
                                  const FileSpec &core_file)
-    : PostMortemProcess(target_sp, listener_sp, core_file), m_core_aranges(),
-      m_core_range_infos(), m_core_module_sp(),
+    : PostMortemProcess(target_sp, listener_sp), m_core_aranges(),
+      m_core_range_infos(), m_core_module_sp(), m_core_file(core_file),
       m_dyld_addr(LLDB_INVALID_ADDRESS),
       m_mach_kernel_addr(LLDB_INVALID_ADDRESS) {}
 
@@ -123,7 +122,7 @@ ProcessMachCore::~ProcessMachCore() {
   // make sure all of the broadcaster cleanup goes as planned. If we destruct
   // this class, then Process::~Process() might have problems trying to fully
   // destroy the broadcaster.
-  Finalize(true /* destructing */);
+  Finalize();
 }
 
 bool ProcessMachCore::CheckAddressForDyldOrKernel(lldb::addr_t addr,
@@ -224,79 +223,15 @@ void ProcessMachCore::CreateMemoryRegions() {
   }
 }
 
-// Some corefiles have a UUID stored in a low memory
-// address.  We inspect a set list of addresses for
-// the characters 'uuid' and 16 bytes later there will
-// be a uuid_t UUID.  If we can find a binary that
-// matches the UUID, it is loaded with no slide in the target.
-bool ProcessMachCore::LoadBinaryViaLowmemUUID() {
+void ProcessMachCore::LoadBinariesViaMetadata() {
   Log *log(GetLog(LLDBLog::DynamicLoader | LLDBLog::Process));
   ObjectFile *core_objfile = m_core_module_sp->GetObjectFile();
-
-  uint64_t lowmem_uuid_addresses[] = {0x2000204, 0x1000204, 0x1000020, 0x4204,
-                                      0x1204,    0x1020,    0x4020,    0xc00,
-                                      0xC0,      0};
-
-  for (uint64_t addr : lowmem_uuid_addresses) {
-    const VMRangeToFileOffset::Entry *core_memory_entry =
-        m_core_aranges.FindEntryThatContains(addr);
-    if (core_memory_entry) {
-      const addr_t offset = addr - core_memory_entry->GetRangeBase();
-      const addr_t bytes_left = core_memory_entry->GetRangeEnd() - addr;
-      // (4-bytes 'uuid' + 12 bytes pad for align + 16 bytes uuid_t) == 32 bytes
-      if (bytes_left >= 32) {
-        char strbuf[4];
-        if (core_objfile->CopyData(
-                core_memory_entry->data.GetRangeBase() + offset, 4, &strbuf) &&
-            strncmp("uuid", (char *)&strbuf, 4) == 0) {
-          uuid_t uuid_bytes;
-          if (core_objfile->CopyData(core_memory_entry->data.GetRangeBase() +
-                                         offset + 16,
-                                     sizeof(uuid_t), uuid_bytes)) {
-            UUID uuid(uuid_bytes, sizeof(uuid_t));
-            if (uuid.IsValid()) {
-              LLDB_LOGF(log,
-                        "ProcessMachCore::LoadBinaryViaLowmemUUID: found "
-                        "binary uuid %s at low memory address 0x%" PRIx64,
-                        uuid.GetAsString().c_str(), addr);
-              // We have no address specified, only a UUID.  Load it at the file
-              // address.
-              const bool value_is_offset = true;
-              const bool force_symbol_search = true;
-              const bool notify = true;
-              const bool set_address_in_target = true;
-              const bool allow_memory_image_last_resort = false;
-              if (DynamicLoader::LoadBinaryWithUUIDAndAddress(
-                      this, llvm::StringRef(), uuid, 0, value_is_offset,
-                      force_symbol_search, notify, set_address_in_target,
-                      allow_memory_image_last_resort)) {
-                m_dyld_plugin_name = DynamicLoaderStatic::GetPluginNameStatic();
-              }
-              // We found metadata saying which binary should be loaded; don't
-              // try an exhaustive search.
-              return true;
-            }
-          }
-        }
-      }
-    }
-  }
-  return false;
-}
-
-bool ProcessMachCore::LoadBinariesViaMetadata() {
-  Log *log(GetLog(LLDBLog::DynamicLoader | LLDBLog::Process));
-  ObjectFile *core_objfile = m_core_module_sp->GetObjectFile();
+  bool found_main_binary_definitively = false;
 
   addr_t objfile_binary_value;
   bool objfile_binary_value_is_offset;
   UUID objfile_binary_uuid;
   ObjectFile::BinaryType type;
-
-  // This will be set to true if we had a metadata hint
-  // specifying a UUID or address -- and we should not fall back
-  // to doing an exhaustive search.
-  bool found_binary_spec_in_metadata = false;
 
   if (core_objfile->GetCorefileMainBinaryInfo(objfile_binary_value,
                                               objfile_binary_value_is_offset,
@@ -309,7 +244,6 @@ bool ProcessMachCore::LoadBinariesViaMetadata() {
                   objfile_binary_uuid.GetAsString().c_str(),
                   objfile_binary_value, objfile_binary_value_is_offset, type);
     }
-    found_binary_spec_in_metadata = true;
 
     // If this is the xnu kernel, don't load it now.  Note the correct
     // DynamicLoader plugin to use, and the address of the kernel, and
@@ -317,6 +251,7 @@ bool ProcessMachCore::LoadBinariesViaMetadata() {
     if (type == ObjectFile::eBinaryTypeKernel) {
       m_mach_kernel_addr = objfile_binary_value;
       m_dyld_plugin_name = DynamicLoaderDarwinKernel::GetPluginNameStatic();
+      found_main_binary_definitively = true;
     } else if (type == ObjectFile::eBinaryTypeUser) {
       m_dyld_addr = objfile_binary_value;
       m_dyld_plugin_name = DynamicLoaderMacOSXDYLD::GetPluginNameStatic();
@@ -324,12 +259,11 @@ bool ProcessMachCore::LoadBinariesViaMetadata() {
       const bool force_symbol_search = true;
       const bool notify = true;
       const bool set_address_in_target = true;
-      const bool allow_memory_image_last_resort = false;
       if (DynamicLoader::LoadBinaryWithUUIDAndAddress(
               this, llvm::StringRef(), objfile_binary_uuid,
               objfile_binary_value, objfile_binary_value_is_offset,
-              force_symbol_search, notify, set_address_in_target,
-              allow_memory_image_last_resort)) {
+              force_symbol_search, notify, set_address_in_target)) {
+        found_main_binary_definitively = true;
         m_dyld_plugin_name = DynamicLoaderStatic::GetPluginNameStatic();
       }
     }
@@ -340,6 +274,7 @@ bool ProcessMachCore::LoadBinariesViaMetadata() {
   // load command is present, let's use the contents.
   UUID ident_uuid;
   addr_t ident_binary_addr = LLDB_INVALID_ADDRESS;
+  if (!found_main_binary_definitively) {
     std::string corefile_identifier = core_objfile->GetIdentifierString();
 
     // Search for UUID= and stext= strings in the identifier str.
@@ -350,7 +285,6 @@ bool ProcessMachCore::LoadBinariesViaMetadata() {
       if (log)
         log->Printf("Got a UUID from LC_IDENT/kern ver str LC_NOTE: %s",
                     ident_uuid.GetAsString().c_str());
-      found_binary_spec_in_metadata = true;
     }
     if (corefile_identifier.find("stext=") != std::string::npos) {
       size_t p = corefile_identifier.find("stext=") + strlen("stext=");
@@ -361,7 +295,6 @@ bool ProcessMachCore::LoadBinariesViaMetadata() {
           log->Printf("Got a load address from LC_IDENT/kern ver str "
                       "LC_NOTE: 0x%" PRIx64,
                       ident_binary_addr);
-        found_binary_spec_in_metadata = true;
       }
     }
 
@@ -374,7 +307,7 @@ bool ProcessMachCore::LoadBinariesViaMetadata() {
             "ProcessMachCore::LoadBinariesViaMetadata: Found kernel binary via "
             "LC_IDENT/kern ver str LC_NOTE");
       m_mach_kernel_addr = ident_binary_addr;
-      found_binary_spec_in_metadata = true;
+      found_main_binary_definitively = true;
     } else if (ident_uuid.IsValid()) {
       // We have no address specified, only a UUID.  Load it at the file
       // address.
@@ -382,25 +315,22 @@ bool ProcessMachCore::LoadBinariesViaMetadata() {
       const bool force_symbol_search = true;
       const bool notify = true;
       const bool set_address_in_target = true;
-      const bool allow_memory_image_last_resort = false;
       if (DynamicLoader::LoadBinaryWithUUIDAndAddress(
               this, llvm::StringRef(), ident_uuid, ident_binary_addr,
               value_is_offset, force_symbol_search, notify,
-              set_address_in_target, allow_memory_image_last_resort)) {
-        found_binary_spec_in_metadata = true;
+              set_address_in_target)) {
+        found_main_binary_definitively = true;
         m_dyld_plugin_name = DynamicLoaderStatic::GetPluginNameStatic();
       }
     }
+  }
 
   // Finally, load any binaries noted by "load binary" LC_NOTEs in the
   // corefile
   if (core_objfile->LoadCoreFileImages(*this)) {
-    found_binary_spec_in_metadata = true;
+    found_main_binary_definitively = true;
     m_dyld_plugin_name = DynamicLoaderStatic::GetPluginNameStatic();
   }
-
-  if (!found_binary_spec_in_metadata && LoadBinaryViaLowmemUUID())
-    found_binary_spec_in_metadata = true;
 
   // LoadCoreFileImges may have set the dynamic loader, e.g. in
   // PlatformDarwinKernel::LoadPlatformBinaryAndSetup().
@@ -408,8 +338,6 @@ bool ProcessMachCore::LoadBinariesViaMetadata() {
   // un-set it later.
   if (m_dyld_up)
     m_dyld_plugin_name = GetDynamicLoader()->GetPluginName();
-
-  return found_binary_spec_in_metadata;
 }
 
 void ProcessMachCore::LoadBinariesViaExhaustiveSearch() {
@@ -486,8 +414,8 @@ void ProcessMachCore::LoadBinariesViaExhaustiveSearch() {
 void ProcessMachCore::LoadBinariesAndSetDYLD() {
   Log *log(GetLog(LLDBLog::DynamicLoader | LLDBLog::Process));
 
-  bool found_binary_spec_in_metadata = LoadBinariesViaMetadata();
-  if (!found_binary_spec_in_metadata)
+  LoadBinariesViaMetadata();
+  if (m_dyld_plugin_name.empty())
     LoadBinariesViaExhaustiveSearch();
 
   if (m_dyld_plugin_name.empty()) {
@@ -573,9 +501,11 @@ Status ProcessMachCore::DoLoadCore() {
 
   CleanupMemoryRegionPermissions();
 
-  AddressableBits addressable_bits = core_objfile->GetAddressableBits();
-  SetAddressableBitMasks(addressable_bits);
-
+  addr_t address_mask = core_objfile->GetAddressMask();
+  if (address_mask != 0) {
+    SetCodeAddressMask(address_mask);
+    SetDataAddressMask(address_mask);
+  }
   return error;
 }
 
@@ -593,34 +523,9 @@ bool ProcessMachCore::DoUpdateThreadList(ThreadList &old_thread_list,
     ObjectFile *core_objfile = m_core_module_sp->GetObjectFile();
 
     if (core_objfile) {
-      std::set<tid_t> used_tids;
       const uint32_t num_threads = core_objfile->GetNumThreadContexts();
-      std::vector<tid_t> tids;
-      if (core_objfile->GetCorefileThreadExtraInfos(tids)) {
-        assert(tids.size() == num_threads);
-
-        // Find highest tid value.
-        tid_t highest_tid = 0;
-        for (uint32_t i = 0; i < num_threads; i++) {
-          if (tids[i] != LLDB_INVALID_THREAD_ID && tids[i] > highest_tid)
-            highest_tid = tids[i];
-        }
-        tid_t current_unused_tid = highest_tid + 1;
-        for (uint32_t i = 0; i < num_threads; i++) {
-          if (tids[i] == LLDB_INVALID_THREAD_ID) {
-            tids[i] = current_unused_tid++;
-          }
-        }
-      } else {
-        // No metadata, insert numbers sequentially from 0.
-        for (uint32_t i = 0; i < num_threads; i++) {
-          tids.push_back(i);
-        }
-      }
-
-      for (uint32_t i = 0; i < num_threads; i++) {
-        ThreadSP thread_sp =
-            std::make_shared<ThreadMachCore>(*this, tids[i], i);
+      for (lldb::tid_t tid = 0; tid < num_threads; ++tid) {
+        ThreadSP thread_sp(new ThreadMachCore(*this, tid));
         new_thread_list.AddThread(thread_sp);
       }
     }
@@ -652,7 +557,7 @@ size_t ProcessMachCore::ReadMemory(addr_t addr, void *buf, size_t size,
                                    Status &error) {
   // Don't allow the caching that lldb_private::Process::ReadMemory does since
   // in core files we have it all cached our our core file anyway.
-  return DoReadMemory(FixAnyAddress(addr), buf, size, error);
+  return DoReadMemory(addr, buf, size, error);
 }
 
 size_t ProcessMachCore::DoReadMemory(addr_t addr, void *buf, size_t size,

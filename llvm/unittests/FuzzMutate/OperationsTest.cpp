@@ -48,6 +48,7 @@ using testing::Each;
 using testing::ElementsAre;
 using testing::Eq;
 using testing::Ge;
+using testing::NotNull;
 using testing::PrintToString;
 using testing::SizeIs;
 using testing::Truly;
@@ -357,7 +358,7 @@ TEST(OperationsTest, SplitBlockWithPhis) {
 TEST(OperationsTest, GEP) {
   LLVMContext Ctx;
 
-  Type *Int8PtrTy = PointerType::getUnqual(Ctx);
+  Type *Int8PtrTy = Type::getInt8PtrTy(Ctx);
   Type *Int32Ty = Type::getInt32Ty(Ctx);
 
   Module M("M", Ctx);
@@ -405,7 +406,7 @@ TEST(OperationsTest, GEPPointerOperand) {
 TEST(OperationsTest, ExtractAndInsertValue) {
   LLVMContext Ctx;
 
-  Type *Int8PtrTy = PointerType::getUnqual(Ctx);
+  Type *Int8PtrTy = Type::getInt8PtrTy(Ctx);
   Type *Int32Ty = Type::getInt32Ty(Ctx);
   Type *Int64Ty = Type::getInt64Ty(Ctx);
 

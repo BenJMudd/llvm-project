@@ -37,7 +37,6 @@ class AttributeMask;
 class AttributeImpl;
 class AttributeListImpl;
 class AttributeSetNode;
-class ConstantRange;
 class FoldingSetNodeID;
 class Function;
 class LLVMContext;
@@ -87,7 +86,7 @@ public:
     None,                  ///< No attributes have been set
     #define GET_ATTR_ENUM
     #include "llvm/IR/Attributes.inc"
-    EndAttrKinds,          ///< Sentinel value useful for loops
+    EndAttrKinds,          ///< Sentinal value useful for loops
     EmptyKey,              ///< Use as Empty key for DenseMap of AttrKind
     TombstoneKey,          ///< Use as Tombstone key for DenseMap of AttrKind
   };
@@ -103,9 +102,6 @@ public:
   }
   static bool isTypeAttrKind(AttrKind Kind) {
     return Kind >= FirstTypeAttr && Kind <= LastTypeAttr;
-  }
-  static bool isConstantRangeAttrKind(AttrKind Kind) {
-    return Kind >= FirstConstantRangeAttr && Kind <= LastConstantRangeAttr;
   }
 
   static bool canUseAsFnAttr(AttrKind Kind);
@@ -129,8 +125,6 @@ public:
   static Attribute get(LLVMContext &Context, StringRef Kind,
                        StringRef Val = StringRef());
   static Attribute get(LLVMContext &Context, AttrKind Kind, Type *Ty);
-  static Attribute get(LLVMContext &Context, AttrKind Kind,
-                       const ConstantRange &CR);
 
   /// Return a uniquified Attribute object that has the specific
   /// alignment set.
@@ -186,9 +180,6 @@ public:
   /// Return true if the attribute is a type attribute.
   bool isTypeAttribute() const;
 
-  /// Return true if the attribute is a ConstantRange attribute.
-  bool isConstantRangeAttribute() const;
-
   /// Return true if the attribute is any kind of attribute.
   bool isValid() const { return pImpl; }
 
@@ -221,10 +212,6 @@ public:
   /// Return the attribute's value as a Type. This requires the attribute to be
   /// a type attribute.
   Type *getValueAsType() const;
-
-  /// Return the attribute's value as a ConstantRange. This requires the
-  /// attribute to be a ConstantRange attribute.
-  ConstantRange getValueAsConstantRange() const;
 
   /// Returns the alignment field of an attribute as a byte alignment
   /// value.
@@ -263,9 +250,6 @@ public:
 
   /// Return the FPClassTest for nofpclass
   FPClassTest getNoFPClass() const;
-
-  /// Returns the value of the range attribute.
-  ConstantRange getRange() const;
 
   /// The Attribute is converted to a string of equivalent mnemonic. This
   /// is, presumably, for writing out the mnemonics for the assembly writer.
@@ -747,11 +731,6 @@ public:
   addDereferenceableOrNullParamAttr(LLVMContext &C, unsigned ArgNo,
                                     uint64_t Bytes) const;
 
-  /// Add the range attribute to the attribute set at the return value index.
-  /// Returns a new list because attribute lists are immutable.
-  [[nodiscard]] AttributeList addRangeRetAttr(LLVMContext &C,
-                                              const ConstantRange &CR) const;
-
   /// Add the allocsize attribute to the attribute set at the given arg index.
   /// Returns a new list because attribute lists are immutable.
   [[nodiscard]] AttributeList
@@ -851,11 +830,6 @@ public:
   /// Return the attribute object that exists for the function.
   Attribute getFnAttr(StringRef Kind) const {
     return getAttributeAtIndex(FunctionIndex, Kind);
-  }
-
-  /// Return the attribute for the given attribute kind for the return value.
-  Attribute getRetAttr(Attribute::AttrKind Kind) const {
-    return getAttributeAtIndex(ReturnIndex, Kind);
   }
 
   /// Return the alignment of the return value.
@@ -1214,13 +1188,6 @@ public:
 
   // Add nofpclass attribute
   AttrBuilder &addNoFPClassAttr(FPClassTest NoFPClassMask);
-
-  /// Add a ConstantRange attribute with the given range.
-  AttrBuilder &addConstantRangeAttr(Attribute::AttrKind Kind,
-                                    const ConstantRange &CR);
-
-  /// Add range attribute.
-  AttrBuilder &addRangeAttr(const ConstantRange &CR);
 
   ArrayRef<Attribute> attrs() const { return Attrs; }
 

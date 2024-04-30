@@ -18,7 +18,6 @@
 #include "MacroToEnumCheck.h"
 #include "MakeSharedCheck.h"
 #include "MakeUniqueCheck.h"
-#include "MinMaxUseInitializerListCheck.h"
 #include "PassByValueCheck.h"
 #include "RawStringLiteralCheck.h"
 #include "RedundantVoidArgCheck.h"
@@ -31,9 +30,7 @@
 #include "UnaryStaticAssertCheck.h"
 #include "UseAutoCheck.h"
 #include "UseBoolLiteralsCheck.h"
-#include "UseConstraintsCheck.h"
 #include "UseDefaultMemberInitCheck.h"
-#include "UseDesignatedInitializersCheck.h"
 #include "UseEmplaceCheck.h"
 #include "UseEqualsDefaultCheck.h"
 #include "UseEqualsDeleteCheck.h"
@@ -41,8 +38,6 @@
 #include "UseNoexceptCheck.h"
 #include "UseNullptrCheck.h"
 #include "UseOverrideCheck.h"
-#include "UseStartsEndsWithCheck.h"
-#include "UseStdNumbersCheck.h"
 #include "UseStdPrintCheck.h"
 #include "UseTrailingReturnTypeCheck.h"
 #include "UseTransparentFunctorsCheck.h"
@@ -69,15 +64,7 @@ public:
     CheckFactories.registerCheck<MacroToEnumCheck>("modernize-macro-to-enum");
     CheckFactories.registerCheck<MakeSharedCheck>("modernize-make-shared");
     CheckFactories.registerCheck<MakeUniqueCheck>("modernize-make-unique");
-    CheckFactories.registerCheck<MinMaxUseInitializerListCheck>(
-        "modernize-min-max-use-initializer-list");
     CheckFactories.registerCheck<PassByValueCheck>("modernize-pass-by-value");
-    CheckFactories.registerCheck<UseDesignatedInitializersCheck>(
-        "modernize-use-designated-initializers");
-    CheckFactories.registerCheck<UseStartsEndsWithCheck>(
-        "modernize-use-starts-ends-with");
-    CheckFactories.registerCheck<UseStdNumbersCheck>(
-        "modernize-use-std-numbers");
     CheckFactories.registerCheck<UseStdPrintCheck>("modernize-use-std-print");
     CheckFactories.registerCheck<RawStringLiteralCheck>(
         "modernize-raw-string-literal");
@@ -98,8 +85,6 @@ public:
     CheckFactories.registerCheck<UseAutoCheck>("modernize-use-auto");
     CheckFactories.registerCheck<UseBoolLiteralsCheck>(
         "modernize-use-bool-literals");
-    CheckFactories.registerCheck<UseConstraintsCheck>(
-        "modernize-use-constraints");
     CheckFactories.registerCheck<UseDefaultMemberInitCheck>(
         "modernize-use-default-member-init");
     CheckFactories.registerCheck<UseEmplaceCheck>("modernize-use-emplace");

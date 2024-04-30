@@ -17,15 +17,14 @@
 static void *simpleFunc(void *) { return nullptr; }
 static void nullJoinTest() {
   pthread_t Tid;
-  ASSERT_EQ(LIBC_NAMESPACE::pthread_create(&Tid, nullptr, simpleFunc, nullptr),
-            0);
-  ASSERT_ERRNO_SUCCESS();
-  ASSERT_EQ(LIBC_NAMESPACE::pthread_join(Tid, nullptr), 0);
-  ASSERT_ERRNO_SUCCESS();
+  ASSERT_EQ(__llvm_libc::pthread_create(&Tid, nullptr, simpleFunc, nullptr), 0);
+  ASSERT_EQ(libc_errno, 0);
+  ASSERT_EQ(__llvm_libc::pthread_join(Tid, nullptr), 0);
+  ASSERT_EQ(libc_errno, 0);
 }
 
 TEST_MAIN() {
-  LIBC_NAMESPACE::libc_errno = 0;
+  libc_errno = 0;
   nullJoinTest();
   return 0;
 }

@@ -62,6 +62,7 @@ set(FLANG_TEST_DEPENDS
   llvm-readobj
   split-file
   FortranRuntime
+  Fortran_main
   FortranDecimal
 )
 if (LLVM_ENABLE_PLUGINS AND NOT WIN32)

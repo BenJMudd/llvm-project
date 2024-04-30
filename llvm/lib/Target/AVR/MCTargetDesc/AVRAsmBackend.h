@@ -29,7 +29,7 @@ struct MCFixupKindInfo;
 class AVRAsmBackend : public MCAsmBackend {
 public:
   AVRAsmBackend(Triple::OSType OSType)
-      : MCAsmBackend(llvm::endianness::little), OSType(OSType) {}
+      : MCAsmBackend(support::little), OSType(OSType) {}
 
   void adjustFixupValue(const MCFixup &Fixup, const MCValue &Target,
                         uint64_t &Value, MCContext *Ctx = nullptr) const;
@@ -60,8 +60,7 @@ public:
                     const MCSubtargetInfo *STI) const override;
 
   bool shouldForceRelocation(const MCAssembler &Asm, const MCFixup &Fixup,
-                             const MCValue &Target,
-                             const MCSubtargetInfo *STI) override;
+                             const MCValue &Target) override;
 
 private:
   Triple::OSType OSType;

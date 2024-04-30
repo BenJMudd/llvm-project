@@ -18,6 +18,7 @@
 #include "AMDGPUPTNote.h"
 #include "SIDefines.h"
 #include "llvm/BinaryFormat/ELF.h"
+#include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Support/AMDGPUMetadata.h"
@@ -83,6 +84,7 @@ bool AMDGPUPALMetadata::setFromLegacyBlob(StringRef Blob) {
 
 // Set PAL metadata from msgpack blob.
 bool AMDGPUPALMetadata::setFromMsgPackBlob(StringRef Blob) {
+  msgpack::Reader Reader(Blob);
   return MsgPackDoc.readFromBlob(Blob, /*Multi=*/false);
 }
 
@@ -240,29 +242,30 @@ void AMDGPUPALMetadata::setScratchSize(CallingConv::ID CC, unsigned Val) {
 }
 
 // Set the stack frame size of a function in the metadata.
-void AMDGPUPALMetadata::setFunctionScratchSize(StringRef FnName, unsigned Val) {
-  auto Node = getShaderFunction(FnName);
+void AMDGPUPALMetadata::setFunctionScratchSize(const MachineFunction &MF,
+                                               unsigned Val) {
+  auto Node = getShaderFunction(MF.getFunction().getName());
   Node[".stack_frame_size_in_bytes"] = MsgPackDoc.getNode(Val);
-  Node[".backend_stack_size"] = MsgPackDoc.getNode(Val);
 }
 
 // Set the amount of LDS used in bytes in the metadata.
-void AMDGPUPALMetadata::setFunctionLdsSize(StringRef FnName, unsigned Val) {
-  auto Node = getShaderFunction(FnName);
+void AMDGPUPALMetadata::setFunctionLdsSize(const MachineFunction &MF,
+                                           unsigned Val) {
+  auto Node = getShaderFunction(MF.getFunction().getName());
   Node[".lds_size"] = MsgPackDoc.getNode(Val);
 }
 
 // Set the number of used vgprs in the metadata.
-void AMDGPUPALMetadata::setFunctionNumUsedVgprs(StringRef FnName,
+void AMDGPUPALMetadata::setFunctionNumUsedVgprs(const MachineFunction &MF,
                                                 unsigned Val) {
-  auto Node = getShaderFunction(FnName);
+  auto Node = getShaderFunction(MF.getFunction().getName());
   Node[".vgpr_count"] = MsgPackDoc.getNode(Val);
 }
 
 // Set the number of used vgprs in the metadata.
-void AMDGPUPALMetadata::setFunctionNumUsedSgprs(StringRef FnName,
+void AMDGPUPALMetadata::setFunctionNumUsedSgprs(const MachineFunction &MF,
                                                 unsigned Val) {
-  auto Node = getShaderFunction(FnName);
+  auto Node = getShaderFunction(MF.getFunction().getName());
   Node[".sgpr_count"] = MsgPackDoc.getNode(Val);
 }
 
@@ -723,7 +726,7 @@ void AMDGPUPALMetadata::toLegacyBlob(std::string &Blob) {
   if (Registers.getMap().empty())
     return;
   raw_string_ostream OS(Blob);
-  support::endian::Writer EW(OS, llvm::endianness::little);
+  support::endian::Writer EW(OS, support::endianness::little);
   for (auto I : Registers.getMap()) {
     EW.write(uint32_t(I.first.getUInt()));
     EW.write(uint32_t(I.second.getUInt()));
@@ -908,7 +911,6 @@ void AMDGPUPALMetadata::reset() {
   MsgPackDoc.clear();
   Registers = MsgPackDoc.getEmptyNode();
   HwStages = MsgPackDoc.getEmptyNode();
-  ShaderFunctions = MsgPackDoc.getEmptyNode();
 }
 
 unsigned AMDGPUPALMetadata::getPALVersion(unsigned idx) {

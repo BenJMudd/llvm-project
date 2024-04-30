@@ -660,8 +660,8 @@ PPCLoopInstrFormPrep::rewriteForBase(Loop *L, const SCEVAddRecExpr *BasePtrSCEV,
 
   Type *I8Ty = Type::getInt8Ty(BaseMemI->getParent()->getContext());
   Type *I8PtrTy =
-      PointerType::get(BaseMemI->getParent()->getContext(),
-                       BasePtr->getType()->getPointerAddressSpace());
+      Type::getInt8PtrTy(BaseMemI->getParent()->getContext(),
+                         BasePtr->getType()->getPointerAddressSpace());
 
   bool IsConstantInc = false;
   const SCEV *BasePtrIncSCEV = BasePtrSCEV->getStepRecurrence(*SE);
@@ -707,8 +707,8 @@ PPCLoopInstrFormPrep::rewriteForBase(Loop *L, const SCEVAddRecExpr *BasePtrSCEV,
   BasicBlock *LoopPredecessor = L->getLoopPredecessor();
 
   PHINode *NewPHI = PHINode::Create(I8PtrTy, HeaderLoopPredCount,
-                                    getInstrName(BaseMemI, PHINodeNameSuffix));
-  NewPHI->insertBefore(Header->getFirstNonPHIIt());
+                                    getInstrName(BaseMemI, PHINodeNameSuffix),
+                                    Header->getFirstNonPHI());
 
   Value *BasePtrStart = SCEVE.expandCodeFor(BasePtrStartSCEV, I8PtrTy,
                                             LoopPredecessor->getTerminator());
@@ -725,7 +725,7 @@ PPCLoopInstrFormPrep::rewriteForBase(Loop *L, const SCEVAddRecExpr *BasePtrSCEV,
   Instruction *PtrInc = nullptr;
   Instruction *NewBasePtr = nullptr;
   if (CanPreInc) {
-    BasicBlock::iterator InsPoint = Header->getFirstInsertionPt();
+    Instruction *InsPoint = &*Header->getFirstInsertionPt();
     PtrInc = GetElementPtrInst::Create(
         I8Ty, NewPHI, IncNode, getInstrName(BaseMemI, GEPNodeIncNameSuffix),
         InsPoint);
@@ -752,7 +752,7 @@ PPCLoopInstrFormPrep::rewriteForBase(Loop *L, const SCEVAddRecExpr *BasePtrSCEV,
       // For the latch predecessor, we need to insert a GEP just before the
       // terminator to increase the address.
       BasicBlock *BB = PI;
-      BasicBlock::iterator InsPoint = BB->getTerminator()->getIterator();
+      Instruction *InsPoint = BB->getTerminator();
       PtrInc = GetElementPtrInst::Create(
           I8Ty, NewPHI, IncNode, getInstrName(BaseMemI, GEPNodeIncNameSuffix),
           InsPoint);
@@ -764,7 +764,7 @@ PPCLoopInstrFormPrep::rewriteForBase(Loop *L, const SCEVAddRecExpr *BasePtrSCEV,
     if (NewPHI->getType() != BasePtr->getType())
       NewBasePtr = new BitCastInst(NewPHI, BasePtr->getType(),
                                    getInstrName(NewPHI, CastNodeNameSuffix),
-                                   Header->getFirstInsertionPt());
+                                   &*Header->getFirstInsertionPt());
     else
       NewBasePtr = NewPHI;
   }
@@ -794,25 +794,20 @@ Instruction *PPCLoopInstrFormPrep::rewriteForBucketElement(
        cast<SCEVConstant>(Element.Offset)->getValue()->isZero())) {
     RealNewPtr = NewBasePtr;
   } else {
-    std::optional<BasicBlock::iterator> PtrIP = std::nullopt;
-    if (Instruction *I = dyn_cast<Instruction>(Ptr))
-      PtrIP = I->getIterator();
-
+    Instruction *PtrIP = dyn_cast<Instruction>(Ptr);
     if (PtrIP && isa<Instruction>(NewBasePtr) &&
-        cast<Instruction>(NewBasePtr)->getParent() == (*PtrIP)->getParent())
-      PtrIP = std::nullopt;
-    else if (PtrIP && isa<PHINode>(*PtrIP))
-      PtrIP = (*PtrIP)->getParent()->getFirstInsertionPt();
+        cast<Instruction>(NewBasePtr)->getParent() == PtrIP->getParent())
+      PtrIP = nullptr;
+    else if (PtrIP && isa<PHINode>(PtrIP))
+      PtrIP = &*PtrIP->getParent()->getFirstInsertionPt();
     else if (!PtrIP)
-      PtrIP = Element.Instr->getIterator();
+      PtrIP = Element.Instr;
 
     assert(OffToBase && "There should be an offset for non base element!\n");
     GetElementPtrInst *NewPtr = GetElementPtrInst::Create(
         I8Ty, PtrInc, OffToBase,
-        getInstrName(Element.Instr, GEPNodeOffNameSuffix));
-    if (PtrIP)
-      NewPtr->insertBefore(*(*PtrIP)->getParent(), *PtrIP);
-    else
+        getInstrName(Element.Instr, GEPNodeOffNameSuffix), PtrIP);
+    if (!PtrIP)
       NewPtr->insertAfter(cast<Instruction>(PtrInc));
     NewPtr->setIsInBounds(IsPtrInBounds(Ptr));
     RealNewPtr = NewPtr;

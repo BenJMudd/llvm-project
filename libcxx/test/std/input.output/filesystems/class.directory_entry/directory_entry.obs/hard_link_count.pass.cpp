@@ -6,16 +6,11 @@
 //
 //===----------------------------------------------------------------------===//
 
-// REQUIRES: can-create-symlinks
-// UNSUPPORTED: c++03, c++11, c++14
+// UNSUPPORTED: c++03
 
 // The string reported on errors changed, which makes those tests fail when run
 // against already-released libc++'s.
 // XFAIL: stdlib=apple-libc++ && target={{.+}}-apple-macosx{{10.15|11.0}}
-
-// Starting in Android N (API 24), SELinux policy prevents the shell user from
-// creating a hard link.
-// XFAIL: LIBCXX-ANDROID-FIXME && !android-device-api={{21|22|23}}
 
 // <filesystem>
 
@@ -24,14 +19,14 @@
 // uintmax_t hard_link_count() const;
 // uintmax_t hard_link_count(error_code const&) const noexcept;
 
-#include <filesystem>
+#include "filesystem_include.h"
 #include <type_traits>
 #include <cassert>
 
 #include "assert_macros.h"
 #include "filesystem_test_helper.h"
+
 #include "test_macros.h"
-namespace fs = std::filesystem;
 
 static void signatures() {
   using namespace fs;

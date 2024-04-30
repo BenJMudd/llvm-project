@@ -637,8 +637,8 @@ Loop::LocRange Loop::getLocRange() const {
     // We use the first DebugLoc in the header as the start location of the loop
     // and if there is a second DebugLoc in the header we use it as end location
     // of the loop.
-    for (const MDOperand &MDO : llvm::drop_begin(LoopID->operands())) {
-      if (DILocation *L = dyn_cast<DILocation>(MDO)) {
+    for (unsigned i = 1, ie = LoopID->getNumOperands(); i < ie; ++i) {
+      if (DILocation *L = dyn_cast<DILocation>(LoopID->getOperand(i))) {
         if (!Start)
           Start = DebugLoc(L);
         else
@@ -816,19 +816,20 @@ Loop *UnloopUpdater::getNearestLoop(BasicBlock *BB, Loop *BBLoop) {
     NearLoop = SubloopParents.insert({Subloop, &Unloop}).first->second;
   }
 
-  if (succ_empty(BB)) {
+  succ_iterator I = succ_begin(BB), E = succ_end(BB);
+  if (I == E) {
     assert(!Subloop && "subloop blocks must have a successor");
     NearLoop = nullptr; // unloop blocks may now exit the function.
   }
-  for (BasicBlock *Succ : successors(BB)) {
-    if (Succ == BB)
+  for (; I != E; ++I) {
+    if (*I == BB)
       continue; // self loops are uninteresting
 
-    Loop *L = LI->getLoopFor(Succ);
+    Loop *L = LI->getLoopFor(*I);
     if (L == &Unloop) {
       // This successor has not been processed. This path must lead to an
       // irreducible backedge.
-      assert((FoundIB || !DFS.hasPostorder(Succ)) && "should have seen IB");
+      assert((FoundIB || !DFS.hasPostorder(*I)) && "should have seen IB");
       FoundIB = true;
     }
     if (L != &Unloop && Unloop.contains(L)) {
@@ -968,9 +969,7 @@ LoopInfo LoopAnalysis::run(Function &F, FunctionAnalysisManager &AM) {
 
 PreservedAnalyses LoopPrinterPass::run(Function &F,
                                        FunctionAnalysisManager &AM) {
-  auto &LI = AM.getResult<LoopAnalysis>(F);
-  OS << "Loop info for function '" << F.getName() << "':\n";
-  LI.print(OS);
+  AM.getResult<LoopAnalysis>(F).print(OS);
   return PreservedAnalyses::all();
 }
 
@@ -1024,8 +1023,8 @@ MDNode *llvm::findOptionMDForLoopID(MDNode *LoopID, StringRef Name) {
   assert(LoopID->getOperand(0) == LoopID && "invalid loop id");
 
   // Iterate over the metdata node operands and look for MDString metadata.
-  for (const MDOperand &MDO : llvm::drop_begin(LoopID->operands())) {
-    MDNode *MD = dyn_cast<MDNode>(MDO);
+  for (unsigned i = 1, e = LoopID->getNumOperands(); i < e; ++i) {
+    MDNode *MD = dyn_cast<MDNode>(LoopID->getOperand(i));
     if (!MD || MD->getNumOperands() < 1)
       continue;
     MDString *S = dyn_cast<MDString>(MD->getOperand(0));
@@ -1136,15 +1135,15 @@ MDNode *llvm::makePostTransformationMetadata(LLVMContext &Context,
   // Remove metadata for the transformation that has been applied or that became
   // outdated.
   if (OrigLoopID) {
-    for (const MDOperand &MDO : llvm::drop_begin(OrigLoopID->operands())) {
+    for (unsigned i = 1, ie = OrigLoopID->getNumOperands(); i < ie; ++i) {
       bool IsVectorMetadata = false;
-      Metadata *Op = MDO;
+      Metadata *Op = OrigLoopID->getOperand(i);
       if (MDNode *MD = dyn_cast<MDNode>(Op)) {
         const MDString *S = dyn_cast<MDString>(MD->getOperand(0));
         if (S)
           IsVectorMetadata =
               llvm::any_of(RemovePrefixes, [S](StringRef Prefix) -> bool {
-                return S->getString().starts_with(Prefix);
+                return S->getString().startswith(Prefix);
               });
       }
       if (!IsVectorMetadata)
@@ -1219,7 +1218,7 @@ PreservedAnalyses LoopVerifierPass::run(Function &F,
 /// Traverse the loop blocks and store the DFS result.
 /// Useful for clients that just want the final DFS result and don't need to
 /// visit blocks during the initial traversal.
-void LoopBlocksDFS::perform(const LoopInfo *LI) {
+void LoopBlocksDFS::perform(LoopInfo *LI) {
   LoopBlocksTraversal Traversal(*this, LI);
   for (LoopBlocksTraversal::POTIterator POI = Traversal.begin(),
                                         POE = Traversal.end();

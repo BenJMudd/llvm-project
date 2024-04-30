@@ -39,13 +39,14 @@ class ASTStmtWriter;
 ///
 /// According to C++2a [expr.prim.id]p3 an id-expression that denotes the
 /// specialization of a concept results in a prvalue of type bool.
-class ConceptSpecializationExpr final : public Expr {
+class ConceptSpecializationExpr final : public Expr, public ConceptReference {
   friend class ASTReader;
   friend class ASTStmtReader;
 
-private:
-  ConceptReference *ConceptRef;
+public:
+  using SubstitutionDiagnostic = std::pair<SourceLocation, std::string>;
 
+protected:
   /// \brief The Implicit Concept Specialization Decl, which holds the template
   /// arguments for this specialization.
   ImplicitConceptSpecializationDecl *SpecDecl;
@@ -55,11 +56,16 @@ private:
   /// ignored.
   ASTConstraintSatisfaction *Satisfaction;
 
-  ConceptSpecializationExpr(const ASTContext &C, ConceptReference *ConceptRef,
+  ConceptSpecializationExpr(const ASTContext &C, NestedNameSpecifierLoc NNS,
+                            SourceLocation TemplateKWLoc,
+                            DeclarationNameInfo ConceptNameInfo,
+                            NamedDecl *FoundDecl, ConceptDecl *NamedConcept,
+                            const ASTTemplateArgumentListInfo *ArgsAsWritten,
                             ImplicitConceptSpecializationDecl *SpecDecl,
                             const ConstraintSatisfaction *Satisfaction);
 
-  ConceptSpecializationExpr(const ASTContext &C, ConceptReference *ConceptRef,
+  ConceptSpecializationExpr(const ASTContext &C, ConceptDecl *NamedConcept,
+                            const ASTTemplateArgumentListInfo *ArgsAsWritten,
                             ImplicitConceptSpecializationDecl *SpecDecl,
                             const ConstraintSatisfaction *Satisfaction,
                             bool Dependent,
@@ -68,49 +74,22 @@ private:
 
 public:
   static ConceptSpecializationExpr *
-  Create(const ASTContext &C, ConceptReference *ConceptRef,
+  Create(const ASTContext &C, NestedNameSpecifierLoc NNS,
+         SourceLocation TemplateKWLoc, DeclarationNameInfo ConceptNameInfo,
+         NamedDecl *FoundDecl, ConceptDecl *NamedConcept,
+         const ASTTemplateArgumentListInfo *ArgsAsWritten,
          ImplicitConceptSpecializationDecl *SpecDecl,
          const ConstraintSatisfaction *Satisfaction);
 
   static ConceptSpecializationExpr *
-  Create(const ASTContext &C, ConceptReference *ConceptRef,
+  Create(const ASTContext &C, ConceptDecl *NamedConcept,
+         const ASTTemplateArgumentListInfo *ArgsAsWritten,
          ImplicitConceptSpecializationDecl *SpecDecl,
          const ConstraintSatisfaction *Satisfaction, bool Dependent,
          bool ContainsUnexpandedParameterPack);
 
   ArrayRef<TemplateArgument> getTemplateArguments() const {
     return SpecDecl->getTemplateArguments();
-  }
-
-  ConceptReference *getConceptReference() const { return ConceptRef; }
-
-  ConceptDecl *getNamedConcept() const { return ConceptRef->getNamedConcept(); }
-
-  // FIXME: Several of the following functions can be removed. Instead the
-  // caller can directly work with the ConceptReference.
-  bool hasExplicitTemplateArgs() const {
-    return ConceptRef->hasExplicitTemplateArgs();
-  }
-
-  SourceLocation getConceptNameLoc() const {
-    return ConceptRef->getConceptNameLoc();
-  }
-  const ASTTemplateArgumentListInfo *getTemplateArgsAsWritten() const {
-    return ConceptRef->getTemplateArgsAsWritten();
-  }
-
-  const NestedNameSpecifierLoc &getNestedNameSpecifierLoc() const {
-    return ConceptRef->getNestedNameSpecifierLoc();
-  }
-
-  SourceLocation getTemplateKWLoc() const {
-    return ConceptRef->getTemplateKWLoc();
-  }
-
-  NamedDecl *getFoundDecl() const { return ConceptRef->getFoundDecl(); }
-
-  const DeclarationNameInfo &getConceptNameInfo() const {
-    return ConceptRef->getConceptNameInfo();
   }
 
   const ImplicitConceptSpecializationDecl *getSpecializationDecl() const {
@@ -141,15 +120,17 @@ public:
   }
 
   SourceLocation getBeginLoc() const LLVM_READONLY {
-    return ConceptRef->getBeginLoc();
+    if (auto QualifierLoc = getNestedNameSpecifierLoc())
+      return QualifierLoc.getBeginLoc();
+    return ConceptName.getBeginLoc();
   }
 
   SourceLocation getEndLoc() const LLVM_READONLY {
-    return ConceptRef->getEndLoc();
-  }
-
-  SourceLocation getExprLoc() const LLVM_READONLY {
-    return ConceptRef->getLocation();
+    // If the ConceptSpecializationExpr is the ImmediatelyDeclaredConstraint
+    // of a TypeConstraint written syntactically as a constrained-parameter,
+    // there may not be a template argument list.
+    return ArgsAsWritten->RAngleLoc.isValid() ? ArgsAsWritten->RAngleLoc
+                                              : ConceptName.getEndLoc();
   }
 
   // Iterators
@@ -173,11 +154,8 @@ public:
 private:
   const RequirementKind Kind;
   // FIXME: use RequirementDependence to model dependence?
-  LLVM_PREFERRED_TYPE(bool)
   bool Dependent : 1;
-  LLVM_PREFERRED_TYPE(bool)
   bool ContainsUnexpandedParameterPack : 1;
-  LLVM_PREFERRED_TYPE(bool)
   bool Satisfied : 1;
 public:
   struct SubstitutionDiagnostic {
@@ -514,8 +492,6 @@ class RequiresExpr final : public Expr,
   unsigned NumLocalParameters;
   unsigned NumRequirements;
   RequiresExprBodyDecl *Body;
-  SourceLocation LParenLoc;
-  SourceLocation RParenLoc;
   SourceLocation RBraceLoc;
 
   unsigned numTrailingObjects(OverloadToken<ParmVarDecl *>) const {
@@ -527,22 +503,19 @@ class RequiresExpr final : public Expr,
   }
 
   RequiresExpr(ASTContext &C, SourceLocation RequiresKWLoc,
-               RequiresExprBodyDecl *Body, SourceLocation LParenLoc,
+               RequiresExprBodyDecl *Body,
                ArrayRef<ParmVarDecl *> LocalParameters,
-               SourceLocation RParenLoc,
                ArrayRef<concepts::Requirement *> Requirements,
                SourceLocation RBraceLoc);
   RequiresExpr(ASTContext &C, EmptyShell Empty, unsigned NumLocalParameters,
                unsigned NumRequirements);
 
 public:
-  static RequiresExpr *Create(ASTContext &C, SourceLocation RequiresKWLoc,
-                              RequiresExprBodyDecl *Body,
-                              SourceLocation LParenLoc,
-                              ArrayRef<ParmVarDecl *> LocalParameters,
-                              SourceLocation RParenLoc,
-                              ArrayRef<concepts::Requirement *> Requirements,
-                              SourceLocation RBraceLoc);
+  static RequiresExpr *
+  Create(ASTContext &C, SourceLocation RequiresKWLoc,
+         RequiresExprBodyDecl *Body, ArrayRef<ParmVarDecl *> LocalParameters,
+         ArrayRef<concepts::Requirement *> Requirements,
+         SourceLocation RBraceLoc);
   static RequiresExpr *
   Create(ASTContext &C, EmptyShell Empty, unsigned NumLocalParameters,
          unsigned NumRequirements);
@@ -575,8 +548,6 @@ public:
     return RequiresExprBits.RequiresKWLoc;
   }
 
-  SourceLocation getLParenLoc() const { return LParenLoc; }
-  SourceLocation getRParenLoc() const { return RParenLoc; }
   SourceLocation getRBraceLoc() const { return RBraceLoc; }
 
   static bool classof(const Stmt *T) {

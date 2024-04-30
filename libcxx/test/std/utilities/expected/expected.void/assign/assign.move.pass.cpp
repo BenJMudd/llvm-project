@@ -6,6 +6,8 @@
 //===----------------------------------------------------------------------===//
 
 // UNSUPPORTED: c++03, c++11, c++14, c++17, c++20
+// Older Clangs do not support the C++20 feature to constrain destructors
+// XFAIL: apple-clang-14
 
 // constexpr expected& operator=(expected&& rhs) noexcept(see below);
 //
@@ -123,28 +125,6 @@ constexpr bool test() {
     assert(e1.error().data_ == 10);
 
     assert(state.moveAssignCalled);
-  }
-
-  // CheckForInvalidWrites
-  {
-    {
-      CheckForInvalidWrites<true, true> e1;
-      CheckForInvalidWrites<true, true> e2(std::unexpect);
-
-      e1 = std::move(e2);
-
-      assert(e1.check());
-      assert(e2.check());
-    }
-    {
-      CheckForInvalidWrites<false, true> e1;
-      CheckForInvalidWrites<false, true> e2(std::unexpect);
-
-      e1 = std::move(e2);
-
-      assert(e1.check());
-      assert(e2.check());
-    }
   }
 
   return true;

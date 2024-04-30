@@ -1198,13 +1198,13 @@ void expectSymbolicIntegerLexMin(
   ASSERT_NE(poly.getNumDimVars(), 0u);
   ASSERT_NE(poly.getNumSymbolVars(), 0u);
 
-  SymbolicLexOpt result = poly.findSymbolicIntegerLexMin();
+  SymbolicLexMin result = poly.findSymbolicIntegerLexMin();
 
   if (expectedLexminRepr.empty()) {
-    EXPECT_TRUE(result.lexopt.getDomain().isIntegerEmpty());
+    EXPECT_TRUE(result.lexmin.getDomain().isIntegerEmpty());
   } else {
     PWMAFunction expectedLexmin = parsePWMAF(expectedLexminRepr);
-    EXPECT_TRUE(result.lexopt.isEqual(expectedLexmin));
+    EXPECT_TRUE(result.lexmin.isEqual(expectedLexmin));
   }
 
   if (expectedUnboundedDomainRepr.empty()) {

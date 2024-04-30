@@ -99,7 +99,7 @@ void DynoStats::print(raw_ostream &OS, const DynoStats *Other,
     printStatWithDelta(Desc[Stat], Stats[Stat], Other ? (*Other)[Stat] : 0);
   }
   if (opts::PrintDynoOpcodeStat && Printer) {
-    OS << "\nProgram-wide opcode histogram:\n";
+    outs() << "\nProgram-wide opcode histogram:\n";
     OS << "              Opcode,   Execution Count,     Max Exec Count, "
           "Function Name:Offset ...\n";
     std::vector<std::pair<uint64_t, unsigned>> SortedHistogram;
@@ -136,7 +136,7 @@ void DynoStats::operator+=(const DynoStats &Other) {
     if (I == OpcodeHistogram.end()) {
       OpcodeHistogram.emplace(Stat);
     } else {
-      // Merge other histograms, log only the opts::PrintDynoOpcodeStat'th
+      // Merge Other Historgrams, log only the opts::PrintDynoOpcodeStat'th
       // maximum counts.
       I->second.first += Stat.second.first;
       auto &MMap = I->second.second;
@@ -215,10 +215,10 @@ DynoStats getDynoStats(BinaryFunction &BF) {
         }
       }
 
-      if (BC.MIB->mayStore(Instr)) {
+      if (BC.MIB->isStore(Instr)) {
         Stats[DynoStats::STORES] += BBExecutionCount;
       }
-      if (BC.MIB->mayLoad(Instr)) {
+      if (BC.MIB->isLoad(Instr)) {
         Stats[DynoStats::LOADS] += BBExecutionCount;
       }
       if (!BC.MIB->isCall(Instr))

@@ -45,9 +45,7 @@
 #include <type_traits>
 
 namespace Fortran::evaluate {
-template <typename Visitor, typename Result,
-    bool TraverseAssocEntityDetails = true>
-class Traverse {
+template <typename Visitor, typename Result> class Traverse {
 public:
   explicit Traverse(Visitor &v) : visitor_{v} {}
 
@@ -102,21 +100,28 @@ public:
   Result operator()(const NullPointer &) const { return visitor_.Default(); }
   template <typename T> Result operator()(const Constant<T> &x) const {
     if constexpr (T::category == TypeCategory::Derived) {
-      return visitor_.Combine(
-          visitor_(x.result().derivedTypeSpec()), CombineContents(x.values()));
+      std::optional<Result> result;
+      for (const StructureConstructorValues &map : x.values()) {
+        for (const auto &pair : map) {
+          auto value{visitor_(pair.second.value())};
+          result = result
+              ? visitor_.Combine(std::move(*result), std::move(value))
+              : std::move(value);
+        }
+      }
+      return result ? *result : visitor_.Default();
     } else {
       return visitor_.Default();
     }
   }
   Result operator()(const Symbol &symbol) const {
     const Symbol &ultimate{symbol.GetUltimate()};
-    if constexpr (TraverseAssocEntityDetails) {
-      if (const auto *assoc{
-              ultimate.detailsIf<semantics::AssocEntityDetails>()}) {
-        return visitor_(assoc->expr());
-      }
+    if (const auto *assoc{
+            ultimate.detailsIf<semantics::AssocEntityDetails>()}) {
+      return visitor_(assoc->expr());
+    } else {
+      return visitor_.Default();
     }
-    return visitor_.Default();
   }
   Result operator()(const StaticDataObject &) const {
     return visitor_.Default();
@@ -212,18 +217,11 @@ public:
       const semantics::DerivedTypeSpec::ParameterMapType::value_type &x) const {
     return visitor_(x.second);
   }
-  Result operator()(
-      const semantics::DerivedTypeSpec::ParameterMapType &x) const {
-    return CombineContents(x);
-  }
   Result operator()(const semantics::DerivedTypeSpec &x) const {
-    return Combine(x.typeSymbol(), x.parameters());
+    return CombineContents(x.parameters());
   }
   Result operator()(const StructureConstructorValues::value_type &x) const {
     return visitor_(x.second);
-  }
-  Result operator()(const StructureConstructorValues &x) const {
-    return CombineContents(x);
   }
   Result operator()(const StructureConstructor &x) const {
     return visitor_.Combine(visitor_(x.derivedTypeSpec()), CombineContents(x));
@@ -287,8 +285,7 @@ private:
 // For validity checks across an expression: if any operator() result is
 // false, so is the overall result.
 template <typename Visitor, bool DefaultValue,
-    bool TraverseAssocEntityDetails = true,
-    typename Base = Traverse<Visitor, bool, TraverseAssocEntityDetails>>
+    typename Base = Traverse<Visitor, bool>>
 struct AllTraverse : public Base {
   explicit AllTraverse(Visitor &v) : Base{v} {}
   using Base::operator();
@@ -300,8 +297,7 @@ struct AllTraverse : public Base {
 // is truthful is the final result.  Works for Booleans, pointers,
 // and std::optional<>.
 template <typename Visitor, typename Result = bool,
-    bool TraverseAssocEntityDetails = true,
-    typename Base = Traverse<Visitor, Result, TraverseAssocEntityDetails>>
+    typename Base = Traverse<Visitor, Result>>
 class AnyTraverse : public Base {
 public:
   explicit AnyTraverse(Visitor &v) : Base{v} {}
@@ -320,8 +316,7 @@ private:
 };
 
 template <typename Visitor, typename Set,
-    bool TraverseAssocEntityDetails = true,
-    typename Base = Traverse<Visitor, Set, TraverseAssocEntityDetails>>
+    typename Base = Traverse<Visitor, Set>>
 struct SetTraverse : public Base {
   explicit SetTraverse(Visitor &v) : Base{v} {}
   using Base::operator();

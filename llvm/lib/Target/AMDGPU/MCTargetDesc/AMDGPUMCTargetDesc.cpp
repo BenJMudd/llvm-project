@@ -70,7 +70,7 @@ static MCRegisterInfo *createAMDGPUMCRegisterInfo(const Triple &TT) {
 
 MCRegisterInfo *llvm::createGCNMCRegisterInfo(AMDGPUDwarfFlavour DwarfFlavour) {
   MCRegisterInfo *X = new MCRegisterInfo();
-  InitAMDGPUMCRegisterInfo(X, AMDGPU::PC_REG, DwarfFlavour, DwarfFlavour);
+  InitAMDGPUMCRegisterInfo(X, AMDGPU::PC_REG, DwarfFlavour);
   return X;
 }
 
@@ -112,9 +112,10 @@ static MCTargetStreamer *createAMDGPUNullTargetStreamer(MCStreamer &S) {
 static MCStreamer *createMCStreamer(const Triple &T, MCContext &Context,
                                     std::unique_ptr<MCAsmBackend> &&MAB,
                                     std::unique_ptr<MCObjectWriter> &&OW,
-                                    std::unique_ptr<MCCodeEmitter> &&Emitter) {
+                                    std::unique_ptr<MCCodeEmitter> &&Emitter,
+                                    bool RelaxAll) {
   return createAMDGPUELFStreamer(T, Context, std::move(MAB), std::move(OW),
-                                 std::move(Emitter));
+                                 std::move(Emitter), RelaxAll);
 }
 
 namespace {

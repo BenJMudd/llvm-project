@@ -720,21 +720,13 @@ std::string MemRegion::getDescriptiveName(bool UseQuotes) const {
       CI->getValue().toString(Idx);
       ArrayIndices = (llvm::Twine("[") + Idx.str() + "]" + ArrayIndices).str();
     }
-    // Index is symbolic, but may have a descriptive name.
+    // If not a ConcreteInt, try to obtain the variable
+    // name by calling 'getDescriptiveName' recursively.
     else {
-      auto SI = ER->getIndex().getAs<nonloc::SymbolVal>();
-      if (!SI)
-        return "";
-
-      const MemRegion *OR = SI->getAsSymbol()->getOriginRegion();
-      if (!OR)
-        return "";
-
-      std::string Idx = OR->getDescriptiveName(false);
-      if (Idx.empty())
-        return "";
-
-      ArrayIndices = (llvm::Twine("[") + Idx + "]" + ArrayIndices).str();
+      std::string Idx = ER->getDescriptiveName(false);
+      if (!Idx.empty()) {
+        ArrayIndices = (llvm::Twine("[") + Idx + "]" + ArrayIndices).str();
+      }
     }
     R = ER->getSuperRegion();
   }
@@ -825,7 +817,7 @@ DefinedOrUnknownSVal MemRegionManager::getStaticSize(const MemRegion *MR,
       };
       auto IsArrayOfZero = [](const ArrayType *AT) {
         const auto *CAT = dyn_cast<ConstantArrayType>(AT);
-        return CAT && CAT->isZeroSize();
+        return CAT && CAT->getSize() == 0;
       };
       auto IsArrayOfOne = [](const ArrayType *AT) {
         const auto *CAT = dyn_cast<ConstantArrayType>(AT);

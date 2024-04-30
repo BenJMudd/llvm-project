@@ -21,13 +21,22 @@ public:
                             "If no file if specified, transcripts will be "
                             "saved to a temporary file.",
                             "session save [file]") {
-    AddSimpleArgumentList(eArgTypePath, eArgRepeatOptional);
+    CommandArgumentEntry arg1;
+    arg1.emplace_back(eArgTypePath, eArgRepeatOptional);
+    m_arguments.push_back(arg1);
   }
 
   ~CommandObjectSessionSave() override = default;
 
+  void
+  HandleArgumentCompletion(CompletionRequest &request,
+                           OptionElementVector &opt_element_vector) override {
+    lldb_private::CommandCompletions::InvokeCommonCompletionCallbacks(
+        GetCommandInterpreter(), lldb::eDiskFileCompletion, request, nullptr);
+  }
+
 protected:
-  void DoExecute(Args &args, CommandReturnObject &result) override {
+  bool DoExecute(Args &args, CommandReturnObject &result) override {
     llvm::StringRef file_path;
 
     if (!args.empty())
@@ -37,6 +46,7 @@ protected:
       result.SetStatus(eReturnStatusSuccessFinishNoResult);
     else
       result.SetStatus(eReturnStatusFailed);
+    return result.Succeeded();
   }
 };
 
@@ -117,7 +127,7 @@ protected:
     OptionValueBoolean m_clear;
   };
 
-  void DoExecute(Args &command, CommandReturnObject &result) override {
+  bool DoExecute(Args &command, CommandReturnObject &result) override {
     if (m_options.m_clear.GetCurrentValue() &&
         m_options.m_clear.OptionWasSet()) {
       m_interpreter.GetCommandHistory().Clear();
@@ -179,6 +189,7 @@ protected:
                      stop_idx.second);
       }
     }
+    return result.Succeeded();
   }
 
   CommandOptions m_options;

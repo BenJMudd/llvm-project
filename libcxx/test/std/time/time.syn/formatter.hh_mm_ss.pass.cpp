@@ -9,6 +9,8 @@
 // UNSUPPORTED: no-localization
 // UNSUPPORTED: GCC-ALWAYS_INLINE-FIXME
 
+// XFAIL: LIBCXX-FREEBSD-FIXME
+
 // XFAIL: availability-fp_to_chars-missing
 
 // REQUIRES: locale.fr_FR.UTF-8
@@ -186,7 +188,7 @@ static void test_valid_values() {
            "%r='00:00:00'\t"
 #elif defined(_AIX)
            "%r='12:00:00 AM'\t"
-#elif defined(__APPLE__) || defined(__FreeBSD__)
+#elif defined(__APPLE__)
            "%r=''\t"
 #else
            "%r='12:00:00 '\t"
@@ -216,7 +218,7 @@ static void test_valid_values() {
            "%r='23:31:30'\t"
 #elif defined(_AIX)
            "%r='11:31:30 PM'\t"
-#elif defined(__APPLE__) || defined(__FreeBSD__)
+#elif defined(__APPLE__)
            "%r=''\t"
 #else
            "%r='11:31:30 '\t"
@@ -246,7 +248,7 @@ static void test_valid_values() {
            "%r='03:02:01'\t"
 #elif defined(_AIX)
            "%r='03:02:01 AM'\t"
-#elif defined(__APPLE__) || defined(__FreeBSD__)
+#elif defined(__APPLE__)
            "%r=''\t"
 #else
            "%r='03:02:01 '\t"
@@ -276,7 +278,7 @@ static void test_valid_values() {
            "%r='01:01:01'\t"
 #elif defined(_AIX)
            "%r='01:01:01 AM'\t"
-#elif defined(__APPLE__) || defined(__FreeBSD__)
+#elif defined(__APPLE__)
            "%r=''\t"
 #else
            "%r='01:01:01 '\t"
@@ -288,7 +290,7 @@ static void test_valid_values() {
         std::chrono::hh_mm_ss(std::chrono::duration<double>(3661.123456)));
 
   // Use supplied locale (ja_JP). This locale has a different alternate.
-#if defined(__APPLE__) || defined(_AIX) || defined(_WIN32) || defined(__FreeBSD__)
+#if defined(__APPLE__) || defined(_AIX) || defined(_WIN32)
   check(loc,
         SV("%H='00'\t"
            "%OH='00'\t"
@@ -305,12 +307,8 @@ static void test_valid_values() {
 #  endif
            "%R='00:00'\t"
            "%T='00:00:00'\t"
-#  if defined(__APPLE__) || defined(__FreeBSD__)
-#    if defined(__APPLE__)
+#  if defined(__APPLE__)
            "%r='12:00:00 AM'\t"
-#    else
-           "%r='12:00:00 午前'\t"
-#    endif
            "%X='00時00分00秒'\t"
            "%EX='00時00分00秒'\t"
 #  elif defined(_WIN32)
@@ -342,12 +340,8 @@ static void test_valid_values() {
 #  endif
            "%R='23:31'\t"
            "%T='23:31:30.123'\t"
-#  if defined(__APPLE__) || defined(__FreeBSD__)
-#    if defined(__APPLE__)
+#  if defined(__APPLE__)
            "%r='11:31:30 PM'\t"
-#    else
-           "%r='11:31:30 午後'\t"
-#    endif
            "%X='23時31分30秒'\t"
            "%EX='23時31分30秒'\t"
 #  elif defined(_WIN32)
@@ -379,12 +373,8 @@ static void test_valid_values() {
 #  endif
            "%R='03:02'\t"
            "%T='03:02:01.123456789012'\t"
-#  if defined(__APPLE__) || defined(__FreeBSD__)
-#    if defined(__APPLE__)
+#  if defined(__APPLE__)
            "%r='03:02:01 AM'\t"
-#    else
-           "%r='03:02:01 午前'\t"
-#    endif
            "%X='03時02分01秒'\t"
            "%EX='03時02分01秒'\t"
 #  elif defined(_WIN32)
@@ -416,12 +406,8 @@ static void test_valid_values() {
 #  endif
            "%R='01:01'\t"
            "%T='01:01:01'\t"
-#  if defined(__APPLE__) || defined(__FreeBSD__)
-#    if defined(__APPLE__)
+#  if defined(__APPLE__)
            "%r='01:01:01 AM'\t"
-#    else
-           "%r='01:01:01 午前'\t"
-#    endif
            "%X='01時01分01秒'\t"
            "%EX='01時01分01秒'\t"
 #  elif defined(_WIN32)

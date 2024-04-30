@@ -118,15 +118,20 @@ public:
 private:
   std::tuple<RetpolineThunkInserter, LVIThunkInserter> TIs;
 
+  // FIXME: When LLVM moves to C++17, these can become folds
   template <typename... ThunkInserterT>
   static void initTIs(Module &M,
                       std::tuple<ThunkInserterT...> &ThunkInserters) {
-    (..., std::get<ThunkInserterT>(ThunkInserters).init(M));
+    (void)std::initializer_list<int>{
+        (std::get<ThunkInserterT>(ThunkInserters).init(M), 0)...};
   }
   template <typename... ThunkInserterT>
   static bool runTIs(MachineModuleInfo &MMI, MachineFunction &MF,
                      std::tuple<ThunkInserterT...> &ThunkInserters) {
-    return (0 | ... | std::get<ThunkInserterT>(ThunkInserters).run(MMI, MF));
+    bool Modified = false;
+    (void)std::initializer_list<int>{
+        Modified |= std::get<ThunkInserterT>(ThunkInserters).run(MMI, MF)...};
+    return Modified;
   }
 };
 

@@ -12,7 +12,6 @@
 #include "flang/Evaluate/tools.h"
 #include "flang/Evaluate/traverse.h"
 #include "flang/Evaluate/type.h"
-#include "flang/Semantics/semantics.h"
 #include "flang/Semantics/symbol.h"
 #include "flang/Semantics/tools.h"
 #include <set>
@@ -115,7 +114,6 @@ bool IsConstantExprHelper<INVARIANT>::operator()(
   // LBOUND, UBOUND, and SIZE with truly constant DIM= arguments will have
   // been rewritten into DescriptorInquiry operations.
   if (const auto *intrinsic{std::get_if<SpecificIntrinsic>(&call.proc().u)}) {
-    const characteristics::Procedure &proc{intrinsic->characteristics.value()};
     if (intrinsic->name == "kind" ||
         intrinsic->name == IntrinsicProcTable::InvalidName ||
         call.arguments().empty() || !call.arguments()[0]) {
@@ -131,16 +129,6 @@ bool IsConstantExprHelper<INVARIANT>::operator()(
     } else if (intrinsic->name == "shape" || intrinsic->name == "size") {
       auto shape{GetShape(call.arguments()[0]->UnwrapExpr())};
       return shape && IsConstantExprShape(*shape);
-    } else if (proc.IsPure()) {
-      for (const auto &arg : call.arguments()) {
-        if (!arg) {
-          return false;
-        } else if (const auto *expr{arg->UnwrapExpr()};
-                   !expr || !(*this)(*expr)) {
-          return false;
-        }
-      }
-      return true;
     }
     // TODO: STORAGE_SIZE
   }
@@ -190,12 +178,7 @@ struct IsActuallyConstantHelper {
   bool operator()(const StructureConstructor &x) {
     for (const auto &pair : x) {
       const Expr<SomeType> &y{pair.second.value()};
-      const auto sym{pair.first};
-      const bool compIsConstant{(*this)(y)};
-      // If an allocatable component is initialized by a constant,
-      // the structure constructor is not a constant.
-      if ((!compIsConstant && !IsNullPointer(y)) ||
-          (compIsConstant && IsAllocatable(sym))) {
+      if (!(*this)(y) && !IsNullPointer(y)) {
         return false;
       }
     }
@@ -250,8 +233,6 @@ public:
         }
       }
       return false;
-    } else if (!CheckVarOrComponent(ultimate)) {
-      return false;
     } else if (!ultimate.attrs().test(semantics::Attr::TARGET)) {
       if (messages_) {
         messages_->Say(
@@ -269,7 +250,7 @@ public:
       }
       return false;
     } else {
-      return true;
+      return CheckVarOrComponent(ultimate);
     }
   }
   bool operator()(const StaticDataObject &) const { return false; }
@@ -320,23 +301,24 @@ public:
 private:
   bool CheckVarOrComponent(const semantics::Symbol &symbol) {
     const Symbol &ultimate{symbol.GetUltimate()};
-    const char *unacceptable{nullptr};
-    if (ultimate.Corank() > 0) {
-      unacceptable = "a coarray";
-    } else if (IsAllocatable(ultimate)) {
-      unacceptable = "an ALLOCATABLE";
-    } else if (IsPointer(ultimate)) {
-      unacceptable = "a POINTER";
-    } else {
-      return true;
+    if (IsAllocatable(ultimate)) {
+      if (messages_) {
+        messages_->Say(
+            "An initial data target may not be a reference to an ALLOCATABLE '%s'"_err_en_US,
+            ultimate.name());
+        emittedMessage_ = true;
+      }
+      return false;
+    } else if (ultimate.Corank() > 0) {
+      if (messages_) {
+        messages_->Say(
+            "An initial data target may not be a reference to a coarray '%s'"_err_en_US,
+            ultimate.name());
+        emittedMessage_ = true;
+      }
+      return false;
     }
-    if (messages_) {
-      messages_->Say(
-          "An initial data target may not be a reference to %s '%s'"_err_en_US,
-          unacceptable, ultimate.name());
-      emittedMessage_ = true;
-    }
-    return false;
+    return true;
   }
 
   parser::ContextualMessages *messages_;
@@ -358,14 +340,10 @@ bool IsInitialProcedureTarget(const semantics::Symbol &symbol) {
   const auto &ultimate{symbol.GetUltimate()};
   return common::visit(
       common::visitors{
-          [&](const semantics::SubprogramDetails &subp) {
-            return !subp.isDummy() && !subp.stmtFunction() &&
-                symbol.owner().kind() != semantics::Scope::Kind::MainProgram &&
-                symbol.owner().kind() != semantics::Scope::Kind::Subprogram;
+          [](const semantics::SubprogramDetails &subp) {
+            return !subp.isDummy();
           },
-          [](const semantics::SubprogramNameDetails &x) {
-            return x.kind() != semantics::SubprogramKind::Internal;
-          },
+          [](const semantics::SubprogramNameDetails &) { return true; },
           [&](const semantics::ProcEntityDetails &proc) {
             return !semantics::IsPointer(ultimate) && !proc.isDummy();
           },
@@ -478,14 +456,6 @@ std::optional<Expr<SomeType>> NonPointerInitializationExpr(const Symbol &symbol,
           return {std::move(folded)};
         }
       } else if (IsNamedConstant(symbol)) {
-        if (symbol.name() == "numeric_storage_size" &&
-            symbol.owner().IsModule() &&
-            DEREF(symbol.owner().symbol()).name() == "iso_fortran_env") {
-          // Very special case: numeric_storage_size is not folded until
-          // it read from the iso_fortran_env module file, as its value
-          // depends on compilation options.
-          return {std::move(folded)};
-        }
         context.messages().Say(
             "Value of named constant '%s' (%s) cannot be computed as a constant value"_err_en_US,
             symbol.name(), folded.AsFortran());
@@ -666,8 +636,8 @@ public:
             "' not allowed for derived type components or type parameter"
             " values";
       }
-      if (auto procChars{characteristics::Procedure::Characterize(
-              x.proc(), context_, /*emitError=*/true)}) {
+      if (auto procChars{
+              characteristics::Procedure::Characterize(x.proc(), context_)}) {
         const auto iter{std::find_if(procChars->dummyArguments.begin(),
             procChars->dummyArguments.end(),
             [](const characteristics::DummyArgument &dummy) {
@@ -786,15 +756,9 @@ public:
   explicit IsContiguousHelper(FoldingContext &c) : Base{*this}, context_{c} {}
   using Base::operator();
 
-  template <typename T> Result operator()(const Constant<T> &) const {
-    return true;
-  }
-  Result operator()(const StaticDataObject &) const { return true; }
   Result operator()(const semantics::Symbol &symbol) const {
     const auto &ultimate{symbol.GetUltimate()};
     if (ultimate.attrs().test(semantics::Attr::CONTIGUOUS)) {
-      return true;
-    } else if (!IsVariable(symbol)) {
       return true;
     } else if (ultimate.Rank() == 0) {
       // Extension: accept scalars as a degenerate case of
@@ -840,13 +804,8 @@ public:
     if (x.base().Rank() == 0) {
       return (*this)(x.GetLastSymbol());
     } else {
-      if (Result baseIsContiguous{(*this)(x.base())}) {
-        if (!*baseIsContiguous) {
-          return false;
-        }
-        // TODO could be true if base contiguous and this is only component, or
-        // if base has only one element?
-      }
+      // TODO could be true if base contiguous and this is only component, or
+      // if base has only one element?
       return std::nullopt;
     }
   }
@@ -856,8 +815,8 @@ public:
   Result operator()(const Substring &) const { return std::nullopt; }
 
   Result operator()(const ProcedureRef &x) const {
-    if (auto chars{characteristics::Procedure::Characterize(
-            x.proc(), context_, /*emitError=*/true)}) {
+    if (auto chars{
+            characteristics::Procedure::Characterize(x.proc(), context_)}) {
       if (chars->functionResult) {
         const auto &result{*chars->functionResult};
         if (!result.IsProcedurePointer()) {
@@ -894,44 +853,24 @@ private:
     // Detect any provably empty dimension in this array section, which would
     // render the whole section empty and therefore vacuously contiguous.
     std::optional<bool> result;
-    bool mayBeEmpty{false};
-    auto dims{subscript.size()};
-    std::vector<bool> knownPartialSlice(dims, false);
-    for (auto j{dims}; j-- > 0;) {
-      std::optional<ConstantSubscript> dimLbound;
-      std::optional<ConstantSubscript> dimUbound;
-      std::optional<ConstantSubscript> dimExtent;
-      if (baseLbounds && j < baseLbounds->size()) {
-        if (const auto &lb{baseLbounds->at(j)}) {
-          dimLbound = ToInt64(Fold(context_, Expr<SubscriptInteger>{*lb}));
-        }
-      }
-      if (baseUbounds && j < baseUbounds->size()) {
-        if (const auto &ub{baseUbounds->at(j)}) {
-          dimUbound = ToInt64(Fold(context_, Expr<SubscriptInteger>{*ub}));
-        }
-      }
-      if (dimLbound && dimUbound) {
-        if (*dimLbound <= *dimUbound) {
-          dimExtent = *dimUbound - *dimLbound + 1;
-        } else {
-          // This is an empty dimension.
-          result = true;
-          dimExtent = 0;
-        }
-      }
-
+    for (auto j{subscript.size()}; j-- > 0;) {
       if (const auto *triplet{std::get_if<Triplet>(&subscript[j].u)}) {
         ++rank;
         if (auto stride{ToInt64(triplet->stride())}) {
           const Expr<SubscriptInteger> *lowerBound{triplet->GetLower()};
+          if (!lowerBound && baseLbounds && j < baseLbounds->size()) {
+            lowerBound = common::GetPtrFromOptional(baseLbounds->at(j));
+          }
           const Expr<SubscriptInteger> *upperBound{triplet->GetUpper()};
+          if (!upperBound && baseUbounds && j < baseUbounds->size()) {
+            upperBound = common::GetPtrFromOptional(baseUbounds->at(j));
+          }
           std::optional<ConstantSubscript> lowerVal{lowerBound
                   ? ToInt64(Fold(context_, Expr<SubscriptInteger>{*lowerBound}))
-                  : dimLbound};
+                  : std::nullopt};
           std::optional<ConstantSubscript> upperVal{upperBound
                   ? ToInt64(Fold(context_, Expr<SubscriptInteger>{*upperBound}))
-                  : dimUbound};
+                  : std::nullopt};
           if (lowerVal && upperVal) {
             if (*lowerVal < *upperVal) {
               if (*stride < 0) {
@@ -947,25 +886,13 @@ private:
                   *lowerVal + *stride >= *upperVal) {
                 result = false; // discontiguous if not empty
               }
-            } else {
-              mayBeEmpty = true;
             }
-          } else {
-            mayBeEmpty = true;
           }
-        } else {
-          mayBeEmpty = true;
         }
       } else if (subscript[j].Rank() > 0) {
         ++rank;
         if (!result) {
           result = false; // vector subscript
-        }
-        mayBeEmpty = true;
-      } else {
-        // Scalar subscript.
-        if (dimExtent && *dimExtent > 1) {
-          knownPartialSlice[j] = true;
         }
       }
     }
@@ -993,13 +920,7 @@ private:
         }
         ++rank;
       } else if (anyTriplet) {
-        // If the section cannot be empty, and this dimension's
-        // scalar subscript is known not to cover the whole
-        // dimension, then the array section is provably
-        // discontiguous.
-        return (mayBeEmpty || !knownPartialSlice[j])
-            ? std::nullopt
-            : std::make_optional(false);
+        return std::nullopt;
       }
     }
     return true; // simply contiguous
@@ -1010,7 +931,11 @@ private:
 
 template <typename A>
 std::optional<bool> IsContiguous(const A &x, FoldingContext &context) {
-  return IsContiguousHelper{context}(x);
+  if (IsVariable(x)) {
+    return IsContiguousHelper{context}(x);
+  } else {
+    return true; // not a variable
+  }
 }
 
 template std::optional<bool> IsContiguous(
@@ -1049,46 +974,23 @@ public:
   using Result = std::optional<parser::Message>;
   using Base = AnyTraverse<StmtFunctionChecker, Result>;
   StmtFunctionChecker(const Symbol &sf, FoldingContext &context)
-      : Base{*this}, sf_{sf}, context_{context} {
-    if (!context_.languageFeatures().IsEnabled(
-            common::LanguageFeature::StatementFunctionExtensions)) {
-      severity_ = parser::Severity::Error;
-    } else if (context_.languageFeatures().ShouldWarn(
-                   common::LanguageFeature::StatementFunctionExtensions)) {
-      severity_ = parser::Severity::Portability;
-    }
-  }
+      : Base{*this}, sf_{sf}, context_{context} {}
   using Base::operator();
 
   template <typename T> Result operator()(const ArrayConstructor<T> &) const {
-    if (severity_) {
-      auto msg{
-          "Statement function '%s' should not contain an array constructor"_port_en_US};
-      msg.set_severity(*severity_);
-      return parser::Message{sf_.name(), std::move(msg), sf_.name()};
-    } else {
-      return std::nullopt;
-    }
+    return parser::Message{sf_.name(),
+        "Statement function '%s' should not contain an array constructor"_port_en_US,
+        sf_.name()};
   }
   Result operator()(const StructureConstructor &) const {
-    if (severity_) {
-      auto msg{
-          "Statement function '%s' should not contain a structure constructor"_port_en_US};
-      msg.set_severity(*severity_);
-      return parser::Message{sf_.name(), std::move(msg), sf_.name()};
-    } else {
-      return std::nullopt;
-    }
+    return parser::Message{sf_.name(),
+        "Statement function '%s' should not contain a structure constructor"_port_en_US,
+        sf_.name()};
   }
   Result operator()(const TypeParamInquiry &) const {
-    if (severity_) {
-      auto msg{
-          "Statement function '%s' should not contain a type parameter inquiry"_port_en_US};
-      msg.set_severity(*severity_);
-      return parser::Message{sf_.name(), std::move(msg), sf_.name()};
-    } else {
-      return std::nullopt;
-    }
+    return parser::Message{sf_.name(),
+        "Statement function '%s' should not contain a type parameter inquiry"_port_en_US,
+        sf_.name()};
   }
   Result operator()(const ProcedureDesignator &proc) const {
     if (const Symbol * symbol{proc.GetSymbol()}) {
@@ -1103,26 +1005,19 @@ public:
           }
         }
       }
-      if (auto chars{characteristics::Procedure::Characterize(
-              proc, context_, /*emitError=*/true)}) {
+      if (auto chars{
+              characteristics::Procedure::Characterize(proc, context_)}) {
         if (!chars->CanBeCalledViaImplicitInterface()) {
-          if (severity_) {
-            auto msg{
-                "Statement function '%s' should not reference function '%s' that requires an explicit interface"_port_en_US};
-            msg.set_severity(*severity_);
-            return parser::Message{
-                sf_.name(), std::move(msg), sf_.name(), symbol->name()};
-          }
+          return parser::Message(sf_.name(),
+              "Statement function '%s' should not reference function '%s' that requires an explicit interface"_port_en_US,
+              sf_.name(), symbol->name());
         }
       }
     }
     if (proc.Rank() > 0) {
-      if (severity_) {
-        auto msg{
-            "Statement function '%s' should not reference a function that returns an array"_port_en_US};
-        msg.set_severity(*severity_);
-        return parser::Message{sf_.name(), std::move(msg), sf_.name()};
-      }
+      return parser::Message(sf_.name(),
+          "Statement function '%s' should not reference a function that returns an array"_port_en_US,
+          sf_.name());
     }
     return std::nullopt;
   }
@@ -1132,12 +1027,9 @@ public:
         return result;
       }
       if (expr->Rank() > 0 && !UnwrapWholeSymbolOrComponentDataRef(*expr)) {
-        if (severity_) {
-          auto msg{
-              "Statement function '%s' should not pass an array argument that is not a whole array"_port_en_US};
-          msg.set_severity(*severity_);
-          return parser::Message{sf_.name(), std::move(msg), sf_.name()};
-        }
+        return parser::Message(sf_.name(),
+            "Statement function '%s' should not pass an array argument that is not a whole array"_port_en_US,
+            sf_.name());
       }
     }
     return std::nullopt;
@@ -1146,7 +1038,6 @@ public:
 private:
   const Symbol &sf_;
   FoldingContext &context_;
-  std::optional<parser::Severity> severity_;
 };
 
 std::optional<parser::Message> CheckStatementFunction(

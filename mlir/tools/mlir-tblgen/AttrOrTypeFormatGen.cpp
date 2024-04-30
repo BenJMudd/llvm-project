@@ -201,8 +201,7 @@ private:
   /// Generate the parser code for a `struct` directive.
   void genStructParser(StructDirective *el, FmtContext &ctx, MethodBody &os);
   /// Generate the parser code for a `custom` directive.
-  void genCustomParser(CustomDirective *el, FmtContext &ctx, MethodBody &os,
-                       bool isOptional = false);
+  void genCustomParser(CustomDirective *el, FmtContext &ctx, MethodBody &os);
   /// Generate the parser code for an optional group.
   void genOptionalGroupParser(OptionalElement *el, FmtContext &ctx,
                               MethodBody &os);
@@ -599,7 +598,7 @@ void DefFormat::genStructParser(StructDirective *el, FmtContext &ctx,
 }
 
 void DefFormat::genCustomParser(CustomDirective *el, FmtContext &ctx,
-                                MethodBody &os, bool isOptional) {
+                                MethodBody &os) {
   os << "{\n";
   os.indent();
 
@@ -621,12 +620,7 @@ void DefFormat::genCustomParser(CustomDirective *el, FmtContext &ctx,
       os << tgfmt(cast<StringElement>(arg)->getValue(), &ctx);
   }
   os.unindent() << ");\n";
-  if (isOptional) {
-    os << "if (!odsCustomResult.has_value()) return {};\n";
-    os << "if (::mlir::failed(*odsCustomResult)) return ::mlir::failure();\n";
-  } else {
-    os << "if (::mlir::failed(odsCustomResult)) return {};\n";
-  }
+  os << "if (::mlir::failed(odsCustomResult)) return {};\n";
   for (FormatElement *arg : el->getArguments()) {
     if (auto *param = dyn_cast<ParameterElement>(arg)) {
       if (param->isOptional())
@@ -635,7 +629,7 @@ void DefFormat::genCustomParser(CustomDirective *el, FmtContext &ctx,
       os.indent() << tgfmt("$_parser.emitError(odsCustomLoc, ", &ctx)
                   << "\"custom parser failed to parse parameter '"
                   << param->getName() << "'\");\n";
-      os << "return " << (isOptional ? "::mlir::failure()" : "{}") << ";\n";
+      os << "return {};\n";
       os.unindent() << "}\n";
     }
   }
@@ -669,17 +663,6 @@ void DefFormat::genOptionalGroupParser(OptionalElement *el, FmtContext &ctx,
   } else if (auto *params = dyn_cast<ParamsDirective>(first)) {
     genParamsParser(params, ctx, os);
     guardOn(params->getParams());
-  } else if (auto *custom = dyn_cast<CustomDirective>(first)) {
-    os << "if (auto result = [&]() -> ::mlir::OptionalParseResult {\n";
-    os.indent();
-    genCustomParser(custom, ctx, os, /*isOptional=*/true);
-    os << "return ::mlir::success();\n";
-    os.unindent();
-    os << "}(); result.has_value() && ::mlir::failed(*result)) {\n";
-    os.indent();
-    os << "return {};\n";
-    os.unindent();
-    os << "} else if (result.has_value()) {\n";
   } else {
     auto *strct = cast<StructDirective>(first);
     genStructParser(strct, ctx, os);

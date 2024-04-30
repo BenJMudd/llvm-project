@@ -1,4 +1,5 @@
-//===--- QualifierAlignmentFixer.h -------------------------------*- C++-*-===//
+//===--- LeftRightQualifierAlignmentFixer.h ------------------------------*- C++
+//-*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -7,7 +8,7 @@
 //===----------------------------------------------------------------------===//
 ///
 /// \file
-/// This file declares QualifierAlignmentFixer, a TokenAnalyzer that
+/// This file declares LeftRightQualifierAlignmentFixer, a TokenAnalyzer that
 /// enforces either east or west const depending on the style.
 ///
 //===----------------------------------------------------------------------===//
@@ -52,10 +53,6 @@ public:
 
   static tok::TokenKind getTokenFromQualifier(const std::string &Qualifier);
 
-  void fixQualifierAlignment(SmallVectorImpl<AnnotatedLine *> &AnnotatedLines,
-                             FormatTokenLexer &Tokens,
-                             tooling::Replacements &Fixes);
-
   const FormatToken *analyzeRight(const SourceManager &SourceMgr,
                                   const AdditionalKeywords &Keywords,
                                   tooling::Replacements &Fixes,
@@ -71,11 +68,10 @@ public:
                                  tok::TokenKind QualifierType);
 
   // Is the Token a simple or qualifier type
-  static bool isQualifierOrType(const FormatToken *Tok, bool IsCpp = true);
+  static bool isQualifierOrType(const FormatToken *Tok);
   static bool
   isConfiguredQualifierOrType(const FormatToken *Tok,
-                              const std::vector<tok::TokenKind> &Qualifiers,
-                              bool IsCpp = true);
+                              const std::vector<tok::TokenKind> &Qualifiers);
 
   // Is the Token likely a Macro
   static bool isPossibleMacro(const FormatToken *Tok);

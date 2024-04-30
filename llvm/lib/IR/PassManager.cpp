@@ -7,6 +7,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/IR/PassManager.h"
+#include "llvm/ADT/DenseMapInfo.h"
 #include "llvm/IR/PassManagerImpl.h"
 #include <optional>
 

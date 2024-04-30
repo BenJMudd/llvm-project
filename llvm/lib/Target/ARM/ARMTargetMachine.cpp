@@ -30,7 +30,6 @@
 #include "llvm/CodeGen/GlobalISel/Legalizer.h"
 #include "llvm/CodeGen/GlobalISel/LegalizerInfo.h"
 #include "llvm/CodeGen/GlobalISel/RegBankSelect.h"
-#include "llvm/CodeGen/MIRParser/MIParser.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineScheduler.h"
 #include "llvm/CodeGen/Passes.h"
@@ -131,9 +130,9 @@ computeTargetABI(const Triple &TT, StringRef CPU,
 
   if (ABIName == "aapcs16")
     return ARMBaseTargetMachine::ARM_ABI_AAPCS16;
-  else if (ABIName.starts_with("aapcs"))
+  else if (ABIName.startswith("aapcs"))
     return ARMBaseTargetMachine::ARM_ABI_AAPCS;
-  else if (ABIName.starts_with("apcs"))
+  else if (ABIName.startswith("apcs"))
     return ARMBaseTargetMachine::ARM_ABI_APCS;
 
   llvm_unreachable("Unhandled/unknown ABI Name!");
@@ -221,7 +220,7 @@ ARMBaseTargetMachine::ARMBaseTargetMachine(const Target &T, const Triple &TT,
                                            const TargetOptions &Options,
                                            std::optional<Reloc::Model> RM,
                                            std::optional<CodeModel::Model> CM,
-                                           CodeGenOptLevel OL, bool isLittle)
+                                           CodeGenOpt::Level OL, bool isLittle)
     : LLVMTargetMachine(T, computeDataLayout(TT, CPU, Options, isLittle), TT,
                         CPU, FS, Options, getEffectiveRelocModel(TT, RM),
                         getEffectiveCodeModel(CM, CodeModel::Small), OL),
@@ -329,7 +328,7 @@ ARMLETargetMachine::ARMLETargetMachine(const Target &T, const Triple &TT,
                                        const TargetOptions &Options,
                                        std::optional<Reloc::Model> RM,
                                        std::optional<CodeModel::Model> CM,
-                                       CodeGenOptLevel OL, bool JIT)
+                                       CodeGenOpt::Level OL, bool JIT)
     : ARMBaseTargetMachine(T, TT, CPU, FS, Options, RM, CM, OL, true) {}
 
 ARMBETargetMachine::ARMBETargetMachine(const Target &T, const Triple &TT,
@@ -337,7 +336,7 @@ ARMBETargetMachine::ARMBETargetMachine(const Target &T, const Triple &TT,
                                        const TargetOptions &Options,
                                        std::optional<Reloc::Model> RM,
                                        std::optional<CodeModel::Model> CM,
-                                       CodeGenOptLevel OL, bool JIT)
+                                       CodeGenOpt::Level OL, bool JIT)
     : ARMBaseTargetMachine(T, TT, CPU, FS, Options, RM, CM, OL, false) {}
 
 namespace {
@@ -418,12 +417,12 @@ void ARMPassConfig::addIRPasses() {
   if (TM->Options.ThreadModel == ThreadModel::Single)
     addPass(createLowerAtomicPass());
   else
-    addPass(createAtomicExpandLegacyPass());
+    addPass(createAtomicExpandPass());
 
   // Cmpxchg instructions are often used with a subsequent comparison to
   // determine whether it succeeded. We can exploit existing control-flow in
   // ldrex/strex loops to simplify this, but it needs tidying up.
-  if (TM->getOptLevel() != CodeGenOptLevel::None && EnableAtomicTidy)
+  if (TM->getOptLevel() != CodeGenOpt::None && EnableAtomicTidy)
     addPass(createCFGSimplificationPass(
         SimplifyCFGOptions().hoistCommonInsts(true).sinkCommonInsts(true),
         [this](const Function &F) {
@@ -437,15 +436,15 @@ void ARMPassConfig::addIRPasses() {
   TargetPassConfig::addIRPasses();
 
   // Run the parallel DSP pass.
-  if (getOptLevel() == CodeGenOptLevel::Aggressive)
+  if (getOptLevel() == CodeGenOpt::Aggressive)
     addPass(createARMParallelDSPPass());
 
   // Match complex arithmetic patterns
-  if (TM->getOptLevel() >= CodeGenOptLevel::Default)
+  if (TM->getOptLevel() >= CodeGenOpt::Default)
     addPass(createComplexDeinterleavingPass(TM));
 
   // Match interleaved memory accesses to ldN/stN intrinsics.
-  if (TM->getOptLevel() != CodeGenOptLevel::None)
+  if (TM->getOptLevel() != CodeGenOpt::None)
     addPass(createInterleavedAccessPass());
 
   // Add Control Flow Guard checks.
@@ -457,13 +456,13 @@ void ARMPassConfig::addIRPasses() {
 }
 
 void ARMPassConfig::addCodeGenPrepare() {
-  if (getOptLevel() != CodeGenOptLevel::None)
+  if (getOptLevel() != CodeGenOpt::None)
     addPass(createTypePromotionLegacyPass());
   TargetPassConfig::addCodeGenPrepare();
 }
 
 bool ARMPassConfig::addPreISel() {
-  if ((TM->getOptLevel() != CodeGenOptLevel::None &&
+  if ((TM->getOptLevel() != CodeGenOpt::None &&
        EnableGlobalMerge == cl::BOU_UNSET) ||
       EnableGlobalMerge == cl::BOU_TRUE) {
     // FIXME: This is using the thumb1 only constant value for
@@ -471,9 +470,8 @@ bool ARMPassConfig::addPreISel() {
     // to look into using the old value for non-thumb1 code of
     // 4095 based on the TargetMachine, but this starts to become
     // tricky when doing code gen per function.
-    bool OnlyOptimizeForSize =
-        (TM->getOptLevel() < CodeGenOptLevel::Aggressive) &&
-        (EnableGlobalMerge == cl::BOU_UNSET);
+    bool OnlyOptimizeForSize = (TM->getOptLevel() < CodeGenOpt::Aggressive) &&
+                               (EnableGlobalMerge == cl::BOU_UNSET);
     // Merging of extern globals is enabled by default on non-Mach-O as we
     // expect it to be generally either beneficial or harmless. On Mach-O it
     // is disabled as we emit the .subsections_via_symbols directive which
@@ -483,7 +481,7 @@ bool ARMPassConfig::addPreISel() {
                                   MergeExternalByDefault));
   }
 
-  if (TM->getOptLevel() != CodeGenOptLevel::None) {
+  if (TM->getOptLevel() != CodeGenOpt::None) {
     addPass(createHardwareLoopsLegacyPass());
     addPass(createMVETailPredicationPass());
     // FIXME: IR passes can delete address-taken basic blocks, deleting
@@ -525,8 +523,8 @@ bool ARMPassConfig::addGlobalInstructionSelect() {
 }
 
 void ARMPassConfig::addPreRegAlloc() {
-  if (getOptLevel() != CodeGenOptLevel::None) {
-    if (getOptLevel() == CodeGenOptLevel::Aggressive)
+  if (getOptLevel() != CodeGenOpt::None) {
+    if (getOptLevel() == CodeGenOpt::Aggressive)
       addPass(&MachinePipelinerID);
 
     addPass(createMVETPAndVPTOptimisationsPass());
@@ -542,7 +540,7 @@ void ARMPassConfig::addPreRegAlloc() {
 }
 
 void ARMPassConfig::addPreSched2() {
-  if (getOptLevel() != CodeGenOptLevel::None) {
+  if (getOptLevel() != CodeGenOpt::None) {
     if (EnableARMLoadStoreOpt)
       addPass(createARMLoadStoreOptimizationPass());
 
@@ -554,7 +552,7 @@ void ARMPassConfig::addPreSched2() {
   // proper scheduling.
   addPass(createARMExpandPseudoPass());
 
-  if (getOptLevel() != CodeGenOptLevel::None) {
+  if (getOptLevel() != CodeGenOpt::None) {
     // When optimising for size, always run the Thumb2SizeReduction pass before
     // IfConversion. Otherwise, check whether IT blocks are restricted
     // (e.g. in v8, IfConversion depends on Thumb instruction widths)
@@ -571,7 +569,7 @@ void ARMPassConfig::addPreSched2() {
 
   // Add both scheduling passes to give the subtarget an opportunity to pick
   // between them.
-  if (getOptLevel() != CodeGenOptLevel::None) {
+  if (getOptLevel() != CodeGenOpt::None) {
     addPass(&PostMachineSchedulerID);
     addPass(&PostRASchedulerID);
   }
@@ -590,7 +588,7 @@ void ARMPassConfig::addPreEmitPass() {
   }));
 
   // Don't optimize barriers or block placement at -O0.
-  if (getOptLevel() != CodeGenOptLevel::None) {
+  if (getOptLevel() != CodeGenOpt::None) {
     addPass(createARMBlockPlacementPass());
     addPass(createARMOptimizeBarriersPass());
   }
@@ -619,24 +617,4 @@ void ARMPassConfig::addPreEmitPass2() {
     // Identify valid eh continuation targets for Windows EHCont Guard.
     addPass(createEHContGuardCatchretPass());
   }
-}
-
-yaml::MachineFunctionInfo *
-ARMBaseTargetMachine::createDefaultFuncInfoYAML() const {
-  return new yaml::ARMFunctionInfo();
-}
-
-yaml::MachineFunctionInfo *
-ARMBaseTargetMachine::convertFuncInfoToYAML(const MachineFunction &MF) const {
-  const auto *MFI = MF.getInfo<ARMFunctionInfo>();
-  return new yaml::ARMFunctionInfo(*MFI);
-}
-
-bool ARMBaseTargetMachine::parseMachineFunctionInfo(
-    const yaml::MachineFunctionInfo &MFI, PerFunctionMIParsingState &PFS,
-    SMDiagnostic &Error, SMRange &SourceRange) const {
-  const auto &YamlMFI = static_cast<const yaml::ARMFunctionInfo &>(MFI);
-  MachineFunction &MF = PFS.MF;
-  MF.getInfo<ARMFunctionInfo>()->initializeBaseYamlFields(YamlMFI);
-  return false;
 }

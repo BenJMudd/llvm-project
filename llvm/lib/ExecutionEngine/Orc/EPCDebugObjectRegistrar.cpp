@@ -45,8 +45,7 @@ Expected<std::unique_ptr<EPCDebugObjectRegistrar>> createJITLoaderGDBRegistrar(
   assert((*Result)[0].size() == 1 &&
          "Unexpected number of addresses in result");
 
-  ExecutorAddr RegisterAddr = (*Result)[0][0].getAddress();
-  return std::make_unique<EPCDebugObjectRegistrar>(ES, RegisterAddr);
+  return std::make_unique<EPCDebugObjectRegistrar>(ES, (*Result)[0][0]);
 }
 
 Error EPCDebugObjectRegistrar::registerDebugObject(ExecutorAddrRange TargetMem,

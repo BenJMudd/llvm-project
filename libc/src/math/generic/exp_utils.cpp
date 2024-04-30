@@ -7,8 +7,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "exp_utils.h"
+#include "math_utils.h"
 
-namespace LIBC_NAMESPACE {
+namespace __llvm_libc {
 
 const Exp2fDataTable exp2f_data = {
     // :tab[i] = uint(2^(i/N)) - (i << 52-BITS)
@@ -124,4 +125,4 @@ const Exp2fDataTable exp2f_data = {
     },
 };
 
-} // namespace LIBC_NAMESPACE
+} // namespace __llvm_libc

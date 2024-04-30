@@ -7,7 +7,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "StaticAssertCheck.h"
-#include "../utils/Matchers.h"
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/Expr.h"
 #include "clang/ASTMatchers/ASTMatchFinder.h"
@@ -46,20 +45,13 @@ void StaticAssertCheck::registerMatchers(MatchFinder *Finder) {
       IsAlwaysFalse);
   auto NonConstexprFunctionCall =
       callExpr(hasDeclaration(functionDecl(unless(isConstexpr()))));
-  auto NonConstexprVariableReference =
-      declRefExpr(to(varDecl(unless(isConstexpr()))),
-                  unless(hasAncestor(expr(matchers::hasUnevaluatedContext()))),
-                  unless(hasAncestor(typeLoc())));
-
-  auto NonConstexprCode =
-      expr(anyOf(NonConstexprFunctionCall, NonConstexprVariableReference));
   auto AssertCondition =
       expr(
           anyOf(expr(ignoringParenCasts(anyOf(
                     AssertExprRoot, unaryOperator(hasUnaryOperand(
                                         ignoringParenCasts(AssertExprRoot)))))),
                 anything()),
-          unless(NonConstexprCode), unless(hasDescendant(NonConstexprCode)))
+          unless(findAll(NonConstexprFunctionCall)))
           .bind("condition");
   auto Condition =
       anyOf(ignoringParenImpCasts(callExpr(
@@ -149,7 +141,7 @@ SourceLocation StaticAssertCheck::getLastParenLoc(const ASTContext *ASTCtx,
   std::optional<llvm::MemoryBufferRef> Buffer =
       SM.getBufferOrNone(SM.getFileID(AssertLoc));
   if (!Buffer)
-    return {};
+    return SourceLocation();
 
   const char *BufferPos = SM.getCharacterData(AssertLoc);
 
@@ -160,7 +152,7 @@ SourceLocation StaticAssertCheck::getLastParenLoc(const ASTContext *ASTCtx,
   //        assert                          first left parenthesis
   if (Lexer.LexFromRawLexer(Token) || Lexer.LexFromRawLexer(Token) ||
       !Token.is(tok::l_paren))
-    return {};
+    return SourceLocation();
 
   unsigned int ParenCount = 1;
   while (ParenCount && !Lexer.LexFromRawLexer(Token)) {

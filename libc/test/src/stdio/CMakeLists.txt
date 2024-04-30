@@ -1,6 +1,6 @@
 add_custom_target(libc_stdio_unittests)
 
-add_libc_test(
+add_libc_unittest(
   fileop_test
   SUITE
     libc_stdio_unittests
@@ -14,7 +14,6 @@ add_libc_test(
     libc.src.stdio.feof
     libc.src.stdio.ferror
     libc.src.stdio.fflush
-    libc.src.stdio.fileno
     libc.src.stdio.fopen
     libc.src.stdio.fputs
     libc.src.stdio.fread
@@ -22,7 +21,7 @@ add_libc_test(
     libc.src.stdio.fwrite
 )
 
-add_libc_test(
+add_libc_unittest(
   ungetc_test
   SUITE
     libc_stdio_unittests
@@ -38,7 +37,7 @@ add_libc_test(
     libc.src.stdio.ungetc
 )
 
-add_libc_test(
+add_libc_unittest(
   setbuf_test
   SUITE
     libc_stdio_unittests
@@ -54,7 +53,7 @@ add_libc_test(
     libc.src.stdio.ungetc
 )
 
-add_libc_test(
+add_libc_unittest(
   setvbuf_test
   SUITE
     libc_stdio_unittests
@@ -70,7 +69,7 @@ add_libc_test(
     libc.src.stdio.setvbuf
 )
 
-add_libc_test(
+add_libc_unittest(
   unlocked_fileop_test
   SUITE
     libc_stdio_unittests
@@ -90,7 +89,7 @@ add_libc_test(
     libc.src.stdio.fwrite_unlocked
 )
 
-add_libc_test(
+add_libc_unittest(
   fopencookie_test
   SUITE
     libc_stdio_unittests
@@ -113,19 +112,6 @@ add_libc_test(
     LibcMemoryHelpers
 )
 
-if(LIBC_CONF_PRINTF_DISABLE_FLOAT)
-  list(APPEND sprintf_test_copts "-DLIBC_COPT_PRINTF_DISABLE_FLOAT")
-endif()
-if(LIBC_CONF_PRINTF_DISABLE_INDEX_MODE)
-  list(APPEND sprintf_test_copts "-DLIBC_COPT_PRINTF_DISABLE_INDEX_MODE")
-endif()
-if(LIBC_CONF_PRINTF_DISABLE_WRITE_INT)
-  list(APPEND sprintf_test_copts "-DLIBC_COPT_PRINTF_DISABLE_WRITE_INT")
-endif()
-if(LIBC_CONF_PRINTF_DISABLE_FIXED_POINT)
-  list(APPEND sprintf_test_copts "-DLIBC_COPT_PRINTF_DISABLE_FIXED_POINT")
-endif()
-
 add_fp_unittest(
   sprintf_test
   UNIT_TEST_ONLY
@@ -136,12 +122,10 @@ add_fp_unittest(
   DEPENDS
     libc.src.stdio.sprintf
     libc.src.__support.FPUtil.fp_bits
-    libc.include.inttypes
-  COMPILE_OPTIONS
-    ${sprintf_test_copts}
+    libc.src.__support.FPUtil.platform_defs
 )
 
-add_libc_test(
+add_libc_unittest(
   snprintf_test
   SUITE
     libc_stdio_unittests
@@ -151,38 +135,36 @@ add_libc_test(
     libc.src.stdio.snprintf
 )
 
+list(APPEND fprintf_test_deps
+      libc.src.stdio.fprintf
+)
 if(LLVM_LIBC_FULL_BUILD)
-  # In fullbuild mode, fprintf's tests use the internal FILE for other functions.
-  list(APPEND fprintf_test_deps
-       libc.src.stdio.fclose
-       libc.src.stdio.ferror
-       libc.src.stdio.fopen
-       libc.src.stdio.fread
+# In fullbuild mode, fprintf's tests use the internal FILE for other functions.
+ list(APPEND fprintf_test_deps
+      libc.src.stdio.fclose
+      libc.src.stdio.ferror
+      libc.src.stdio.fopen
+      libc.src.stdio.fread
   )
-  # This is to be used for tests which write to libc's platform streams
-  # under full build but write to system-lib's streams otherwise.
-  set(hermetic_test_only HERMETIC_TEST_ONLY)
 else()
 # Else in overlay mode they use the system's FILE.
- set(use_system_file "-DLIBC_COPT_STDIO_USE_SYSTEM_FILE")
+ set(fprintf_test_copts "-DLIBC_COPT_PRINTF_USE_SYSTEM_FILE")
 endif()
 
-add_libc_test(
+add_libc_unittest(
   fprintf_test
   SUITE
     libc_stdio_unittests
   SRCS
     fprintf_test.cpp
   DEPENDS
-    libc.src.stdio.fprintf
     ${fprintf_test_deps}
   COMPILE_OPTIONS
-    ${use_system_file}
+    ${fprintf_test_copts}
 )
 
-add_libc_test(
+add_libc_unittest(
   printf_test
-  ${hermetic_test_only}
   SUITE
     libc_stdio_unittests
   SRCS
@@ -191,63 +173,7 @@ add_libc_test(
     libc.src.stdio.printf
 )
 
-add_fp_unittest(
-  vsprintf_test
-  UNIT_TEST_ONLY
-  SUITE
-    libc_stdio_unittests
-  SRCS
-    vsprintf_test.cpp
-  DEPENDS
-    libc.src.stdio.vsprintf
-)
-
-add_libc_test(
-  vsnprintf_test
-  SUITE
-    libc_stdio_unittests
-  SRCS
-    vsnprintf_test.cpp
-  DEPENDS
-    libc.src.stdio.vsnprintf
-)
-
-add_libc_test(
-  vfprintf_test
-  SUITE
-    libc_stdio_unittests
-  SRCS
-    vfprintf_test.cpp
-  DEPENDS
-    libc.src.stdio.vfprintf
-    ${fprintf_test_deps}
-  COMPILE_OPTIONS
-    ${use_system_file}
-)
-
-add_libc_test(
-  vprintf_test
-  ${hermetic_test_only}
-  SUITE
-    libc_stdio_unittests
-  SRCS
-    vprintf_test.cpp
-  DEPENDS
-    libc.src.stdio.vprintf
-)
-
-
-if(LLVM_LIBC_FULL_BUILD)
-  # In fullbuild mode, fscanf's tests use the internal FILE for other functions.
-  list(APPEND fscanf_test_deps
-       libc.src.stdio.fclose
-       libc.src.stdio.ferror
-       libc.src.stdio.fopen
-       libc.src.stdio.fwrite
-  )
-endif()
-
-add_libc_test(
+add_libc_unittest(
   fscanf_test
   SUITE
     libc_stdio_unittests
@@ -255,13 +181,14 @@ add_libc_test(
     fscanf_test.cpp
   DEPENDS
     libc.src.stdio.fscanf
-    ${fscanf_test_deps}
+    libc.src.stdio.fclose
+    libc.src.stdio.ferror
+    libc.src.stdio.fopen
+    libc.src.stdio.fwrite
     libc.src.__support.CPP.string_view
-  COMPILE_OPTIONS
-    ${use_system_file}
 )
 
-add_libc_test(
+add_libc_unittest(
   sscanf_test
   SUITE
     libc_stdio_unittests
@@ -275,7 +202,6 @@ add_libc_test(
 
 add_libc_test(
   puts_test
-  HERMETIC_TEST_ONLY # writes to libc's stdout
   SUITE
     libc_stdio_unittests
   SRCS
@@ -286,29 +212,12 @@ add_libc_test(
 
 add_libc_test(
   fputs_test
-  HERMETIC_TEST_ONLY # writes to libc's stdout and stderr
   SUITE
     libc_stdio_unittests
   SRCS
     fputs_test.cpp
   DEPENDS
     libc.src.stdio.fputs
-    libc.src.stdio.stdout
-    libc.src.stdio.stderr
-)
-
-add_libc_test(
-  fputc_test
-  HERMETIC_TEST_ONLY # writes to libc's stdout and stderr
-  SUITE
-    libc_stdio_unittests
-  SRCS
-    fputc_test.cpp
-  DEPENDS
-    libc.src.stdio.fputc
-    libc.src.stdio.putchar
-    libc.src.stdio.stdout
-    libc.src.stdio.stderr
 )
 
 add_libc_test(
@@ -318,13 +227,12 @@ add_libc_test(
   SRCS
     fopen_test.cpp
   DEPENDS
-    libc.src.stdio.fread
-    libc.src.stdio.fwrite
+    libc.src.stdio.fputs
     libc.src.stdio.fclose
     libc.src.stdio.fopen
 )
 
-add_libc_test(
+add_libc_unittest(
   putc_test
   SUITE
     libc_stdio_unittests
@@ -339,7 +247,7 @@ add_libc_test(
 )
 
 if(${LIBC_TARGET_OS} STREQUAL "linux")
-  add_libc_test(
+  add_libc_unittest(
     remove_test
     SUITE
       libc_stdio_unittests
@@ -354,24 +262,9 @@ if(${LIBC_TARGET_OS} STREQUAL "linux")
       libc.src.unistd.access
       libc.src.unistd.close
   )
-
-  add_libc_test(
-    rename_test
-    SUITE
-      libc_stdio_unittests
-    SRCS
-      rename_test.cpp
-    DEPENDS
-      libc.src.errno.errno
-      libc.src.fcntl.open
-      libc.src.stdio.rename
-      libc.src.unistd.access
-      libc.src.unistd.close
-      libc.test.UnitTest.ErrnoSetterMatcher
-  )
 endif()
 
-add_libc_test(
+add_libc_unittest(
   fgetc_test
   SUITE
     libc_stdio_unittests
@@ -389,7 +282,7 @@ add_libc_test(
     libc.src.stdio.getc
 )
 
-add_libc_test(
+add_libc_unittest(
   fgetc_unlocked_test
   SUITE
     libc_stdio_unittests
@@ -411,7 +304,7 @@ add_libc_test(
     libc.src.stdio.getc_unlocked
 )
 
-add_libc_test(
+add_libc_unittest(
   fgets_test
   SUITE
     libc_stdio_unittests
@@ -428,7 +321,7 @@ add_libc_test(
     libc.src.stdio.fwrite
 )
 
-add_libc_test(
+add_libc_unittest(
   ftell_test
   SUITE
     libc_stdio_unittests
@@ -442,8 +335,6 @@ add_libc_test(
     libc.src.stdio.fread
     libc.src.stdio.fseek
     libc.src.stdio.ftell
-    libc.src.stdio.fseeko
-    libc.src.stdio.ftello
     libc.src.stdio.fwrite
     libc.src.stdio.setvbuf
 )
@@ -451,7 +342,7 @@ add_libc_test(
 # Create an output directory for any temporary test files.
 file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/testdata)
 
-if(LIBC_TARGET_OS_IS_GPU)
+if(LIBC_TARGET_ARCHITECTURE_IS_GPU)
   return()
 endif()
 

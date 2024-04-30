@@ -54,7 +54,9 @@ enum class FileFormat { IFS, ELF, TBD };
 using namespace llvm::opt;
 enum ID {
   OPT_INVALID = 0, // This is not an option ID.
-#define OPTION(...) LLVM_MAKE_OPT_ID(__VA_ARGS__),
+#define OPTION(PREFIX, NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, FLAGS, PARAM,  \
+               HELPTEXT, METAVAR, VALUES)                                      \
+  OPT_##ID,
 #include "Opts.inc"
 #undef OPTION
 };
@@ -67,7 +69,13 @@ enum ID {
 #undef PREFIX
 
 static constexpr opt::OptTable::Info InfoTable[] = {
-#define OPTION(...) LLVM_CONSTRUCT_OPT_INFO(__VA_ARGS__),
+#define OPTION(PREFIX, NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, FLAGS, PARAM,  \
+               HELPTEXT, METAVAR, VALUES)                                      \
+  {                                                                            \
+      PREFIX,      NAME,      HELPTEXT,                                        \
+      METAVAR,     OPT_##ID,  opt::Option::KIND##Class,                        \
+      PARAM,       FLAGS,     OPT_##GROUP,                                     \
+      OPT_##ALIAS, ALIASARGS, VALUES},
 #include "Opts.inc"
 #undef OPTION
 };
@@ -212,17 +220,17 @@ static int writeTbdStub(const Triple &T, const std::vector<IFSSymbol> &Symbols,
 
   for (const auto &Symbol : Symbols) {
     auto Name = Symbol.Name;
-    auto Kind = EncodeKind::GlobalSymbol;
+    auto Kind = SymbolKind::GlobalSymbol;
     switch (Symbol.Type) {
     default:
     case IFSSymbolType::NoType:
-      Kind = EncodeKind::GlobalSymbol;
+      Kind = SymbolKind::GlobalSymbol;
       break;
     case IFSSymbolType::Object:
-      Kind = EncodeKind::GlobalSymbol;
+      Kind = SymbolKind::GlobalSymbol;
       break;
     case IFSSymbolType::Func:
-      Kind = EncodeKind::GlobalSymbol;
+      Kind = SymbolKind::GlobalSymbol;
       break;
     }
     if (Symbol.Weak)

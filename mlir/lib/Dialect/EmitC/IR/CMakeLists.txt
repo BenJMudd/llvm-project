@@ -9,10 +9,7 @@ add_mlir_dialect_library(MLIREmitCDialect
   MLIREmitCAttributesIncGen
 
   LINK_LIBS PUBLIC
-  MLIRCallInterfaces
   MLIRCastInterfaces
-  MLIRControlFlowInterfaces
-  MLIRFunctionInterfaces
   MLIRIR
   MLIRSideEffectInterfaces
   )

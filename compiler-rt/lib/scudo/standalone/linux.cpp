@@ -14,7 +14,6 @@
 #include "internal_defs.h"
 #include "linux.h"
 #include "mutex.h"
-#include "report_linux.h"
 #include "string_utils.h"
 
 #include <errno.h>
@@ -44,7 +43,6 @@ uptr getPageSize() { return static_cast<uptr>(sysconf(_SC_PAGESIZE)); }
 
 void NORETURN die() { abort(); }
 
-// TODO: Will be deprecated. Use the interfaces in MemMapLinux instead.
 void *map(void *Addr, uptr Size, UNUSED const char *Name, uptr Flags,
           UNUSED MapPlatformData *Data) {
   int MmapFlags = MAP_PRIVATE | MAP_ANONYMOUS;
@@ -67,7 +65,7 @@ void *map(void *Addr, uptr Size, UNUSED const char *Name, uptr Flags,
   void *P = mmap(Addr, Size, MmapProt, MmapFlags, -1, 0);
   if (P == MAP_FAILED) {
     if (!(Flags & MAP_ALLOWNOMEM) || errno != ENOMEM)
-      reportMapError(errno == ENOMEM ? Size : 0);
+      dieOnMapUnmapError(errno == ENOMEM ? Size : 0);
     return nullptr;
   }
 #if SCUDO_ANDROID
@@ -77,22 +75,19 @@ void *map(void *Addr, uptr Size, UNUSED const char *Name, uptr Flags,
   return P;
 }
 
-// TODO: Will be deprecated. Use the interfaces in MemMapLinux instead.
 void unmap(void *Addr, uptr Size, UNUSED uptr Flags,
            UNUSED MapPlatformData *Data) {
   if (munmap(Addr, Size) != 0)
-    reportUnmapError(reinterpret_cast<uptr>(Addr), Size);
+    dieOnMapUnmapError();
 }
 
-// TODO: Will be deprecated. Use the interfaces in MemMapLinux instead.
 void setMemoryPermission(uptr Addr, uptr Size, uptr Flags,
                          UNUSED MapPlatformData *Data) {
   int Prot = (Flags & MAP_NOACCESS) ? PROT_NONE : (PROT_READ | PROT_WRITE);
   if (mprotect(reinterpret_cast<void *>(Addr), Size, Prot) != 0)
-    reportProtectError(Addr, Size, Prot);
+    dieOnMapUnmapError();
 }
 
-// TODO: Will be deprecated. Use the interfaces in MemMapLinux instead.
 void releasePagesToOS(uptr BaseAddress, uptr Offset, uptr Size,
                       UNUSED MapPlatformData *Data) {
   void *Addr = reinterpret_cast<void *>(BaseAddress + Offset);
@@ -109,14 +104,12 @@ enum State : u32 { Unlocked = 0, Locked = 1, Sleeping = 2 };
 }
 
 bool HybridMutex::tryLock() {
-  return atomic_compare_exchange_strong(&M, Unlocked, Locked,
-                                        memory_order_acquire) == Unlocked;
+  return atomic_compare_exchange(&M, Unlocked, Locked) == Unlocked;
 }
 
 // The following is based on https://akkadia.org/drepper/futex.pdf.
 void HybridMutex::lockSlow() {
-  u32 V = atomic_compare_exchange_strong(&M, Unlocked, Locked,
-                                         memory_order_acquire);
+  u32 V = atomic_compare_exchange(&M, Unlocked, Locked);
   if (V == Unlocked)
     return;
   if (V != Sleeping)
@@ -203,6 +196,39 @@ bool getRandom(void *Buffer, uptr Length, UNUSED bool Blocking) {
 // Allocation free syslog-like API.
 extern "C" WEAK int async_safe_write_log(int pri, const char *tag,
                                          const char *msg);
+
+static uptr GetRSSFromBuffer(const char *Buf) {
+  // The format of the file is:
+  // 1084 89 69 11 0 79 0
+  // We need the second number which is RSS in pages.
+  const char *Pos = Buf;
+  // Skip the first number.
+  while (*Pos >= '0' && *Pos <= '9')
+    Pos++;
+  // Skip whitespaces.
+  while (!(*Pos >= '0' && *Pos <= '9') && *Pos != 0)
+    Pos++;
+  // Read the number.
+  u64 Rss = 0;
+  for (; *Pos >= '0' && *Pos <= '9'; Pos++)
+    Rss = Rss * 10 + static_cast<u64>(*Pos) - '0';
+  return static_cast<uptr>(Rss * getPageSizeCached());
+}
+
+uptr GetRSS() {
+  // TODO: We currently use sanitizer_common's GetRSS which reads the
+  // RSS from /proc/self/statm by default. We might want to
+  // call getrusage directly, even if it's less accurate.
+  auto Fd = open("/proc/self/statm", O_RDONLY);
+  char Buf[64];
+  s64 Len = read(Fd, Buf, sizeof(Buf) - 1);
+  close(Fd);
+  if (Len <= 0)
+    return 0;
+  Buf[Len] = 0;
+
+  return GetRSSFromBuffer(Buf);
+}
 
 void outputRaw(const char *Buffer) {
   if (&async_safe_write_log) {

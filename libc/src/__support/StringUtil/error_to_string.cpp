@@ -18,14 +18,15 @@
 
 #include <stddef.h>
 
-namespace LIBC_NAMESPACE {
+namespace __llvm_libc {
 namespace internal {
 
 constexpr size_t max_buff_size() {
   constexpr size_t unknown_str_len = sizeof("Unknown error");
+  constexpr size_t max_num_len =
+      __llvm_libc::IntegerToString::dec_bufsize<int>();
   // the buffer should be able to hold "Unknown error" + ' ' + num_str
-  return (unknown_str_len + 1 + IntegerToString<int>::buffer_size()) *
-         sizeof(char);
+  return (unknown_str_len + 1 + max_num_len) * sizeof(char);
 }
 
 // This is to hold error strings that have to be custom built. It may be
@@ -50,7 +51,7 @@ cpp::string_view build_error_string(int err_num, cpp::span<char> buffer) {
   // if the buffer can't hold "Unknown error" + ' ' + num_str, then just
   // return "Unknown error".
   if (buffer.size() <
-      (sizeof("Unknown error") + 1 + IntegerToString<int>::buffer_size()))
+      (sizeof("Unknown error") + 1 + IntegerToString::dec_bufsize<int>()))
     return const_cast<char *>("Unknown error");
 
   cpp::StringStream buffer_stream(
@@ -74,4 +75,4 @@ cpp::string_view get_error_string(int err_num, cpp::span<char> buffer) {
     return internal::build_error_string(err_num, buffer);
 }
 
-} // namespace LIBC_NAMESPACE
+} // namespace __llvm_libc

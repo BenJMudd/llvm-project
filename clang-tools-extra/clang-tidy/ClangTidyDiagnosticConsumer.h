@@ -70,8 +70,7 @@ class ClangTidyContext {
 public:
   /// Initializes \c ClangTidyContext instance.
   ClangTidyContext(std::unique_ptr<ClangTidyOptionsProvider> OptionsProvider,
-                   bool AllowEnablingAnalyzerAlphaCheckers = false,
-                   bool EnableModuleHeadersParsing = false);
+                   bool AllowEnablingAnalyzerAlphaCheckers = false);
   /// Sets the DiagnosticsEngine that diag() will emit diagnostics to.
   // FIXME: this is required initialization, and should be a constructor param.
   // Fix the context -> diag engine -> consumer -> context initialization cycle.
@@ -87,10 +86,10 @@ public:
   /// tablegen'd diagnostic IDs.
   /// FIXME: Figure out a way to manage ID spaces.
   DiagnosticBuilder diag(StringRef CheckName, SourceLocation Loc,
-                         StringRef Description,
+                         StringRef Message,
                          DiagnosticIDs::Level Level = DiagnosticIDs::Warning);
 
-  DiagnosticBuilder diag(StringRef CheckName, StringRef Description,
+  DiagnosticBuilder diag(StringRef CheckName, StringRef Message,
                          DiagnosticIDs::Level Level = DiagnosticIDs::Warning);
 
   DiagnosticBuilder diag(const tooling::Diagnostic &Error);
@@ -199,12 +198,6 @@ public:
     return AllowEnablingAnalyzerAlphaCheckers;
   }
 
-  // This method determines whether preprocessor-level module header parsing is
-  // enabled using the `--experimental-enable-module-headers-parsing` option.
-  bool canEnableModuleHeadersParsing() const {
-    return EnableModuleHeadersParsing;
-  }
-
   void setSelfContainedDiags(bool Value) { SelfContainedDiags = Value; }
 
   bool areDiagsSelfContained() const { return SelfContainedDiags; }
@@ -212,11 +205,11 @@ public:
   using DiagLevelAndFormatString = std::pair<DiagnosticIDs::Level, std::string>;
   DiagLevelAndFormatString getDiagLevelAndFormatString(unsigned DiagnosticID,
                                                        SourceLocation Loc) {
-    return {
+    return DiagLevelAndFormatString(
         static_cast<DiagnosticIDs::Level>(
             DiagEngine->getDiagnosticLevel(DiagnosticID, Loc)),
         std::string(
-            DiagEngine->getDiagnosticIDs()->getDescription(DiagnosticID))};
+            DiagEngine->getDiagnosticIDs()->getDescription(DiagnosticID)));
   }
 
   void setOptionsCollector(llvm::StringSet<> *Collector) {
@@ -228,7 +221,7 @@ private:
   // Writes to Stats.
   friend class ClangTidyDiagnosticConsumer;
 
-  DiagnosticsEngine *DiagEngine = nullptr;
+  DiagnosticsEngine *DiagEngine;
   std::unique_ptr<ClangTidyOptionsProvider> OptionsProvider;
 
   std::string CurrentFile;
@@ -248,13 +241,12 @@ private:
 
   llvm::DenseMap<unsigned, std::string> CheckNamesByDiagnosticID;
 
-  bool Profile = false;
+  bool Profile;
   std::string ProfilePrefix;
 
   bool AllowEnablingAnalyzerAlphaCheckers;
-  bool EnableModuleHeadersParsing;
 
-  bool SelfContainedDiags = false;
+  bool SelfContainedDiags;
 
   NoLintDirectiveHandler NoLintHandler;
   llvm::StringSet<> *OptionsCollector = nullptr;
@@ -313,9 +305,9 @@ private:
   bool EnableNolintBlocks;
   std::vector<ClangTidyError> Errors;
   std::unique_ptr<llvm::Regex> HeaderFilter;
-  bool LastErrorRelatesToUserCode = false;
-  bool LastErrorPassesLineFilter = false;
-  bool LastErrorWasIgnored = false;
+  bool LastErrorRelatesToUserCode;
+  bool LastErrorPassesLineFilter;
+  bool LastErrorWasIgnored;
 };
 
 } // end namespace tidy

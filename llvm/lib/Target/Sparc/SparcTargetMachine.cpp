@@ -100,14 +100,16 @@ SparcTargetMachine::SparcTargetMachine(const Target &T, const Triple &TT,
                                        const TargetOptions &Options,
                                        std::optional<Reloc::Model> RM,
                                        std::optional<CodeModel::Model> CM,
-                                       CodeGenOptLevel OL, bool JIT,
+                                       CodeGenOpt::Level OL, bool JIT,
                                        bool is64bit)
     : LLVMTargetMachine(T, computeDataLayout(TT, is64bit), TT, CPU, FS, Options,
                         getEffectiveRelocModel(RM),
                         getEffectiveSparcCodeModel(
                             CM, getEffectiveRelocModel(RM), is64bit, JIT),
                         OL),
-      TLOF(std::make_unique<SparcELFTargetObjectFile>()), is64Bit(is64bit) {
+      TLOF(std::make_unique<SparcELFTargetObjectFile>()),
+      Subtarget(TT, std::string(CPU), std::string(FS), *this, is64bit),
+      is64Bit(is64bit) {
   initAsmInfo();
 }
 
@@ -116,13 +118,10 @@ SparcTargetMachine::~SparcTargetMachine() = default;
 const SparcSubtarget *
 SparcTargetMachine::getSubtargetImpl(const Function &F) const {
   Attribute CPUAttr = F.getFnAttribute("target-cpu");
-  Attribute TuneAttr = F.getFnAttribute("tune-cpu");
   Attribute FSAttr = F.getFnAttribute("target-features");
 
   std::string CPU =
       CPUAttr.isValid() ? CPUAttr.getValueAsString().str() : TargetCPU;
-  std::string TuneCPU =
-      TuneAttr.isValid() ? TuneAttr.getValueAsString().str() : CPU;
   std::string FS =
       FSAttr.isValid() ? FSAttr.getValueAsString().str() : TargetFS;
 
@@ -140,8 +139,8 @@ SparcTargetMachine::getSubtargetImpl(const Function &F) const {
     // creation will depend on the TM and the code generation flags on the
     // function that reside in TargetOptions.
     resetTargetOptions(F);
-    I = std::make_unique<SparcSubtarget>(CPU, TuneCPU, FS, *this,
-                                         this->is64Bit);
+    I = std::make_unique<SparcSubtarget>(TargetTriple, CPU, FS, *this,
+                                          this->is64Bit);
   }
   return I.get();
 }
@@ -175,7 +174,7 @@ TargetPassConfig *SparcTargetMachine::createPassConfig(PassManagerBase &PM) {
 }
 
 void SparcPassConfig::addIRPasses() {
-  addPass(createAtomicExpandLegacyPass());
+  addPass(createAtomicExpandPass());
 
   TargetPassConfig::addIRPasses();
 }
@@ -190,9 +189,18 @@ void SparcPassConfig::addPreEmitPass(){
     addPass(&BranchRelaxationPassID);
 
   addPass(createSparcDelaySlotFillerPass());
-  addPass(new InsertNOPLoad());
-  addPass(new DetectRoundChange());
-  addPass(new FixAllFDIVSQRT());
+
+  if (this->getSparcTargetMachine().getSubtargetImpl()->insertNOPLoad())
+  {
+    addPass(new InsertNOPLoad());
+  }
+  if (this->getSparcTargetMachine().getSubtargetImpl()->detectRoundChange()) {
+    addPass(new DetectRoundChange());
+  }
+  if (this->getSparcTargetMachine().getSubtargetImpl()->fixAllFDIVSQRT())
+  {
+    addPass(new FixAllFDIVSQRT());
+  }
 }
 
 void SparcV8TargetMachine::anchor() { }
@@ -202,7 +210,7 @@ SparcV8TargetMachine::SparcV8TargetMachine(const Target &T, const Triple &TT,
                                            const TargetOptions &Options,
                                            std::optional<Reloc::Model> RM,
                                            std::optional<CodeModel::Model> CM,
-                                           CodeGenOptLevel OL, bool JIT)
+                                           CodeGenOpt::Level OL, bool JIT)
     : SparcTargetMachine(T, TT, CPU, FS, Options, RM, CM, OL, JIT, false) {}
 
 void SparcV9TargetMachine::anchor() { }
@@ -212,7 +220,7 @@ SparcV9TargetMachine::SparcV9TargetMachine(const Target &T, const Triple &TT,
                                            const TargetOptions &Options,
                                            std::optional<Reloc::Model> RM,
                                            std::optional<CodeModel::Model> CM,
-                                           CodeGenOptLevel OL, bool JIT)
+                                           CodeGenOpt::Level OL, bool JIT)
     : SparcTargetMachine(T, TT, CPU, FS, Options, RM, CM, OL, JIT, true) {}
 
 void SparcelTargetMachine::anchor() {}
@@ -222,5 +230,5 @@ SparcelTargetMachine::SparcelTargetMachine(const Target &T, const Triple &TT,
                                            const TargetOptions &Options,
                                            std::optional<Reloc::Model> RM,
                                            std::optional<CodeModel::Model> CM,
-                                           CodeGenOptLevel OL, bool JIT)
+                                           CodeGenOpt::Level OL, bool JIT)
     : SparcTargetMachine(T, TT, CPU, FS, Options, RM, CM, OL, JIT, false) {}

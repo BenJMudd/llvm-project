@@ -38,7 +38,7 @@ Option::Option(const OptTable::Info *info, const OptTable *owner)
   }
 }
 
-void Option::print(raw_ostream &O, bool AddNewLine) const {
+void Option::print(raw_ostream &O) const {
   O << "<";
   switch (getKind()) {
 #define P(N) case N: O << #N; break
@@ -70,21 +70,19 @@ void Option::print(raw_ostream &O, bool AddNewLine) const {
   const Option Group = getGroup();
   if (Group.isValid()) {
     O << " Group:";
-    Group.print(O, /*AddNewLine=*/false);
+    Group.print(O);
   }
 
   const Option Alias = getAlias();
   if (Alias.isValid()) {
     O << " Alias:";
-    Alias.print(O, /*AddNewLine=*/false);
+    Alias.print(O);
   }
 
   if (getKind() == MultiArgClass)
     O << " NumArgs:" << getNumArgs();
 
-  O << ">";
-  if (AddNewLine)
-    O << "\n";
+  O << ">\n";
 }
 
 #if !defined(NDEBUG) || defined(LLVM_ENABLE_DUMP)

@@ -248,15 +248,28 @@ TEST(IncrementalProcessing, FindMangledNameSymbol) {
 #endif // _WIN32
 }
 
-static Value AllocateObject(TypeDecl *TD, Interpreter &Interp) {
+static void *AllocateObject(TypeDecl *TD, Interpreter &Interp) {
   std::string Name = TD->getQualifiedNameAsString();
-  Value Addr;
-  // FIXME: Consider providing an option in clang::Value to take ownership of
-  // the memory created from the interpreter.
-  // cantFail(Interp.ParseAndExecute("new " + Name + "()", &Addr));
+  const clang::Type *RDTy = TD->getTypeForDecl();
+  clang::ASTContext &C = Interp.getCompilerInstance()->getASTContext();
+  size_t Size = C.getTypeSize(RDTy);
+  void *Addr = malloc(Size);
 
-  // The lifetime of the temporary is extended by the clang::Value.
-  cantFail(Interp.ParseAndExecute(Name + "()", &Addr));
+  // Tell the interpreter to call the default ctor with this memory. Synthesize:
+  // new (loc) ClassName;
+  static unsigned Counter = 0;
+  std::stringstream SS;
+  SS << "auto _v" << Counter++ << " = "
+     << "new ((void*)"
+     // Windows needs us to prefix the hexadecimal value of a pointer with '0x'.
+     << std::hex << std::showbase << (size_t)Addr << ")" << Name << "();";
+
+  auto R = Interp.ParseAndExecute(SS.str());
+  if (!R) {
+    free(Addr);
+    return nullptr;
+  }
+
   return Addr;
 }
 
@@ -304,7 +317,7 @@ TEST(IncrementalProcessing, InstantiateTemplate) {
   }
 
   TypeDecl *TD = cast<TypeDecl>(LookupSingleName(*Interp, "A"));
-  Value NewA = AllocateObject(TD, *Interp);
+  void *NewA = AllocateObject(TD, *Interp);
 
   // Find back the template specialization
   VarDecl *VD = static_cast<VarDecl *>(*PTUDeclRange.begin());
@@ -315,7 +328,8 @@ TEST(IncrementalProcessing, InstantiateTemplate) {
   typedef int (*TemplateSpecFn)(void *);
   auto fn =
       cantFail(Interp->getSymbolAddress(MangledName)).toPtr<TemplateSpecFn>();
-  EXPECT_EQ(42, fn(NewA.getPtr()));
+  EXPECT_EQ(42, fn(NewA));
+  free(NewA);
 }
 
 #ifdef CLANG_INTERPRETER_NO_SUPPORT_EXEC
@@ -339,12 +353,6 @@ TEST(InterpreterTest, Value) {
   EXPECT_TRUE(V1.getType()->isIntegerType());
   EXPECT_EQ(V1.getKind(), Value::K_Int);
   EXPECT_FALSE(V1.isManuallyAlloc());
-
-  Value V1b;
-  llvm::cantFail(Interp->ParseAndExecute("char c = 42;"));
-  llvm::cantFail(Interp->ParseAndExecute("c", &V1b));
-  EXPECT_TRUE(V1b.getKind() == Value::K_Char_S ||
-              V1b.getKind() == Value::K_Char_U);
 
   Value V2;
   llvm::cantFail(Interp->ParseAndExecute("double y = 3.14;"));

@@ -8,7 +8,6 @@
 
 #include "mlir/Conversion/UBToLLVM/UBToLLVM.h"
 
-#include "mlir/Conversion/ConvertToLLVM/ToLLVMInterface.h"
 #include "mlir/Conversion/LLVMCommon/ConversionTarget.h"
 #include "mlir/Conversion/LLVMCommon/Pattern.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
@@ -42,19 +41,16 @@ struct PoisonOpLowering : public ConvertOpToLLVMPattern<ub::PoisonOp> {
 LogicalResult
 PoisonOpLowering::matchAndRewrite(ub::PoisonOp op, OpAdaptor adaptor,
                                   ConversionPatternRewriter &rewriter) const {
-  if (!isa<ub::PoisonAttr>(op.getValue())) {
-    return rewriter.notifyMatchFailure(op, [&](Diagnostic &diag) {
-      diag << "pattern can only convert op with '"
-           << ub::PoisonAttr::getMnemonic() << "' poison value";
-    });
-  }
+  Type origType = op.getType();
+  if (!origType.isIntOrIndexOrFloat())
+    return rewriter.notifyMatchFailure(
+        op, [&](Diagnostic &diag) { diag << "unsupported type " << origType; });
 
-  Type resType = getTypeConverter()->convertType(op.getType());
-  if (!resType) {
+  Type resType = getTypeConverter()->convertType(origType);
+  if (!resType)
     return rewriter.notifyMatchFailure(op, [&](Diagnostic &diag) {
-      diag << "failed to convert result type " << op.getType();
+      diag << "failed to convert result type " << origType;
     });
-  }
 
   rewriter.replaceOpWithNewOp<LLVM::PoisonOp>(op, resType);
   return success();
@@ -94,32 +90,4 @@ struct UBToLLVMConversionPass
 void mlir::ub::populateUBToLLVMConversionPatterns(LLVMTypeConverter &converter,
                                                   RewritePatternSet &patterns) {
   patterns.add<PoisonOpLowering>(converter);
-}
-
-//===----------------------------------------------------------------------===//
-// ConvertToLLVMPatternInterface implementation
-//===----------------------------------------------------------------------===//
-
-namespace {
-/// Implement the interface to convert UB to LLVM.
-struct UBToLLVMDialectInterface : public ConvertToLLVMPatternInterface {
-  using ConvertToLLVMPatternInterface::ConvertToLLVMPatternInterface;
-  void loadDependentDialects(MLIRContext *context) const final {
-    context->loadDialect<LLVM::LLVMDialect>();
-  }
-
-  /// Hook for derived dialect interface to provide conversion patterns
-  /// and mark dialect legal for the conversion target.
-  void populateConvertToLLVMConversionPatterns(
-      ConversionTarget &target, LLVMTypeConverter &typeConverter,
-      RewritePatternSet &patterns) const final {
-    ub::populateUBToLLVMConversionPatterns(typeConverter, patterns);
-  }
-};
-} // namespace
-
-void mlir::ub::registerConvertUBToLLVMInterface(DialectRegistry &registry) {
-  registry.addExtension(+[](MLIRContext *ctx, ub::UBDialect *dialect) {
-    dialect->addInterfaces<UBToLLVMDialectInterface>();
-  });
 }

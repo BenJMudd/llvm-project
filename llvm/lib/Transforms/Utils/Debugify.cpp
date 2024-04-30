@@ -338,23 +338,20 @@ bool llvm::collectDebugInfoMetadata(Module &M,
 
         // Cllect dbg.values and dbg.declare.
         if (DebugifyLevel > Level::Locations) {
-          auto HandleDbgVariable = [&](auto *DbgVar) {
+          if (auto *DVI = dyn_cast<DbgVariableIntrinsic>(&I)) {
             if (!SP)
-              return;
+              continue;
             // Skip inlined variables.
-            if (DbgVar->getDebugLoc().getInlinedAt())
-              return;
+            if (I.getDebugLoc().getInlinedAt())
+              continue;
             // Skip undef values.
-            if (DbgVar->isKillLocation())
-              return;
+            if (DVI->isKillLocation())
+              continue;
 
-            auto *Var = DbgVar->getVariable();
+            auto *Var = DVI->getVariable();
             DebugInfoBeforePass.DIVariables[Var]++;
-          };
-          for (DbgVariableRecord &DVR : filterDbgVars(I.getDbgRecordRange()))
-            HandleDbgVariable(&DVR);
-          if (auto *DVI = dyn_cast<DbgVariableIntrinsic>(&I))
-            HandleDbgVariable(DVI);
+            continue;
+          }
         }
 
         // Skip debug instructions other than dbg.value and dbg.declare.
@@ -584,23 +581,20 @@ bool llvm::checkDebugInfoMetadata(Module &M,
 
         // Collect dbg.values and dbg.declares.
         if (DebugifyLevel > Level::Locations) {
-          auto HandleDbgVariable = [&](auto *DbgVar) {
+          if (auto *DVI = dyn_cast<DbgVariableIntrinsic>(&I)) {
             if (!SP)
-              return;
+              continue;
             // Skip inlined variables.
-            if (DbgVar->getDebugLoc().getInlinedAt())
-              return;
+            if (I.getDebugLoc().getInlinedAt())
+              continue;
             // Skip undef values.
-            if (DbgVar->isKillLocation())
-              return;
+            if (DVI->isKillLocation())
+              continue;
 
-            auto *Var = DbgVar->getVariable();
+            auto *Var = DVI->getVariable();
             DebugInfoAfterPass.DIVariables[Var]++;
-          };
-          for (DbgVariableRecord &DVR : filterDbgVars(I.getDbgRecordRange()))
-            HandleDbgVariable(&DVR);
-          if (auto *DVI = dyn_cast<DbgVariableIntrinsic>(&I))
-            HandleDbgVariable(DVI);
+            continue;
+          }
         }
 
         // Skip debug instructions other than dbg.value and dbg.declare.
@@ -668,9 +662,8 @@ bool llvm::checkDebugInfoMetadata(Module &M,
 }
 
 namespace {
-/// Return true if a mis-sized diagnostic is issued for \p DbgVal.
-template <typename DbgValTy>
-bool diagnoseMisSizedDbgValue(Module &M, DbgValTy *DbgVal) {
+/// Return true if a mis-sized diagnostic is issued for \p DVI.
+bool diagnoseMisSizedDbgValue(Module &M, DbgValueInst *DVI) {
   // The size of a dbg.value's value operand should match the size of the
   // variable it corresponds to.
   //
@@ -679,22 +672,22 @@ bool diagnoseMisSizedDbgValue(Module &M, DbgValTy *DbgVal) {
 
   // For now, don't try to interpret anything more complicated than an empty
   // DIExpression. Eventually we should try to handle OP_deref and fragments.
-  if (DbgVal->getExpression()->getNumElements())
+  if (DVI->getExpression()->getNumElements())
     return false;
 
-  Value *V = DbgVal->getVariableLocationOp(0);
+  Value *V = DVI->getVariableLocationOp(0);
   if (!V)
     return false;
 
   Type *Ty = V->getType();
   uint64_t ValueOperandSize = getAllocSizeInBits(M, Ty);
-  std::optional<uint64_t> DbgVarSize = DbgVal->getFragmentSizeInBits();
+  std::optional<uint64_t> DbgVarSize = DVI->getFragmentSizeInBits();
   if (!ValueOperandSize || !DbgVarSize)
     return false;
 
   bool HasBadSize = false;
   if (Ty->isIntegerTy()) {
-    auto Signedness = DbgVal->getVariable()->getSignedness();
+    auto Signedness = DVI->getVariable()->getSignedness();
     if (Signedness && *Signedness == DIBasicType::Signedness::Signed)
       HasBadSize = ValueOperandSize < *DbgVarSize;
   } else {
@@ -704,7 +697,7 @@ bool diagnoseMisSizedDbgValue(Module &M, DbgValTy *DbgVal) {
   if (HasBadSize) {
     dbg() << "ERROR: dbg.value operand has size " << ValueOperandSize
           << ", but its variable has size " << *DbgVarSize << ": ";
-    DbgVal->print(dbg());
+    DVI->print(dbg());
     dbg() << "\n";
   }
   return HasBadSize;
@@ -762,23 +755,18 @@ bool checkDebugifyMetadata(Module &M,
     }
 
     // Find missing variables and mis-sized debug values.
-    auto CheckForMisSized = [&](auto *DbgVal) {
-      unsigned Var = ~0U;
-      (void)to_integer(DbgVal->getVariable()->getName(), Var, 10);
-      assert(Var <= OriginalNumVars && "Unexpected name for DILocalVariable");
-      bool HasBadSize = diagnoseMisSizedDbgValue(M, DbgVal);
-      if (!HasBadSize)
-        MissingVars.reset(Var - 1);
-      HasErrors |= HasBadSize;
-    };
     for (Instruction &I : instructions(F)) {
-      for (DbgVariableRecord &DVR : filterDbgVars(I.getDbgRecordRange()))
-        if (DVR.isDbgValue() || DVR.isDbgAssign())
-          CheckForMisSized(&DVR);
       auto *DVI = dyn_cast<DbgValueInst>(&I);
       if (!DVI)
         continue;
-      CheckForMisSized(DVI);
+
+      unsigned Var = ~0U;
+      (void)to_integer(DVI->getVariable()->getName(), Var, 10);
+      assert(Var <= OriginalNumVars && "Unexpected name for DILocalVariable");
+      bool HasBadSize = diagnoseMisSizedDbgValue(M, DVI);
+      if (!HasBadSize)
+        MissingVars.reset(Var - 1);
+      HasErrors |= HasBadSize;
     }
   }
 
@@ -803,20 +791,17 @@ bool checkDebugifyMetadata(Module &M,
   dbg() << ": " << (HasErrors ? "FAIL" : "PASS") << '\n';
 
   // Strip debugify metadata if required.
-  bool Ret = false;
   if (Strip)
-    Ret = stripDebugifyMetadata(M);
+    return stripDebugifyMetadata(M);
 
-  return Ret;
+  return false;
 }
 
 /// ModulePass for attaching synthetic debug info to everything, used with the
 /// legacy module pass manager.
 struct DebugifyModulePass : public ModulePass {
   bool runOnModule(Module &M) override {
-    bool Result =
-        applyDebugify(M, Mode, DebugInfoBeforePass, NameOfWrappedPass);
-    return Result;
+    return applyDebugify(M, Mode, DebugInfoBeforePass, NameOfWrappedPass);
   }
 
   DebugifyModulePass(enum DebugifyMode Mode = DebugifyMode::SyntheticDebugInfo,
@@ -841,9 +826,7 @@ private:
 /// single function, used with the legacy module pass manager.
 struct DebugifyFunctionPass : public FunctionPass {
   bool runOnFunction(Function &F) override {
-    bool Result =
-        applyDebugify(F, Mode, DebugInfoBeforePass, NameOfWrappedPass);
-    return Result;
+    return applyDebugify(F, Mode, DebugInfoBeforePass, NameOfWrappedPass);
   }
 
   DebugifyFunctionPass(
@@ -869,17 +852,13 @@ private:
 /// legacy module pass manager.
 struct CheckDebugifyModulePass : public ModulePass {
   bool runOnModule(Module &M) override {
-    bool Result;
     if (Mode == DebugifyMode::SyntheticDebugInfo)
-      Result = checkDebugifyMetadata(M, M.functions(), NameOfWrappedPass,
+      return checkDebugifyMetadata(M, M.functions(), NameOfWrappedPass,
                                    "CheckModuleDebugify", Strip, StatsMap);
-    else
-      Result = checkDebugInfoMetadata(
+    return checkDebugInfoMetadata(
         M, M.functions(), *DebugInfoBeforePass,
         "CheckModuleDebugify (original debuginfo)", NameOfWrappedPass,
         OrigDIVerifyBugsReportFilePath);
-
-    return Result;
   }
 
   CheckDebugifyModulePass(
@@ -914,18 +893,14 @@ struct CheckDebugifyFunctionPass : public FunctionPass {
   bool runOnFunction(Function &F) override {
     Module &M = *F.getParent();
     auto FuncIt = F.getIterator();
-    bool Result;
     if (Mode == DebugifyMode::SyntheticDebugInfo)
-      Result = checkDebugifyMetadata(M, make_range(FuncIt, std::next(FuncIt)),
+      return checkDebugifyMetadata(M, make_range(FuncIt, std::next(FuncIt)),
                                    NameOfWrappedPass, "CheckFunctionDebugify",
                                    Strip, StatsMap);
-    else
-      Result = checkDebugInfoMetadata(
+    return checkDebugInfoMetadata(
         M, make_range(FuncIt, std::next(FuncIt)), *DebugInfoBeforePass,
         "CheckFunctionDebugify (original debuginfo)", NameOfWrappedPass,
         OrigDIVerifyBugsReportFilePath);
-
-    return Result;
   }
 
   CheckDebugifyFunctionPass(
@@ -1004,7 +979,6 @@ PreservedAnalyses NewPMDebugifyPass::run(Module &M, ModuleAnalysisManager &) {
     collectDebugInfoMetadata(M, M.functions(), *DebugInfoBeforePass,
                              "ModuleDebugify (original debuginfo)",
                               NameOfWrappedPass);
-
   PreservedAnalyses PA;
   PA.preserveSet<CFGAnalyses>();
   return PA;
@@ -1044,7 +1018,6 @@ PreservedAnalyses NewPMCheckDebugifyPass::run(Module &M,
       M, M.functions(), *DebugInfoBeforePass,
       "CheckModuleDebugify (original debuginfo)", NameOfWrappedPass,
       OrigDIVerifyBugsReportFilePath);
-
   return PreservedAnalyses::all();
 }
 
@@ -1062,13 +1035,13 @@ void DebugifyEachInstrumentation::registerCallbacks(
       return;
     PreservedAnalyses PA;
     PA.preserveSet<CFGAnalyses>();
-    if (const auto **CF = llvm::any_cast<const Function *>(&IR)) {
+    if (const auto **CF = any_cast<const Function *>(&IR)) {
       Function &F = *const_cast<Function *>(*CF);
       applyDebugify(F, Mode, DebugInfoBeforePass, P);
       MAM.getResult<FunctionAnalysisManagerModuleProxy>(*F.getParent())
           .getManager()
           .invalidate(F, PA);
-    } else if (const auto **CM = llvm::any_cast<const Module *>(&IR)) {
+    } else if (const auto **CM = any_cast<const Module *>(&IR)) {
       Module &M = *const_cast<Module *>(*CM);
       applyDebugify(M, Mode, DebugInfoBeforePass, P);
       MAM.invalidate(M, PA);
@@ -1080,7 +1053,7 @@ void DebugifyEachInstrumentation::registerCallbacks(
           return;
         PreservedAnalyses PA;
         PA.preserveSet<CFGAnalyses>();
-        if (const auto **CF = llvm::any_cast<const Function *>(&IR)) {
+        if (const auto **CF = any_cast<const Function *>(&IR)) {
           auto &F = *const_cast<Function *>(*CF);
           Module &M = *F.getParent();
           auto It = F.getIterator();
@@ -1096,7 +1069,7 @@ void DebugifyEachInstrumentation::registerCallbacks(
           MAM.getResult<FunctionAnalysisManagerModuleProxy>(*F.getParent())
               .getManager()
               .invalidate(F, PA);
-        } else if (const auto **CM = llvm::any_cast<const Module *>(&IR)) {
+        } else if (const auto **CM = any_cast<const Module *>(&IR)) {
           Module &M = *const_cast<Module *>(*CM);
           if (Mode == DebugifyMode::SyntheticDebugInfo)
             checkDebugifyMetadata(M, M.functions(), P, "CheckModuleDebugify",

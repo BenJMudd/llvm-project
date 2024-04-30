@@ -14,7 +14,6 @@
 #include "mlir/Conversion/AffineToStandard/AffineToStandard.h"
 
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
-#include "mlir/Dialect/Affine/Transforms/Transforms.h"
 #include "mlir/Dialect/Affine/Utils.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
@@ -35,7 +34,12 @@ using namespace mlir::affine;
 using namespace mlir::vector;
 
 /// Given a range of values, emit the code that reduces them with "min" or "max"
-/// depending on the provided comparison predicate, sgt for max and slt for min.
+/// depending on the provided comparison predicate.  The predicate defines which
+/// comparison to perform, "lt" for "min", "gt" for "max" and is used for the
+/// `cmpi` operation followed by the `select` operation:
+///
+///   %cond   = arith.cmpi "predicate" %v0, %v1
+///   %result = select %cond, %v0, %v1
 ///
 /// Multiple values are scanned in a linear sequence.  This creates a data
 /// dependences that wouldn't exist in a tree reduction, but is easier to
@@ -44,16 +48,13 @@ static Value buildMinMaxReductionSeq(Location loc,
                                      arith::CmpIPredicate predicate,
                                      ValueRange values, OpBuilder &builder) {
   assert(!values.empty() && "empty min/max chain");
-  assert(predicate == arith::CmpIPredicate::sgt ||
-         predicate == arith::CmpIPredicate::slt);
 
   auto valueIt = values.begin();
   Value value = *valueIt++;
   for (; valueIt != values.end(); ++valueIt) {
-    if (predicate == arith::CmpIPredicate::sgt)
-      value = builder.create<arith::MaxSIOp>(loc, value, *valueIt);
-    else
-      value = builder.create<arith::MinSIOp>(loc, value, *valueIt);
+    auto cmpOp = builder.create<arith::CmpIOp>(loc, predicate, value, *valueIt);
+    value = builder.create<arith::SelectOp>(loc, cmpOp.getResult(), value,
+                                            *valueIt);
   }
 
   return value;
@@ -136,9 +137,10 @@ public:
   LogicalResult matchAndRewrite(AffineYieldOp op,
                                 PatternRewriter &rewriter) const override {
     if (isa<scf::ParallelOp>(op->getParentOp())) {
-      // Terminator is rewritten as part of the "affine.parallel" lowering
-      // pattern.
-      return failure();
+      // scf.parallel does not yield any values via its terminator scf.yield but
+      // models reductions differently using additional ops in its region.
+      rewriter.replaceOpWithNewOp<scf::YieldOp>(op);
+      return success();
     }
     rewriter.replaceOpWithNewOp<scf::YieldOp>(op, op.getOperands());
     return success();
@@ -154,10 +156,9 @@ public:
     Location loc = op.getLoc();
     Value lowerBound = lowerAffineLowerBound(op, rewriter);
     Value upperBound = lowerAffineUpperBound(op, rewriter);
-    Value step =
-        rewriter.create<arith::ConstantIndexOp>(loc, op.getStepAsInt());
+    Value step = rewriter.create<arith::ConstantIndexOp>(loc, op.getStep());
     auto scfForOp = rewriter.create<scf::ForOp>(loc, lowerBound, upperBound,
-                                                step, op.getInits());
+                                                step, op.getIterOperands());
     rewriter.eraseBlock(scfForOp.getBody());
     rewriter.inlineRegionBefore(op.getRegion(), scfForOp.getRegion(),
                                 scfForOp.getRegion().end());
@@ -201,8 +202,7 @@ public:
       steps.push_back(rewriter.create<arith::ConstantIndexOp>(loc, step));
 
     // Get the terminator op.
-    auto affineParOpTerminator =
-        cast<AffineYieldOp>(op.getBody()->getTerminator());
+    Operation *affineParOpTerminator = op.getBody()->getTerminator();
     scf::ParallelOp parOp;
     if (op.getResults().empty()) {
       // Case with no reduction operations/return values.
@@ -213,8 +213,6 @@ public:
       rewriter.inlineRegionBefore(op.getRegion(), parOp.getRegion(),
                                   parOp.getRegion().end());
       rewriter.replaceOp(op, parOp.getResults());
-      rewriter.setInsertionPoint(affineParOpTerminator);
-      rewriter.replaceOpWithNewOp<scf::ReduceOp>(affineParOpTerminator);
       return success();
     }
     // Case with affine.parallel with reduction operations/return values.
@@ -244,11 +242,6 @@ public:
                                 parOp.getRegion().end());
     assert(reductions.size() == affineParOpTerminator->getNumOperands() &&
            "Unequal number of reductions and operands.");
-
-    // Emit new "scf.reduce" terminator.
-    rewriter.setInsertionPoint(affineParOpTerminator);
-    auto reduceOp = rewriter.replaceOpWithNewOp<scf::ReduceOp>(
-        affineParOpTerminator, affineParOpTerminator->getOperands());
     for (unsigned i = 0, end = reductions.size(); i < end; i++) {
       // For each of the reduction operations get the respective mlir::Value.
       std::optional<arith::AtomicRMWKind> reductionOp =
@@ -257,11 +250,13 @@ public:
       assert(reductionOp && "Reduction Operation cannot be of None Type");
       arith::AtomicRMWKind reductionOpValue = *reductionOp;
       rewriter.setInsertionPoint(&parOp.getBody()->back());
-      Block &reductionBody = reduceOp.getReductions()[i].front();
-      rewriter.setInsertionPointToEnd(&reductionBody);
+      auto reduceOp = rewriter.create<scf::ReduceOp>(
+          loc, affineParOpTerminator->getOperand(i));
+      rewriter.setInsertionPointToEnd(&reduceOp.getReductionOperator().front());
       Value reductionResult = arith::getReductionOp(
-          reductionOpValue, rewriter, loc, reductionBody.getArgument(0),
-          reductionBody.getArgument(1));
+          reductionOpValue, rewriter, loc,
+          reduceOp.getReductionOperator().front().getArgument(0),
+          reduceOp.getReductionOperator().front().getArgument(1));
       rewriter.create<scf::ReduceReturnOp>(loc, reductionResult);
     }
     rewriter.replaceOp(op, parOp.getResults());
@@ -559,7 +554,6 @@ class LowerAffinePass
     RewritePatternSet patterns(&getContext());
     populateAffineToStdConversionPatterns(patterns);
     populateAffineToVectorConversionPatterns(patterns);
-    populateAffineExpandIndexOpsPatterns(patterns);
     ConversionTarget target(getContext());
     target.addLegalDialect<arith::ArithDialect, memref::MemRefDialect,
                            scf::SCFDialect, VectorDialect>();

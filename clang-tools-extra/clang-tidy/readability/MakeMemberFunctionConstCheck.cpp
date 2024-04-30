@@ -241,7 +241,8 @@ static SourceLocation getConstInsertionPoint(const CXXMethodDecl *M) {
   if (!TSI)
     return {};
 
-  auto FTL = TSI->getTypeLoc().IgnoreParens().getAs<FunctionTypeLoc>();
+  FunctionTypeLoc FTL =
+      TSI->getTypeLoc().IgnoreParens().getAs<FunctionTypeLoc>();
   if (!FTL)
     return {};
 

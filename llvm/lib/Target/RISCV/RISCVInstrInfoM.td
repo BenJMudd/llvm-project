@@ -41,9 +41,9 @@ def DIV     : ALU_rr<0b0000001, 0b100, "div">,
 def DIVU    : ALU_rr<0b0000001, 0b101, "divu">,
               Sched<[WriteIDiv, ReadIDiv, ReadIDiv]>;
 def REM     : ALU_rr<0b0000001, 0b110, "rem">,
-              Sched<[WriteIRem, ReadIRem, ReadIRem]>;
+              Sched<[WriteIDiv, ReadIDiv, ReadIDiv]>;
 def REMU    : ALU_rr<0b0000001, 0b111, "remu">,
-              Sched<[WriteIRem, ReadIRem, ReadIRem]>;
+              Sched<[WriteIDiv, ReadIDiv, ReadIDiv]>;
 } // Predicates = [HasStdExtM]
 
 let Predicates = [HasStdExtMOrZmmul, IsRV64], IsSignExtendingOpW = 1 in {
@@ -57,9 +57,9 @@ def DIVW    : ALUW_rr<0b0000001, 0b100, "divw">,
 def DIVUW   : ALUW_rr<0b0000001, 0b101, "divuw">,
               Sched<[WriteIDiv32, ReadIDiv32, ReadIDiv32]>;
 def REMW    : ALUW_rr<0b0000001, 0b110, "remw">,
-              Sched<[WriteIRem32, ReadIRem32, ReadIRem32]>;
+              Sched<[WriteIDiv32, ReadIDiv32, ReadIDiv32]>;
 def REMUW   : ALUW_rr<0b0000001, 0b111, "remuw">,
-              Sched<[WriteIRem32, ReadIRem32, ReadIRem32]>;
+              Sched<[WriteIDiv32, ReadIDiv32, ReadIDiv32]>;
 } // Predicates = [HasStdExtM, IsRV64]
 
 //===----------------------------------------------------------------------===//
@@ -112,20 +112,5 @@ let Predicates = [HasStdExtMOrZmmul, IsRV64, NotHasStdExtZba] in {
 // inputs left by 32 and use a MULHU. This saves two SRLIs needed to finish
 // zeroing the upper 32 bits.
 def : Pat<(i64 (mul (and GPR:$rs1, 0xffffffff), (and GPR:$rs2, 0xffffffff))),
-          (MULHU (i64 (SLLI GPR:$rs1, 32)), (i64 (SLLI GPR:$rs2, 32)))>;
+          (MULHU (SLLI GPR:$rs1, 32), (SLLI GPR:$rs2, 32))>;
 } // Predicates = [HasStdExtMOrZmmul, IsRV64, NotHasStdExtZba]
-
-//===----------------------------------------------------------------------===//
-// Experimental RV64 i32 legalization patterns.
-//===----------------------------------------------------------------------===//
-
-let Predicates = [HasStdExtMOrZmmul, IsRV64] in {
-def : PatGprGpr<mul, MULW, i32, i32>;
-}
-
-let Predicates = [HasStdExtM, IsRV64] in {
-def : PatGprGpr<sdiv, DIVW, i32, i32>;
-def : PatGprGpr<udiv, DIVUW, i32, i32>;
-def : PatGprGpr<srem, REMW, i32, i32>;
-def : PatGprGpr<urem, REMUW, i32, i32>;
-}

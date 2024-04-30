@@ -1,8 +1,8 @@
-// RUN: mlir-opt %s --sparse-reinterpret-map --sparsification -cse -sparse-vectorization="vl=16" -scf-for-loop-peeling -canonicalize -cse | \
+// RUN: mlir-opt %s --sparsification -cse -sparse-vectorization="vl=16" -scf-for-loop-peeling -canonicalize -cse | \
 // RUN:   FileCheck %s
 
 #SparseVector = #sparse_tensor.encoding<{
-  map = (d0) -> (d0 : compressed),
+  lvlTypes = [ "compressed" ],
   posWidth = 32,
   crdWidth = 32
 }>

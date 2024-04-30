@@ -8,18 +8,14 @@
 
 #include "descriptor-io.h"
 #include "flang/Common/restorer.h"
-#include "flang/Runtime/freestanding-tools.h"
 
 namespace Fortran::runtime::io::descr {
-RT_OFFLOAD_API_GROUP_BEGIN
 
 // Defined formatted I/O (maybe)
-Fortran::common::optional<bool> DefinedFormattedIo(IoStatementState &io,
+std::optional<bool> DefinedFormattedIo(IoStatementState &io,
     const Descriptor &descriptor, const typeInfo::DerivedType &derived,
-    const typeInfo::SpecialBinding &special,
-    const SubscriptValue subscripts[]) {
-  Fortran::common::optional<DataEdit> peek{
-      io.GetNextDataEdit(0 /*to peek at it*/)};
+    const typeInfo::SpecialBinding &special) {
+  std::optional<DataEdit> peek{io.GetNextDataEdit(0 /*to peek at it*/)};
   if (peek &&
       (peek->descriptor == DataEdit::DefinedDerivedType ||
           peek->descriptor == DataEdit::ListDirected)) {
@@ -34,9 +30,9 @@ Fortran::common::optional<bool> DefinedFormattedIo(IoStatementState &io,
       ioType[1] = 'T';
       std::memcpy(ioType + 2, edit.ioType, edit.ioTypeChars);
     } else {
-      runtime::strcpy(
+      std::strcpy(
           ioType, io.mutableModes().inNamelist ? "NAMELIST" : "LISTDIRECTED");
-      ioTypeLen = runtime::strlen(ioType);
+      ioTypeLen = std::strlen(ioType);
     }
     StaticDescriptor<1, true> vListStatDesc;
     Descriptor &vListDesc{vListStatDesc.descriptor()};
@@ -58,13 +54,16 @@ Fortran::common::optional<bool> DefinedFormattedIo(IoStatementState &io,
     int unit{external->unitNumber()};
     int ioStat{IostatOk};
     char ioMsg[100];
-    Fortran::common::optional<std::int64_t> startPos;
+    std::optional<std::int64_t> startPos;
     if (edit.descriptor == DataEdit::DefinedDerivedType &&
         special.which() == typeInfo::SpecialBinding::Which::ReadFormatted) {
       // DT is an edit descriptor so everything that the child
       // I/O subroutine reads counts towards READ(SIZE=).
       startPos = io.InquirePos();
     }
+    std::size_t numElements{descriptor.Elements()};
+    SubscriptValue subscripts[maxRank];
+    descriptor.GetLowerBounds(subscripts);
     if (special.IsArgDescriptor(0)) {
       // "dtv" argument is "class(t)", pass a descriptor
       auto *p{special.GetProc<void (*)(const Descriptor &, int &, char *,
@@ -73,15 +72,25 @@ Fortran::common::optional<bool> DefinedFormattedIo(IoStatementState &io,
       Descriptor &elementDesc{elementStatDesc.descriptor()};
       elementDesc.Establish(
           derived, nullptr, 0, nullptr, CFI_attribute_pointer);
-      elementDesc.set_base_addr(descriptor.Element<char>(subscripts));
-      p(elementDesc, unit, ioType, vListDesc, ioStat, ioMsg, ioTypeLen,
-          sizeof ioMsg);
+      for (; numElements-- > 0; descriptor.IncrementSubscripts(subscripts)) {
+        elementDesc.set_base_addr(descriptor.Element<char>(subscripts));
+        p(elementDesc, unit, ioType, vListDesc, ioStat, ioMsg, ioTypeLen,
+            sizeof ioMsg);
+        if (ioStat != IostatOk) {
+          break;
+        }
+      }
     } else {
       // "dtv" argument is "type(t)", pass a raw pointer
       auto *p{special.GetProc<void (*)(const void *, int &, char *,
           const Descriptor &, int &, char *, std::size_t, std::size_t)>()};
-      p(descriptor.Element<char>(subscripts), unit, ioType, vListDesc, ioStat,
-          ioMsg, ioTypeLen, sizeof ioMsg);
+      for (; numElements-- > 0; descriptor.IncrementSubscripts(subscripts)) {
+        p(descriptor.Element<char>(subscripts), unit, ioType, vListDesc, ioStat,
+            ioMsg, ioTypeLen, sizeof ioMsg);
+        if (ioStat != IostatOk) {
+          break;
+        }
+      }
     }
     handler.Forward(ioStat, ioMsg, sizeof ioMsg);
     external->PopChildIo(child);
@@ -99,7 +108,7 @@ Fortran::common::optional<bool> DefinedFormattedIo(IoStatementState &io,
     // There's a defined I/O subroutine, but there's a FORMAT present and
     // it does not have a DT data edit descriptor, so apply default formatting
     // to the components of the derived type as usual.
-    return Fortran::common::nullopt;
+    return std::nullopt;
   }
 }
 
@@ -110,10 +119,7 @@ bool DefinedUnformattedIo(IoStatementState &io, const Descriptor &descriptor,
   // Unformatted I/O must have an external unit (or child thereof).
   IoErrorHandler &handler{io.GetIoErrorHandler()};
   ExternalFileUnit *external{io.GetExternalFileUnit()};
-  if (!external) { // INQUIRE(IOLENGTH=)
-    handler.SignalError(IostatNonExternalDefinedUnformattedIo);
-    return false;
-  }
+  RUNTIME_CHECK(handler, external != nullptr);
   ChildIo &child{external->PushChildIo(io)};
   int unit{external->unitNumber()};
   int ioStat{IostatOk};
@@ -152,5 +158,4 @@ bool DefinedUnformattedIo(IoStatementState &io, const Descriptor &descriptor,
   return handler.GetIoStat() == IostatOk;
 }
 
-RT_OFFLOAD_API_GROUP_END
 } // namespace Fortran::runtime::io::descr

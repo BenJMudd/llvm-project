@@ -5,9 +5,8 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
-
-#ifndef LLVM_LIBC_SRC_STRING_MEMORY_UTILS_X86_64_INLINE_MEMCMP_H
-#define LLVM_LIBC_SRC_STRING_MEMORY_UTILS_X86_64_INLINE_MEMCMP_H
+#ifndef LIBC_SRC_STRING_MEMORY_UTILS_X86_64_INLINE_MEMCMP_H
+#define LIBC_SRC_STRING_MEMORY_UTILS_X86_64_INLINE_MEMCMP_H
 
 #include "src/__support/macros/config.h"       // LIBC_INLINE
 #include "src/__support/macros/optimization.h" // LIBC_UNLIKELY
@@ -15,7 +14,7 @@
 #include "src/string/memory_utils/op_x86.h"
 #include "src/string/memory_utils/utils.h" // MemcmpReturnType
 
-namespace LIBC_NAMESPACE {
+namespace __llvm_libc {
 
 [[maybe_unused]] LIBC_INLINE MemcmpReturnType
 inline_memcmp_generic_gt16(CPtr p1, CPtr p2, size_t count) {
@@ -59,7 +58,7 @@ inline_memcmp_x86_avx512bw_gt16(CPtr p1, CPtr p2, size_t count) {
 
 LIBC_INLINE MemcmpReturnType inline_memcmp_x86(CPtr p1, CPtr p2, size_t count) {
   if (count == 0)
-    return MemcmpReturnType::zero();
+    return MemcmpReturnType::ZERO();
   if (count == 1)
     return generic::Memcmp<uint8_t>::block(p1, p2);
   if (count == 2)
@@ -89,6 +88,6 @@ LIBC_INLINE MemcmpReturnType inline_memcmp_x86(CPtr p1, CPtr p2, size_t count) {
 #endif
 }
 
-} // namespace LIBC_NAMESPACE
+} // namespace __llvm_libc
 
-#endif // LLVM_LIBC_SRC_STRING_MEMORY_UTILS_X86_64_INLINE_MEMCMP_H
+#endif // LIBC_SRC_STRING_MEMORY_UTILS_X86_64_INLINE_MEMCMP_H

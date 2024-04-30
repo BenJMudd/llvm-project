@@ -1,12 +1,8 @@
 ; Tests that we would convert coro.resume to a musttail call if the target is
-; Wasm64 or Wasm32 with tail-call support.
-; REQUIRES: webassembly-registered-target
+; Wasm64 with tail-call support.
+; RUN: opt < %s -passes='cgscc(coro-split),simplifycfg,early-cse' -S | FileCheck %s
 
-; RUN: opt -mtriple=wasm64-unknown-unknown < %s -passes='cgscc(coro-split),simplifycfg,early-cse' -S | FileCheck %s
-; RUN: opt -mtriple=wasm64-unknown-unknown < %s -passes='pgo-instr-gen,cgscc(coro-split),simplifycfg,early-cse' -S | FileCheck %s
-
-; RUN: opt -mtriple=wasm32-unknown-unknown < %s -passes='cgscc(coro-split),simplifycfg,early-cse' -S | FileCheck %s
-; RUN: opt -mtriple=wasm32-unknown-unknown < %s -passes='pgo-instr-gen,cgscc(coro-split),simplifycfg,early-cse' -S | FileCheck %s
+target triple = "wasm64-unknown-unknown"
 
 define void @f() #0 {
 entry:
@@ -34,7 +30,7 @@ await.ready:
     i8 1, label %exit
   ]
 exit:
-  call i1 @llvm.coro.end(ptr null, i1 false, token none)
+  call i1 @llvm.coro.end(ptr null, i1 false)
   ret void
 }
 
@@ -48,7 +44,7 @@ declare token @llvm.coro.save(ptr) #2
 declare ptr @llvm.coro.frame() #3
 declare i8 @llvm.coro.suspend(token, i1) #2
 declare ptr @llvm.coro.free(token, ptr nocapture readonly) #1
-declare i1 @llvm.coro.end(ptr, i1, token) #2
+declare i1 @llvm.coro.end(ptr, i1) #2
 declare ptr @llvm.coro.subfn.addr(ptr nocapture readonly, i8) #1
 declare ptr @malloc(i64)
 

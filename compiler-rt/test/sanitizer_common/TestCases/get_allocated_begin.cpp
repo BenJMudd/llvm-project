@@ -25,13 +25,11 @@ int main(void) {
     // does not unpoison it.
     const void *start = NULL;
     for (int j = 0; j < sizes[i]; j++) {
+      printf("j: %d\n", j);
 
       start = __sanitizer_get_allocated_begin(array + j);
-      if (array != start) {
-        printf("j: %d\n", j);
-        printf("Start: %p (expected: %p)\n", start, array);
-        fflush(stdout);
-      }
+      printf("Start: %p (expected: %p)\n", start, array);
+      fflush(stdout);
       assert(array == start);
     }
 

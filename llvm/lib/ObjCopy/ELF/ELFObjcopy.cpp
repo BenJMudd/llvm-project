@@ -52,11 +52,11 @@ using namespace llvm::object;
 using SectionPred = std::function<bool(const SectionBase &Sec)>;
 
 static bool isDebugSection(const SectionBase &Sec) {
-  return StringRef(Sec.Name).starts_with(".debug") || Sec.Name == ".gdb_index";
+  return StringRef(Sec.Name).startswith(".debug") || Sec.Name == ".gdb_index";
 }
 
 static bool isDWOSection(const SectionBase &Sec) {
-  return StringRef(Sec.Name).ends_with(".dwo");
+  return StringRef(Sec.Name).endswith(".dwo");
 }
 
 static bool onlyKeepDWOPred(const Object &Obj, const SectionBase &Sec) {
@@ -68,8 +68,7 @@ static bool onlyKeepDWOPred(const Object &Obj, const SectionBase &Sec) {
   return !isDWOSection(Sec);
 }
 
-static Expected<uint64_t> getNewShfFlags(SectionFlag AllFlags,
-                                         uint16_t EMachine) {
+static uint64_t getNewShfFlags(SectionFlag AllFlags) {
   uint64_t NewFlags = 0;
   if (AllFlags & SectionFlag::SecAlloc)
     NewFlags |= ELF::SHF_ALLOC;
@@ -83,27 +82,18 @@ static Expected<uint64_t> getNewShfFlags(SectionFlag AllFlags,
     NewFlags |= ELF::SHF_STRINGS;
   if (AllFlags & SectionFlag::SecExclude)
     NewFlags |= ELF::SHF_EXCLUDE;
-  if (AllFlags & SectionFlag::SecLarge) {
-    if (EMachine != EM_X86_64)
-      return createStringError(errc::invalid_argument,
-                               "section flag SHF_X86_64_LARGE can only be used "
-                               "with x86_64 architecture");
-    NewFlags |= ELF::SHF_X86_64_LARGE;
-  }
   return NewFlags;
 }
 
 static uint64_t getSectionFlagsPreserveMask(uint64_t OldFlags,
-                                            uint64_t NewFlags,
-                                            uint16_t EMachine) {
+                                            uint64_t NewFlags) {
   // Preserve some flags which should not be dropped when setting flags.
   // Also, preserve anything OS/processor dependant.
   const uint64_t PreserveMask =
       (ELF::SHF_COMPRESSED | ELF::SHF_GROUP | ELF::SHF_LINK_ORDER |
        ELF::SHF_MASKOS | ELF::SHF_MASKPROC | ELF::SHF_TLS |
        ELF::SHF_INFO_LINK) &
-      ~ELF::SHF_EXCLUDE &
-      ~(EMachine == EM_X86_64 ? (uint64_t)ELF::SHF_X86_64_LARGE : 0UL);
+      ~ELF::SHF_EXCLUDE;
   return (OldFlags & PreserveMask) | (NewFlags & ~PreserveMask);
 }
 
@@ -115,12 +105,8 @@ static void setSectionType(SectionBase &Sec, uint64_t Type) {
   Sec.Type = Type;
 }
 
-static Error setSectionFlagsAndType(SectionBase &Sec, SectionFlag Flags,
-                                    uint16_t EMachine) {
-  Expected<uint64_t> NewFlags = getNewShfFlags(Flags, EMachine);
-  if (!NewFlags)
-    return NewFlags.takeError();
-  Sec.Flags = getSectionFlagsPreserveMask(Sec.Flags, *NewFlags, EMachine);
+static void setSectionFlagsAndType(SectionBase &Sec, SectionFlag Flags) {
+  Sec.Flags = getSectionFlagsPreserveMask(Sec.Flags, getNewShfFlags(Flags));
 
   // In GNU objcopy, certain flags promote SHT_NOBITS to SHT_PROGBITS. This rule
   // may promote more non-ALLOC sections than GNU objcopy, but it is fine as
@@ -129,8 +115,6 @@ static Error setSectionFlagsAndType(SectionBase &Sec, SectionFlag Flags,
       (!(Sec.Flags & ELF::SHF_ALLOC) ||
        Flags & (SectionFlag::SecContents | SectionFlag::SecLoad)))
     setSectionType(Sec, ELF::SHT_PROGBITS);
-
-  return Error::success();
 }
 
 static ElfType getOutputElfType(const Binary &Bin) {
@@ -180,11 +164,9 @@ static std::unique_ptr<Writer> createWriter(const CommonConfig &Config,
                                             ElfType OutputElfType) {
   switch (Config.OutputFormat) {
   case FileFormat::Binary:
-    return std::make_unique<BinaryWriter>(Obj, Out, Config);
+    return std::make_unique<BinaryWriter>(Obj, Out);
   case FileFormat::IHex:
-    return std::make_unique<IHexWriter>(Obj, Out, Config.OutputFilename);
-  case FileFormat::SREC:
-    return std::make_unique<SRECWriter>(Obj, Out, Config.OutputFilename);
+    return std::make_unique<IHexWriter>(Obj, Out);
   default:
     return createELFWriter(Config, Obj, Out, OutputElfType);
   }
@@ -214,50 +196,33 @@ static Error dumpSectionToFile(StringRef SecName, StringRef Filename,
                            SecName.str().c_str());
 }
 
-Error Object::compressOrDecompressSections(const CommonConfig &Config) {
-  // Build a list of sections we are going to replace.
-  // We can't call `addSection` while iterating over sections,
+static bool isCompressable(const SectionBase &Sec) {
+  return !(Sec.Flags & ELF::SHF_COMPRESSED) &&
+         StringRef(Sec.Name).startswith(".debug");
+}
+
+static Error replaceDebugSections(
+    Object &Obj, function_ref<bool(const SectionBase &)> ShouldReplace,
+    function_ref<Expected<SectionBase *>(const SectionBase *)> AddSection) {
+  // Build a list of the debug sections we are going to replace.
+  // We can't call `AddSection` while iterating over sections,
   // because it would mutate the sections array.
-  SmallVector<std::pair<SectionBase *, std::function<SectionBase *()>>, 0>
-      ToReplace;
-  for (SectionBase &Sec : sections()) {
-    std::optional<DebugCompressionType> CType;
-    for (auto &[Matcher, T] : Config.compressSections)
-      if (Matcher.matches(Sec.Name))
-        CType = T;
-    // Handle --compress-debug-sections and --decompress-debug-sections, which
-    // apply to non-ALLOC debug sections.
-    if (!(Sec.Flags & SHF_ALLOC) && StringRef(Sec.Name).starts_with(".debug")) {
-      if (Config.CompressionType != DebugCompressionType::None)
-        CType = Config.CompressionType;
-      else if (Config.DecompressDebugSections)
-        CType = DebugCompressionType::None;
-    }
-    if (!CType)
-      continue;
+  SmallVector<SectionBase *, 13> ToReplace;
+  for (auto &Sec : Obj.sections())
+    if (ShouldReplace(Sec))
+      ToReplace.push_back(&Sec);
 
-    if (Sec.ParentSegment)
-      return createStringError(
-          errc::invalid_argument,
-          "section '" + Sec.Name +
-              "' within a segment cannot be (de)compressed");
+  // Build a mapping from original section to a new one.
+  DenseMap<SectionBase *, SectionBase *> FromTo;
+  for (SectionBase *S : ToReplace) {
+    Expected<SectionBase *> NewSection = AddSection(S);
+    if (!NewSection)
+      return NewSection.takeError();
 
-    if (auto *CS = dyn_cast<CompressedSection>(&Sec)) {
-      if (*CType == DebugCompressionType::None)
-        ToReplace.emplace_back(
-            &Sec, [=] { return &addSection<DecompressedSection>(*CS); });
-    } else if (*CType != DebugCompressionType::None) {
-      ToReplace.emplace_back(&Sec, [=, S = &Sec] {
-        return &addSection<CompressedSection>(
-            CompressedSection(*S, *CType, Is64Bits));
-      });
-    }
+    FromTo[S] = *NewSection;
   }
 
-  DenseMap<SectionBase *, SectionBase *> FromTo;
-  for (auto [S, Func] : ToReplace)
-    FromTo[S] = Func();
-  return replaceSections(FromTo);
+  return Obj.replaceSections(FromTo);
 }
 
 static bool isAArch64MappingSymbol(const Symbol &Sym) {
@@ -267,7 +232,7 @@ static bool isAArch64MappingSymbol(const Symbol &Sym) {
   StringRef Name = Sym.Name;
   if (!Name.consume_front("$x") && !Name.consume_front("$d"))
     return false;
-  return Name.empty() || Name.starts_with(".");
+  return Name.empty() || Name.startswith(".");
 }
 
 static bool isArmMappingSymbol(const Symbol &Sym) {
@@ -278,7 +243,7 @@ static bool isArmMappingSymbol(const Symbol &Sym) {
   if (!Name.consume_front("$a") && !Name.consume_front("$d") &&
       !Name.consume_front("$t"))
     return false;
-  return Name.empty() || Name.starts_with(".");
+  return Name.empty() || Name.startswith(".");
 }
 
 // Check if the symbol should be preserved because it is required by ABI.
@@ -309,9 +274,6 @@ static Error updateAndRemoveSymbols(const CommonConfig &Config,
     return Error::success();
 
   Obj.SymbolTable->updateSymbols([&](Symbol &Sym) {
-    if (Config.SymbolsToSkip.matches(Sym.Name))
-      return;
-
     // Common and undefined symbols don't make sense as local symbols, and can
     // even cause crashes if we localize those, so skip them.
     if (!Sym.isCommon() && Sym.getShndx() != SHN_UNDEF &&
@@ -319,10 +281,6 @@ static Error updateAndRemoveSymbols(const CommonConfig &Config,
           (Sym.Visibility == STV_HIDDEN || Sym.Visibility == STV_INTERNAL)) ||
          Config.SymbolsToLocalize.matches(Sym.Name)))
       Sym.Binding = STB_LOCAL;
-
-    for (auto &[Matcher, Visibility] : ELFConfig.SymbolsToSetVisibility)
-      if (Matcher.matches(Sym.Name))
-        Sym.Visibility = Visibility;
 
     // Note: these two globalize flags have very similar names but different
     // meanings:
@@ -354,11 +312,6 @@ static Error updateAndRemoveSymbols(const CommonConfig &Config,
     const auto I = Config.SymbolsToRename.find(Sym.Name);
     if (I != Config.SymbolsToRename.end())
       Sym.Name = std::string(I->getValue());
-
-    if (!Config.SymbolsPrefixRemove.empty() && Sym.Type != STT_SECTION)
-      if (Sym.Name.compare(0, Config.SymbolsPrefixRemove.size(),
-                           Config.SymbolsPrefixRemove) == 0)
-        Sym.Name = Sym.Name.substr(Config.SymbolsPrefixRemove.size());
 
     if (!Config.SymbolsPrefix.empty() && Sym.Type != STT_SECTION)
       Sym.Name = (Config.SymbolsPrefix + Sym.Name).str();
@@ -392,7 +345,7 @@ static Error updateAndRemoveSymbols(const CommonConfig &Config,
 
     if ((Config.DiscardMode == DiscardType::All ||
          (Config.DiscardMode == DiscardType::Locals &&
-          StringRef(Sym.Name).starts_with(".L"))) &&
+          StringRef(Sym.Name).startswith(".L"))) &&
         Sym.Binding == STB_LOCAL && Sym.getShndx() != SHN_UNDEF &&
         Sym.Type != STT_FILE && Sym.Type != STT_SECTION)
       return true;
@@ -479,9 +432,7 @@ static Error replaceAndRemoveSections(const CommonConfig &Config,
         return true;
       if (&Sec == Obj.SectionNames)
         return false;
-      if (StringRef(Sec.Name).starts_with(".gnu.warning"))
-        return false;
-      if (StringRef(Sec.Name).starts_with(".gnu_debuglink"))
+      if (StringRef(Sec.Name).startswith(".gnu.warning"))
         return false;
       // We keep the .ARM.attribute section to maintain compatibility
       // with Debian derived distributions. This is a bug in their
@@ -554,8 +505,24 @@ static Error replaceAndRemoveSections(const CommonConfig &Config,
   if (Error E = Obj.removeSections(ELFConfig.AllowBrokenLinks, RemovePred))
     return E;
 
-  if (Error E = Obj.compressOrDecompressSections(Config))
-    return E;
+  if (Config.CompressionType != DebugCompressionType::None) {
+    if (Error Err = replaceDebugSections(
+            Obj, isCompressable,
+            [&Config, &Obj](const SectionBase *S) -> Expected<SectionBase *> {
+              return &Obj.addSection<CompressedSection>(
+                  CompressedSection(*S, Config.CompressionType, Obj.Is64Bits));
+            }))
+      return Err;
+  } else if (Config.DecompressDebugSections) {
+    if (Error Err = replaceDebugSections(
+            Obj,
+            [](const SectionBase &S) { return isa<CompressedSection>(&S); },
+            [&Obj](const SectionBase *S) {
+              const CompressedSection *CS = cast<CompressedSection>(S);
+              return &Obj.addSection<DecompressedSection>(*CS);
+            }))
+      return Err;
+  }
 
   return Error::success();
 }
@@ -679,7 +646,7 @@ static Error handleArgs(const CommonConfig &Config, const ELFConfig &ELFConfig,
     auto AddSection = [&](StringRef Name, ArrayRef<uint8_t> Data) {
       OwnedDataSection &NewSection =
           Obj.addSection<OwnedDataSection>(Name, Data);
-      if (Name.starts_with(".note") && Name != ".note.GNU-stack")
+      if (Name.startswith(".note") && Name != ".note.GNU-stack")
         NewSection.Type = SHT_NOTE;
       return Error::success();
     };
@@ -714,8 +681,7 @@ static Error handleArgs(const CommonConfig &Config, const ELFConfig &ELFConfig,
       const auto Iter = Config.SetSectionFlags.find(Sec.Name);
       if (Iter != Config.SetSectionFlags.end()) {
         const SectionFlagsUpdate &SFU = Iter->second;
-        if (Error E = setSectionFlagsAndType(Sec, SFU.NewFlags, Obj.Machine))
-          return E;
+        setSectionFlagsAndType(Sec, SFU.NewFlags);
       }
       auto It2 = Config.SetSectionType.find(Sec.Name);
       if (It2 != Config.SetSectionType.end())
@@ -732,10 +698,8 @@ static Error handleArgs(const CommonConfig &Config, const ELFConfig &ELFConfig,
       if (Iter != Config.SectionsToRename.end()) {
         const SectionRename &SR = Iter->second;
         Sec.Name = std::string(SR.NewName);
-        if (SR.NewFlags) {
-          if (Error E = setSectionFlagsAndType(Sec, *SR.NewFlags, Obj.Machine))
-            return E;
-        }
+        if (SR.NewFlags)
+          setSectionFlagsAndType(Sec, *SR.NewFlags);
         RenamedSections.insert(&Sec);
       } else if (RelocSec && !(Sec.Flags & SHF_ALLOC))
         // Postpone processing relocation sections which are not specified in

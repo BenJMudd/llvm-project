@@ -37,9 +37,9 @@ protected:
     PMI_Min = PMI_GPR32,
   };
 
-  static const RegisterBankInfo::PartialMapping PartMappings[];
-  static const RegisterBankInfo::ValueMapping ValMappings[];
-  static const PartialMappingIdx BankIDToCopyMapIdx[];
+  static RegisterBankInfo::PartialMapping PartMappings[];
+  static RegisterBankInfo::ValueMapping ValMappings[];
+  static PartialMappingIdx BankIDToCopyMapIdx[];
 
   /// Get the pointer to the ValueMapping representing the RegisterBank
   /// at \p RBIdx.

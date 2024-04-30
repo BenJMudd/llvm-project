@@ -167,8 +167,6 @@ public:
 
   bool GetEnableSyntheticValue() const;
 
-  bool ShowHexVariableValuesWithLeadingZeroes() const;
-
   uint32_t GetMaxZeroPaddingInFloatFormat() const;
 
   uint32_t GetMaximumNumberOfChildrenToDisplay() const;
@@ -200,7 +198,7 @@ public:
 
   bool GetBreakpointsConsultPlatformAvoidList();
 
-  SourceLanguage GetLanguage() const;
+  lldb::LanguageType GetLanguage() const;
 
   llvm::StringRef GetExpressionPrefixContents();
 
@@ -244,6 +242,8 @@ public:
 
   bool GetInjectLocalVariables(ExecutionContext *exe_ctx) const;
 
+  void SetInjectLocalVariables(ExecutionContext *exe_ctx, bool b);
+
   void SetRequireHardwareBreakpoints(bool b);
 
   bool GetRequireHardwareBreakpoints() const;
@@ -257,10 +257,6 @@ public:
   bool GetDebugUtilityExpression() const;
 
 private:
-  std::optional<bool>
-  GetExperimentalPropertyValue(size_t prop_idx,
-                               ExecutionContext *exe_ctx = nullptr) const;
-
   // Callbacks for m_launch_info.
   void Arg0ValueChangedCallback();
   void RunArgsValueChangedCallback();
@@ -310,18 +306,9 @@ public:
     m_execution_policy = policy;
   }
 
-  SourceLanguage GetLanguage() const { return m_language; }
+  lldb::LanguageType GetLanguage() const { return m_language; }
 
-  void SetLanguage(lldb::LanguageType language_type) {
-    m_language = SourceLanguage(language_type);
-  }
-
-  /// Set the language using a pair of language code and version as
-  /// defined by the DWARF 6 specification.
-  /// WARNING: These codes may change until DWARF 6 is finalized.
-  void SetLanguage(uint16_t name, uint32_t version) {
-    m_language = SourceLanguage(name, version);
-  }
+  void SetLanguage(lldb::LanguageType language) { m_language = language; }
 
   bool DoesCoerceToId() const { return m_coerce_to_id; }
 
@@ -454,7 +441,7 @@ public:
 
 private:
   ExecutionPolicy m_execution_policy = default_execution_policy;
-  SourceLanguage m_language;
+  lldb::LanguageType m_language = lldb::eLanguageTypeUnknown;
   std::string m_prefix;
   bool m_coerce_to_id = false;
   bool m_unwind_on_error = true;
@@ -508,9 +495,9 @@ public:
 
   // These two functions fill out the Broadcaster interface:
 
-  static llvm::StringRef GetStaticBroadcasterClass();
+  static ConstString &GetStaticBroadcasterClass();
 
-  llvm::StringRef GetBroadcasterClass() const override {
+  ConstString &GetBroadcasterClass() const override {
     return GetStaticBroadcasterClass();
   }
 
@@ -665,8 +652,6 @@ public:
 
   lldb::BreakpointSP GetBreakpointByID(lldb::break_id_t break_id);
 
-  lldb::BreakpointSP CreateBreakpointAtUserEntry(Status &error);
-
   // Use this to create a file and line breakpoint to a given module or all
   // module it is nullptr
   lldb::BreakpointSP CreateBreakpoint(const FileSpecList *containingModules,
@@ -694,7 +679,7 @@ public:
   // Use this to create a breakpoint from a load address and a module file spec
   lldb::BreakpointSP CreateAddressInModuleBreakpoint(lldb::addr_t file_addr,
                                                      bool internal,
-                                                     const FileSpec &file_spec,
+                                                     const FileSpec *file_spec,
                                                      bool request_hardware);
 
   // Use this to create Address breakpoints:
@@ -774,10 +759,9 @@ public:
   WatchpointList &GetWatchpointList() { return m_watchpoint_list; }
 
   // Manages breakpoint names:
-  void AddNameToBreakpoint(BreakpointID &id, llvm::StringRef name,
-                           Status &error);
+  void AddNameToBreakpoint(BreakpointID &id, const char *name, Status &error);
 
-  void AddNameToBreakpoint(lldb::BreakpointSP &bp_sp, llvm::StringRef name,
+  void AddNameToBreakpoint(lldb::BreakpointSP &bp_sp, const char *name,
                            Status &error);
 
   void RemoveNameFromBreakpoint(lldb::BreakpointSP &bp_sp, ConstString name);
@@ -1169,7 +1153,7 @@ public:
 
   UserExpression *
   GetUserExpressionForLanguage(llvm::StringRef expr, llvm::StringRef prefix,
-                               SourceLanguage language,
+                               lldb::LanguageType language,
                                Expression::ResultType desired_type,
                                const EvaluateExpressionOptions &options,
                                ValueObject *ctx_obj, Status &error);
@@ -1610,8 +1594,7 @@ public:
   ///
   /// \return
   ///     Returns a JSON value that contains all target metrics.
-  llvm::json::Value
-  ReportStatistics(const lldb_private::StatisticsOptions &options);
+  llvm::json::Value ReportStatistics();
 
   TargetStats &GetStatistics() { return m_stats; }
 
@@ -1642,6 +1625,12 @@ private:
 
   Target(const Target &) = delete;
   const Target &operator=(const Target &) = delete;
+
+private:
+  void CallLocateModuleCallbackIfSet(const ModuleSpec &module_spec,
+                                     lldb::ModuleSP &module_sp,
+                                     FileSpec &symbol_file_spec,
+                                     bool &did_create_module);
 };
 
 } // namespace lldb_private

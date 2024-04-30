@@ -17,7 +17,6 @@ define amdgpu_kernel void @i8_arg(ptr addrspace(1) nocapture %out, i8 %in) nounw
   ; HSA-VI-NEXT:   [[ZEXT:%[0-9]+]]:_(s32) = G_ZEXT [[LOAD1]](s8)
   ; HSA-VI-NEXT:   G_STORE [[ZEXT]](s32), [[LOAD]](p1) :: (store (s32) into %ir.out, addrspace 1)
   ; HSA-VI-NEXT:   S_ENDPGM 0
-  ;
   ; LEGACY-MESA-VI-LABEL: name: i8_arg
   ; LEGACY-MESA-VI: bb.1 (%ir-block.0):
   ; LEGACY-MESA-VI-NEXT:   liveins: $sgpr0_sgpr1
@@ -52,7 +51,6 @@ define amdgpu_kernel void @i8_zext_arg(ptr addrspace(1) nocapture %out, i8 zeroe
   ; HSA-VI-NEXT:   [[ZEXT:%[0-9]+]]:_(s32) = G_ZEXT [[LOAD1]](s8)
   ; HSA-VI-NEXT:   G_STORE [[ZEXT]](s32), [[LOAD]](p1) :: (store (s32) into %ir.out, addrspace 1)
   ; HSA-VI-NEXT:   S_ENDPGM 0
-  ;
   ; LEGACY-MESA-VI-LABEL: name: i8_zext_arg
   ; LEGACY-MESA-VI: bb.1 (%ir-block.0):
   ; LEGACY-MESA-VI-NEXT:   liveins: $sgpr0_sgpr1
@@ -87,7 +85,6 @@ define amdgpu_kernel void @i8_sext_arg(ptr addrspace(1) nocapture %out, i8 signe
   ; HSA-VI-NEXT:   [[SEXT:%[0-9]+]]:_(s32) = G_SEXT [[LOAD1]](s8)
   ; HSA-VI-NEXT:   G_STORE [[SEXT]](s32), [[LOAD]](p1) :: (store (s32) into %ir.out, addrspace 1)
   ; HSA-VI-NEXT:   S_ENDPGM 0
-  ;
   ; LEGACY-MESA-VI-LABEL: name: i8_sext_arg
   ; LEGACY-MESA-VI: bb.1 (%ir-block.0):
   ; LEGACY-MESA-VI-NEXT:   liveins: $sgpr0_sgpr1
@@ -122,7 +119,6 @@ define amdgpu_kernel void @i16_arg(ptr addrspace(1) nocapture %out, i16 %in) nou
   ; HSA-VI-NEXT:   [[ZEXT:%[0-9]+]]:_(s32) = G_ZEXT [[LOAD1]](s16)
   ; HSA-VI-NEXT:   G_STORE [[ZEXT]](s32), [[LOAD]](p1) :: (store (s32) into %ir.out, addrspace 1)
   ; HSA-VI-NEXT:   S_ENDPGM 0
-  ;
   ; LEGACY-MESA-VI-LABEL: name: i16_arg
   ; LEGACY-MESA-VI: bb.1 (%ir-block.0):
   ; LEGACY-MESA-VI-NEXT:   liveins: $sgpr0_sgpr1
@@ -157,7 +153,6 @@ define amdgpu_kernel void @i16_zext_arg(ptr addrspace(1) nocapture %out, i16 zer
   ; HSA-VI-NEXT:   [[ZEXT:%[0-9]+]]:_(s32) = G_ZEXT [[LOAD1]](s16)
   ; HSA-VI-NEXT:   G_STORE [[ZEXT]](s32), [[LOAD]](p1) :: (store (s32) into %ir.out, addrspace 1)
   ; HSA-VI-NEXT:   S_ENDPGM 0
-  ;
   ; LEGACY-MESA-VI-LABEL: name: i16_zext_arg
   ; LEGACY-MESA-VI: bb.1 (%ir-block.0):
   ; LEGACY-MESA-VI-NEXT:   liveins: $sgpr0_sgpr1
@@ -192,7 +187,6 @@ define amdgpu_kernel void @i16_sext_arg(ptr addrspace(1) nocapture %out, i16 sig
   ; HSA-VI-NEXT:   [[SEXT:%[0-9]+]]:_(s32) = G_SEXT [[LOAD1]](s16)
   ; HSA-VI-NEXT:   G_STORE [[SEXT]](s32), [[LOAD]](p1) :: (store (s32) into %ir.out, addrspace 1)
   ; HSA-VI-NEXT:   S_ENDPGM 0
-  ;
   ; LEGACY-MESA-VI-LABEL: name: i16_sext_arg
   ; LEGACY-MESA-VI: bb.1 (%ir-block.0):
   ; LEGACY-MESA-VI-NEXT:   liveins: $sgpr0_sgpr1
@@ -226,7 +220,6 @@ define amdgpu_kernel void @i32_arg(ptr addrspace(1) nocapture %out, i32 %in) nou
   ; HSA-VI-NEXT:   [[LOAD1:%[0-9]+]]:_(s32) = G_LOAD [[PTR_ADD1]](p4) :: (dereferenceable invariant load (s32), align 8, addrspace 4)
   ; HSA-VI-NEXT:   G_STORE [[LOAD1]](s32), [[LOAD]](p1) :: (store (s32) into %ir.out, addrspace 1)
   ; HSA-VI-NEXT:   S_ENDPGM 0
-  ;
   ; LEGACY-MESA-VI-LABEL: name: i32_arg
   ; LEGACY-MESA-VI: bb.1.entry:
   ; LEGACY-MESA-VI-NEXT:   liveins: $sgpr0_sgpr1
@@ -259,7 +252,6 @@ define amdgpu_kernel void @f32_arg(ptr addrspace(1) nocapture %out, float %in) n
   ; HSA-VI-NEXT:   [[LOAD1:%[0-9]+]]:_(s32) = G_LOAD [[PTR_ADD1]](p4) :: (dereferenceable invariant load (s32), align 8, addrspace 4)
   ; HSA-VI-NEXT:   G_STORE [[LOAD1]](s32), [[LOAD]](p1) :: (store (s32) into %ir.out, addrspace 1)
   ; HSA-VI-NEXT:   S_ENDPGM 0
-  ;
   ; LEGACY-MESA-VI-LABEL: name: f32_arg
   ; LEGACY-MESA-VI: bb.1.entry:
   ; LEGACY-MESA-VI-NEXT:   liveins: $sgpr0_sgpr1
@@ -292,7 +284,6 @@ define amdgpu_kernel void @v2i8_arg(ptr addrspace(1) %out, <2 x i8> %in) {
   ; HSA-VI-NEXT:   [[LOAD1:%[0-9]+]]:_(<2 x s8>) = G_LOAD [[PTR_ADD1]](p4) :: (dereferenceable invariant load (<2 x s8>), align 8, addrspace 4)
   ; HSA-VI-NEXT:   G_STORE [[LOAD1]](<2 x s8>), [[LOAD]](p1) :: (store (<2 x s8>) into %ir.out, addrspace 1)
   ; HSA-VI-NEXT:   S_ENDPGM 0
-  ;
   ; LEGACY-MESA-VI-LABEL: name: v2i8_arg
   ; LEGACY-MESA-VI: bb.1.entry:
   ; LEGACY-MESA-VI-NEXT:   liveins: $sgpr0_sgpr1
@@ -325,7 +316,6 @@ define amdgpu_kernel void @v2i16_arg(ptr addrspace(1) %out, <2 x i16> %in) {
   ; HSA-VI-NEXT:   [[LOAD1:%[0-9]+]]:_(<2 x s16>) = G_LOAD [[PTR_ADD1]](p4) :: (dereferenceable invariant load (<2 x s16>), align 8, addrspace 4)
   ; HSA-VI-NEXT:   G_STORE [[LOAD1]](<2 x s16>), [[LOAD]](p1) :: (store (<2 x s16>) into %ir.out, addrspace 1)
   ; HSA-VI-NEXT:   S_ENDPGM 0
-  ;
   ; LEGACY-MESA-VI-LABEL: name: v2i16_arg
   ; LEGACY-MESA-VI: bb.1.entry:
   ; LEGACY-MESA-VI-NEXT:   liveins: $sgpr0_sgpr1
@@ -358,7 +348,6 @@ define amdgpu_kernel void @v2i32_arg(ptr addrspace(1) nocapture %out, <2 x i32> 
   ; HSA-VI-NEXT:   [[LOAD1:%[0-9]+]]:_(<2 x s32>) = G_LOAD [[PTR_ADD1]](p4) :: (dereferenceable invariant load (<2 x s32>), addrspace 4)
   ; HSA-VI-NEXT:   G_STORE [[LOAD1]](<2 x s32>), [[LOAD]](p1) :: (store (<2 x s32>) into %ir.out, align 4, addrspace 1)
   ; HSA-VI-NEXT:   S_ENDPGM 0
-  ;
   ; LEGACY-MESA-VI-LABEL: name: v2i32_arg
   ; LEGACY-MESA-VI: bb.1.entry:
   ; LEGACY-MESA-VI-NEXT:   liveins: $sgpr0_sgpr1
@@ -391,7 +380,6 @@ define amdgpu_kernel void @v2f32_arg(ptr addrspace(1) nocapture %out, <2 x float
   ; HSA-VI-NEXT:   [[LOAD1:%[0-9]+]]:_(<2 x s32>) = G_LOAD [[PTR_ADD1]](p4) :: (dereferenceable invariant load (<2 x s32>), addrspace 4)
   ; HSA-VI-NEXT:   G_STORE [[LOAD1]](<2 x s32>), [[LOAD]](p1) :: (store (<2 x s32>) into %ir.out, align 4, addrspace 1)
   ; HSA-VI-NEXT:   S_ENDPGM 0
-  ;
   ; LEGACY-MESA-VI-LABEL: name: v2f32_arg
   ; LEGACY-MESA-VI: bb.1.entry:
   ; LEGACY-MESA-VI-NEXT:   liveins: $sgpr0_sgpr1
@@ -424,7 +412,6 @@ define amdgpu_kernel void @v3i8_arg(ptr addrspace(1) nocapture %out, <3 x i8> %i
   ; HSA-VI-NEXT:   [[LOAD1:%[0-9]+]]:_(<3 x s8>) = G_LOAD [[PTR_ADD1]](p4) :: (dereferenceable invariant load (<3 x s8>), align 8, addrspace 4)
   ; HSA-VI-NEXT:   G_STORE [[LOAD1]](<3 x s8>), [[LOAD]](p1) :: (store (<3 x s8>) into %ir.out, align 4, addrspace 1)
   ; HSA-VI-NEXT:   S_ENDPGM 0
-  ;
   ; LEGACY-MESA-VI-LABEL: name: v3i8_arg
   ; LEGACY-MESA-VI: bb.1.entry:
   ; LEGACY-MESA-VI-NEXT:   liveins: $sgpr0_sgpr1
@@ -457,7 +444,6 @@ define amdgpu_kernel void @v3i16_arg(ptr addrspace(1) nocapture %out, <3 x i16> 
   ; HSA-VI-NEXT:   [[LOAD1:%[0-9]+]]:_(<3 x s16>) = G_LOAD [[PTR_ADD1]](p4) :: (dereferenceable invariant load (<3 x s16>), align 8, addrspace 4)
   ; HSA-VI-NEXT:   G_STORE [[LOAD1]](<3 x s16>), [[LOAD]](p1) :: (store (<3 x s16>) into %ir.out, align 4, addrspace 1)
   ; HSA-VI-NEXT:   S_ENDPGM 0
-  ;
   ; LEGACY-MESA-VI-LABEL: name: v3i16_arg
   ; LEGACY-MESA-VI: bb.1.entry:
   ; LEGACY-MESA-VI-NEXT:   liveins: $sgpr0_sgpr1
@@ -490,7 +476,6 @@ define amdgpu_kernel void @v3i32_arg(ptr addrspace(1) nocapture %out, <3 x i32> 
   ; HSA-VI-NEXT:   [[LOAD1:%[0-9]+]]:_(<3 x s32>) = G_LOAD [[PTR_ADD1]](p4) :: (dereferenceable invariant load (<3 x s32>), align 16, addrspace 4)
   ; HSA-VI-NEXT:   G_STORE [[LOAD1]](<3 x s32>), [[LOAD]](p1) :: (store (<3 x s32>) into %ir.out, align 4, addrspace 1)
   ; HSA-VI-NEXT:   S_ENDPGM 0
-  ;
   ; LEGACY-MESA-VI-LABEL: name: v3i32_arg
   ; LEGACY-MESA-VI: bb.1.entry:
   ; LEGACY-MESA-VI-NEXT:   liveins: $sgpr0_sgpr1
@@ -523,7 +508,6 @@ define amdgpu_kernel void @v3f32_arg(ptr addrspace(1) nocapture %out, <3 x float
   ; HSA-VI-NEXT:   [[LOAD1:%[0-9]+]]:_(<3 x s32>) = G_LOAD [[PTR_ADD1]](p4) :: (dereferenceable invariant load (<3 x s32>), align 16, addrspace 4)
   ; HSA-VI-NEXT:   G_STORE [[LOAD1]](<3 x s32>), [[LOAD]](p1) :: (store (<3 x s32>) into %ir.out, align 4, addrspace 1)
   ; HSA-VI-NEXT:   S_ENDPGM 0
-  ;
   ; LEGACY-MESA-VI-LABEL: name: v3f32_arg
   ; LEGACY-MESA-VI: bb.1.entry:
   ; LEGACY-MESA-VI-NEXT:   liveins: $sgpr0_sgpr1
@@ -556,7 +540,6 @@ define amdgpu_kernel void @v4i8_arg(ptr addrspace(1) %out, <4 x i8> %in) {
   ; HSA-VI-NEXT:   [[LOAD1:%[0-9]+]]:_(<4 x s8>) = G_LOAD [[PTR_ADD1]](p4) :: (dereferenceable invariant load (<4 x s8>), align 8, addrspace 4)
   ; HSA-VI-NEXT:   G_STORE [[LOAD1]](<4 x s8>), [[LOAD]](p1) :: (store (<4 x s8>) into %ir.out, addrspace 1)
   ; HSA-VI-NEXT:   S_ENDPGM 0
-  ;
   ; LEGACY-MESA-VI-LABEL: name: v4i8_arg
   ; LEGACY-MESA-VI: bb.1.entry:
   ; LEGACY-MESA-VI-NEXT:   liveins: $sgpr0_sgpr1
@@ -589,7 +572,6 @@ define amdgpu_kernel void @v4i16_arg(ptr addrspace(1) %out, <4 x i16> %in) {
   ; HSA-VI-NEXT:   [[LOAD1:%[0-9]+]]:_(<4 x s16>) = G_LOAD [[PTR_ADD1]](p4) :: (dereferenceable invariant load (<4 x s16>), addrspace 4)
   ; HSA-VI-NEXT:   G_STORE [[LOAD1]](<4 x s16>), [[LOAD]](p1) :: (store (<4 x s16>) into %ir.out, addrspace 1)
   ; HSA-VI-NEXT:   S_ENDPGM 0
-  ;
   ; LEGACY-MESA-VI-LABEL: name: v4i16_arg
   ; LEGACY-MESA-VI: bb.1.entry:
   ; LEGACY-MESA-VI-NEXT:   liveins: $sgpr0_sgpr1
@@ -622,7 +604,6 @@ define amdgpu_kernel void @v4i32_arg(ptr addrspace(1) nocapture %out, <4 x i32> 
   ; HSA-VI-NEXT:   [[LOAD1:%[0-9]+]]:_(<4 x s32>) = G_LOAD [[PTR_ADD1]](p4) :: (dereferenceable invariant load (<4 x s32>), addrspace 4)
   ; HSA-VI-NEXT:   G_STORE [[LOAD1]](<4 x s32>), [[LOAD]](p1) :: (store (<4 x s32>) into %ir.out, align 4, addrspace 1)
   ; HSA-VI-NEXT:   S_ENDPGM 0
-  ;
   ; LEGACY-MESA-VI-LABEL: name: v4i32_arg
   ; LEGACY-MESA-VI: bb.1.entry:
   ; LEGACY-MESA-VI-NEXT:   liveins: $sgpr0_sgpr1
@@ -655,7 +636,6 @@ define amdgpu_kernel void @v4f32_arg(ptr addrspace(1) nocapture %out, <4 x float
   ; HSA-VI-NEXT:   [[LOAD1:%[0-9]+]]:_(<4 x s32>) = G_LOAD [[PTR_ADD1]](p4) :: (dereferenceable invariant load (<4 x s32>), addrspace 4)
   ; HSA-VI-NEXT:   G_STORE [[LOAD1]](<4 x s32>), [[LOAD]](p1) :: (store (<4 x s32>) into %ir.out, align 4, addrspace 1)
   ; HSA-VI-NEXT:   S_ENDPGM 0
-  ;
   ; LEGACY-MESA-VI-LABEL: name: v4f32_arg
   ; LEGACY-MESA-VI: bb.1.entry:
   ; LEGACY-MESA-VI-NEXT:   liveins: $sgpr0_sgpr1
@@ -688,7 +668,6 @@ define amdgpu_kernel void @v8i8_arg(ptr addrspace(1) %out, <8 x i8> %in) {
   ; HSA-VI-NEXT:   [[LOAD1:%[0-9]+]]:_(<8 x s8>) = G_LOAD [[PTR_ADD1]](p4) :: (dereferenceable invariant load (<8 x s8>), addrspace 4)
   ; HSA-VI-NEXT:   G_STORE [[LOAD1]](<8 x s8>), [[LOAD]](p1) :: (store (<8 x s8>) into %ir.out, addrspace 1)
   ; HSA-VI-NEXT:   S_ENDPGM 0
-  ;
   ; LEGACY-MESA-VI-LABEL: name: v8i8_arg
   ; LEGACY-MESA-VI: bb.1.entry:
   ; LEGACY-MESA-VI-NEXT:   liveins: $sgpr0_sgpr1
@@ -721,7 +700,6 @@ define amdgpu_kernel void @v8i16_arg(ptr addrspace(1) %out, <8 x i16> %in) {
   ; HSA-VI-NEXT:   [[LOAD1:%[0-9]+]]:_(<8 x s16>) = G_LOAD [[PTR_ADD1]](p4) :: (dereferenceable invariant load (<8 x s16>), addrspace 4)
   ; HSA-VI-NEXT:   G_STORE [[LOAD1]](<8 x s16>), [[LOAD]](p1) :: (store (<8 x s16>) into %ir.out, addrspace 1)
   ; HSA-VI-NEXT:   S_ENDPGM 0
-  ;
   ; LEGACY-MESA-VI-LABEL: name: v8i16_arg
   ; LEGACY-MESA-VI: bb.1.entry:
   ; LEGACY-MESA-VI-NEXT:   liveins: $sgpr0_sgpr1
@@ -754,7 +732,6 @@ define amdgpu_kernel void @v8i32_arg(ptr addrspace(1) nocapture %out, <8 x i32> 
   ; HSA-VI-NEXT:   [[LOAD1:%[0-9]+]]:_(<8 x s32>) = G_LOAD [[PTR_ADD1]](p4) :: (dereferenceable invariant load (<8 x s32>), align 16, addrspace 4)
   ; HSA-VI-NEXT:   G_STORE [[LOAD1]](<8 x s32>), [[LOAD]](p1) :: (store (<8 x s32>) into %ir.out, align 4, addrspace 1)
   ; HSA-VI-NEXT:   S_ENDPGM 0
-  ;
   ; LEGACY-MESA-VI-LABEL: name: v8i32_arg
   ; LEGACY-MESA-VI: bb.1.entry:
   ; LEGACY-MESA-VI-NEXT:   liveins: $sgpr0_sgpr1
@@ -787,7 +764,6 @@ define amdgpu_kernel void @v8f32_arg(ptr addrspace(1) nocapture %out, <8 x float
   ; HSA-VI-NEXT:   [[LOAD1:%[0-9]+]]:_(<8 x s32>) = G_LOAD [[PTR_ADD1]](p4) :: (dereferenceable invariant load (<8 x s32>), align 16, addrspace 4)
   ; HSA-VI-NEXT:   G_STORE [[LOAD1]](<8 x s32>), [[LOAD]](p1) :: (store (<8 x s32>) into %ir.out, align 4, addrspace 1)
   ; HSA-VI-NEXT:   S_ENDPGM 0
-  ;
   ; LEGACY-MESA-VI-LABEL: name: v8f32_arg
   ; LEGACY-MESA-VI: bb.1.entry:
   ; LEGACY-MESA-VI-NEXT:   liveins: $sgpr0_sgpr1
@@ -820,7 +796,6 @@ define amdgpu_kernel void @v16i8_arg(ptr addrspace(1) %out, <16 x i8> %in) {
   ; HSA-VI-NEXT:   [[LOAD1:%[0-9]+]]:_(<16 x s8>) = G_LOAD [[PTR_ADD1]](p4) :: (dereferenceable invariant load (<16 x s8>), addrspace 4)
   ; HSA-VI-NEXT:   G_STORE [[LOAD1]](<16 x s8>), [[LOAD]](p1) :: (store (<16 x s8>) into %ir.out, addrspace 1)
   ; HSA-VI-NEXT:   S_ENDPGM 0
-  ;
   ; LEGACY-MESA-VI-LABEL: name: v16i8_arg
   ; LEGACY-MESA-VI: bb.1.entry:
   ; LEGACY-MESA-VI-NEXT:   liveins: $sgpr0_sgpr1
@@ -853,7 +828,6 @@ define amdgpu_kernel void @v16i16_arg(ptr addrspace(1) %out, <16 x i16> %in) {
   ; HSA-VI-NEXT:   [[LOAD1:%[0-9]+]]:_(<16 x s16>) = G_LOAD [[PTR_ADD1]](p4) :: (dereferenceable invariant load (<16 x s16>), align 16, addrspace 4)
   ; HSA-VI-NEXT:   G_STORE [[LOAD1]](<16 x s16>), [[LOAD]](p1) :: (store (<16 x s16>) into %ir.out, addrspace 1)
   ; HSA-VI-NEXT:   S_ENDPGM 0
-  ;
   ; LEGACY-MESA-VI-LABEL: name: v16i16_arg
   ; LEGACY-MESA-VI: bb.1.entry:
   ; LEGACY-MESA-VI-NEXT:   liveins: $sgpr0_sgpr1
@@ -886,7 +860,6 @@ define amdgpu_kernel void @v16i32_arg(ptr addrspace(1) nocapture %out, <16 x i32
   ; HSA-VI-NEXT:   [[LOAD1:%[0-9]+]]:_(<16 x s32>) = G_LOAD [[PTR_ADD1]](p4) :: (dereferenceable invariant load (<16 x s32>), align 16, addrspace 4)
   ; HSA-VI-NEXT:   G_STORE [[LOAD1]](<16 x s32>), [[LOAD]](p1) :: (store (<16 x s32>) into %ir.out, align 4, addrspace 1)
   ; HSA-VI-NEXT:   S_ENDPGM 0
-  ;
   ; LEGACY-MESA-VI-LABEL: name: v16i32_arg
   ; LEGACY-MESA-VI: bb.1.entry:
   ; LEGACY-MESA-VI-NEXT:   liveins: $sgpr0_sgpr1
@@ -919,7 +892,6 @@ define amdgpu_kernel void @v16f32_arg(ptr addrspace(1) nocapture %out, <16 x flo
   ; HSA-VI-NEXT:   [[LOAD1:%[0-9]+]]:_(<16 x s32>) = G_LOAD [[PTR_ADD1]](p4) :: (dereferenceable invariant load (<16 x s32>), align 16, addrspace 4)
   ; HSA-VI-NEXT:   G_STORE [[LOAD1]](<16 x s32>), [[LOAD]](p1) :: (store (<16 x s32>) into %ir.out, align 4, addrspace 1)
   ; HSA-VI-NEXT:   S_ENDPGM 0
-  ;
   ; LEGACY-MESA-VI-LABEL: name: v16f32_arg
   ; LEGACY-MESA-VI: bb.1.entry:
   ; LEGACY-MESA-VI-NEXT:   liveins: $sgpr0_sgpr1
@@ -952,7 +924,6 @@ define amdgpu_kernel void @kernel_arg_i64(ptr addrspace(1) %out, i64 %a) nounwin
   ; HSA-VI-NEXT:   [[LOAD1:%[0-9]+]]:_(s64) = G_LOAD [[PTR_ADD1]](p4) :: (dereferenceable invariant load (s64), addrspace 4)
   ; HSA-VI-NEXT:   G_STORE [[LOAD1]](s64), [[LOAD]](p1) :: (store (s64) into %ir.out, addrspace 1)
   ; HSA-VI-NEXT:   S_ENDPGM 0
-  ;
   ; LEGACY-MESA-VI-LABEL: name: kernel_arg_i64
   ; LEGACY-MESA-VI: bb.1 (%ir-block.0):
   ; LEGACY-MESA-VI-NEXT:   liveins: $sgpr0_sgpr1
@@ -984,7 +955,6 @@ define amdgpu_kernel void @f64_kernel_arg(ptr addrspace(1) %out, double  %in) {
   ; HSA-VI-NEXT:   [[LOAD1:%[0-9]+]]:_(s64) = G_LOAD [[PTR_ADD1]](p4) :: (dereferenceable invariant load (s64), addrspace 4)
   ; HSA-VI-NEXT:   G_STORE [[LOAD1]](s64), [[LOAD]](p1) :: (store (s64) into %ir.out, addrspace 1)
   ; HSA-VI-NEXT:   S_ENDPGM 0
-  ;
   ; LEGACY-MESA-VI-LABEL: name: f64_kernel_arg
   ; LEGACY-MESA-VI: bb.1.entry:
   ; LEGACY-MESA-VI-NEXT:   liveins: $sgpr0_sgpr1
@@ -1017,7 +987,6 @@ define amdgpu_kernel void @i1_arg(ptr addrspace(1) %out, i1 %x) nounwind {
   ; HSA-VI-NEXT:   [[LOAD1:%[0-9]+]]:_(s1) = G_LOAD [[PTR_ADD1]](p4) :: (dereferenceable invariant load (s1), align 8, addrspace 4)
   ; HSA-VI-NEXT:   G_STORE [[LOAD1]](s1), [[LOAD]](p1) :: (store (s1) into %ir.out, addrspace 1)
   ; HSA-VI-NEXT:   S_ENDPGM 0
-  ;
   ; LEGACY-MESA-VI-LABEL: name: i1_arg
   ; LEGACY-MESA-VI: bb.1 (%ir-block.0):
   ; LEGACY-MESA-VI-NEXT:   liveins: $sgpr0_sgpr1
@@ -1050,7 +1019,6 @@ define amdgpu_kernel void @i1_arg_zext_i32(ptr addrspace(1) %out, i1 %x) nounwin
   ; HSA-VI-NEXT:   [[ZEXT:%[0-9]+]]:_(s32) = G_ZEXT [[LOAD1]](s1)
   ; HSA-VI-NEXT:   G_STORE [[ZEXT]](s32), [[LOAD]](p1) :: (store (s32) into %ir.out, addrspace 1)
   ; HSA-VI-NEXT:   S_ENDPGM 0
-  ;
   ; LEGACY-MESA-VI-LABEL: name: i1_arg_zext_i32
   ; LEGACY-MESA-VI: bb.1 (%ir-block.0):
   ; LEGACY-MESA-VI-NEXT:   liveins: $sgpr0_sgpr1
@@ -1085,7 +1053,6 @@ define amdgpu_kernel void @i1_arg_zext_i64(ptr addrspace(1) %out, i1 %x) nounwin
   ; HSA-VI-NEXT:   [[ZEXT:%[0-9]+]]:_(s64) = G_ZEXT [[LOAD1]](s1)
   ; HSA-VI-NEXT:   G_STORE [[ZEXT]](s64), [[LOAD]](p1) :: (store (s64) into %ir.out, addrspace 1)
   ; HSA-VI-NEXT:   S_ENDPGM 0
-  ;
   ; LEGACY-MESA-VI-LABEL: name: i1_arg_zext_i64
   ; LEGACY-MESA-VI: bb.1 (%ir-block.0):
   ; LEGACY-MESA-VI-NEXT:   liveins: $sgpr0_sgpr1
@@ -1120,7 +1087,6 @@ define amdgpu_kernel void @i1_arg_sext_i32(ptr addrspace(1) %out, i1 %x) nounwin
   ; HSA-VI-NEXT:   [[SEXT:%[0-9]+]]:_(s32) = G_SEXT [[LOAD1]](s1)
   ; HSA-VI-NEXT:   G_STORE [[SEXT]](s32), [[LOAD]](p1) :: (store (s32) into %ir.out, addrspace 1)
   ; HSA-VI-NEXT:   S_ENDPGM 0
-  ;
   ; LEGACY-MESA-VI-LABEL: name: i1_arg_sext_i32
   ; LEGACY-MESA-VI: bb.1 (%ir-block.0):
   ; LEGACY-MESA-VI-NEXT:   liveins: $sgpr0_sgpr1
@@ -1155,7 +1121,6 @@ define amdgpu_kernel void @i1_arg_sext_i64(ptr addrspace(1) %out, i1 %x) nounwin
   ; HSA-VI-NEXT:   [[SEXT:%[0-9]+]]:_(s64) = G_SEXT [[LOAD1]](s1)
   ; HSA-VI-NEXT:   G_STORE [[SEXT]](s64), [[LOAD]](p1) :: (store (s64) into %ir.out, addrspace 1)
   ; HSA-VI-NEXT:   S_ENDPGM 0
-  ;
   ; LEGACY-MESA-VI-LABEL: name: i1_arg_sext_i64
   ; LEGACY-MESA-VI: bb.1 (%ir-block.0):
   ; LEGACY-MESA-VI-NEXT:   liveins: $sgpr0_sgpr1
@@ -1189,7 +1154,6 @@ define amdgpu_kernel void @empty_struct_arg({} %arg0, i32 %arg1) nounwind {
   ; HSA-VI-NEXT:   [[DEF:%[0-9]+]]:_(p1) = G_IMPLICIT_DEF
   ; HSA-VI-NEXT:   G_STORE [[LOAD]](s32), [[DEF]](p1) :: (store (s32) into `ptr addrspace(1) undef`, addrspace 1)
   ; HSA-VI-NEXT:   S_ENDPGM 0
-  ;
   ; LEGACY-MESA-VI-LABEL: name: empty_struct_arg
   ; LEGACY-MESA-VI: bb.1 (%ir-block.0):
   ; LEGACY-MESA-VI-NEXT:   liveins: $sgpr0_sgpr1
@@ -1217,7 +1181,6 @@ define amdgpu_kernel void @empty_array_arg([0 x i8] %arg0, i32 %arg1) nounwind {
   ; HSA-VI-NEXT:   [[DEF:%[0-9]+]]:_(p1) = G_IMPLICIT_DEF
   ; HSA-VI-NEXT:   G_STORE [[LOAD]](s32), [[DEF]](p1) :: (store (s32) into `ptr addrspace(1) undef`, addrspace 1)
   ; HSA-VI-NEXT:   S_ENDPGM 0
-  ;
   ; LEGACY-MESA-VI-LABEL: name: empty_array_arg
   ; LEGACY-MESA-VI: bb.1 (%ir-block.0):
   ; LEGACY-MESA-VI-NEXT:   liveins: $sgpr0_sgpr1
@@ -1269,7 +1232,6 @@ define amdgpu_kernel void @struct_argument_alignment({i32, i64} %arg0, i8 %pad, 
   ; HSA-VI-NEXT:   G_STORE [[LOAD3]](s32), [[C5]](p1) :: (volatile store (s32) into `ptr addrspace(1) null`, addrspace 1)
   ; HSA-VI-NEXT:   G_STORE [[LOAD4]](s64), [[C5]](p1) :: (volatile store (s64) into `ptr addrspace(1) null`, addrspace 1)
   ; HSA-VI-NEXT:   S_ENDPGM 0
-  ;
   ; LEGACY-MESA-VI-LABEL: name: struct_argument_alignment
   ; LEGACY-MESA-VI: bb.1 (%ir-block.0):
   ; LEGACY-MESA-VI-NEXT:   liveins: $sgpr0_sgpr1
@@ -1337,7 +1299,6 @@ define amdgpu_kernel void @pointer_in_struct_argument({ptr addrspace(3), ptr add
   ; HSA-VI-NEXT:   G_STORE [[LOAD3]](p3), [[C5]](p1) :: (volatile store (p3) into `ptr addrspace(1) null`, addrspace 1)
   ; HSA-VI-NEXT:   G_STORE [[LOAD4]](p1234), [[C5]](p1) :: (volatile store (p1234) into `ptr addrspace(1) null`, addrspace 1)
   ; HSA-VI-NEXT:   S_ENDPGM 0
-  ;
   ; LEGACY-MESA-VI-LABEL: name: pointer_in_struct_argument
   ; LEGACY-MESA-VI: bb.1 (%ir-block.0):
   ; LEGACY-MESA-VI-NEXT:   liveins: $sgpr0_sgpr1
@@ -1403,7 +1364,6 @@ define amdgpu_kernel void @packed_struct_argument_alignment(<{i32, i64}> %arg0, 
   ; HSA-VI-NEXT:   G_STORE [[LOAD2]](s32), [[C4]](p1) :: (volatile store (s32) into `ptr addrspace(1) null`, addrspace 1)
   ; HSA-VI-NEXT:   G_STORE [[LOAD3]](s64), [[C4]](p1) :: (volatile store (s64) into `ptr addrspace(1) null`, addrspace 1)
   ; HSA-VI-NEXT:   S_ENDPGM 0
-  ;
   ; LEGACY-MESA-VI-LABEL: name: packed_struct_argument_alignment
   ; LEGACY-MESA-VI: bb.1 (%ir-block.1):
   ; LEGACY-MESA-VI-NEXT:   liveins: $sgpr0_sgpr1
@@ -1445,7 +1405,6 @@ define amdgpu_kernel void @unused_i32_arg(ptr addrspace(1) nocapture %out, i32 %
   ; HSA-VI-NEXT: {{  $}}
   ; HSA-VI-NEXT:   [[COPY:%[0-9]+]]:_(p4) = COPY $sgpr4_sgpr5
   ; HSA-VI-NEXT:   S_ENDPGM 0
-  ;
   ; LEGACY-MESA-VI-LABEL: name: unused_i32_arg
   ; LEGACY-MESA-VI: bb.1.entry:
   ; LEGACY-MESA-VI-NEXT:   liveins: $sgpr0_sgpr1
@@ -1472,7 +1431,6 @@ define amdgpu_kernel void @byref_constant_i8_arg(ptr addrspace(1) nocapture %out
   ; HSA-VI-NEXT:   [[ZEXT:%[0-9]+]]:_(s32) = G_ZEXT [[LOAD1]](s8)
   ; HSA-VI-NEXT:   G_STORE [[ZEXT]](s32), [[LOAD]](p1) :: (store (s32) into %ir.out, addrspace 1)
   ; HSA-VI-NEXT:   S_ENDPGM 0
-  ;
   ; LEGACY-MESA-VI-LABEL: name: byref_constant_i8_arg
   ; LEGACY-MESA-VI: bb.1 (%ir-block.0):
   ; LEGACY-MESA-VI-NEXT:   liveins: $sgpr0_sgpr1
@@ -1508,7 +1466,6 @@ define amdgpu_kernel void @byref_constant_i16_arg(ptr addrspace(1) nocapture %ou
   ; HSA-VI-NEXT:   [[ZEXT:%[0-9]+]]:_(s32) = G_ZEXT [[LOAD1]](s16)
   ; HSA-VI-NEXT:   G_STORE [[ZEXT]](s32), [[LOAD]](p1) :: (store (s32) into %ir.out, addrspace 1)
   ; HSA-VI-NEXT:   S_ENDPGM 0
-  ;
   ; LEGACY-MESA-VI-LABEL: name: byref_constant_i16_arg
   ; LEGACY-MESA-VI: bb.1 (%ir-block.0):
   ; LEGACY-MESA-VI-NEXT:   liveins: $sgpr0_sgpr1
@@ -1547,7 +1504,6 @@ define amdgpu_kernel void @byref_constant_i32_arg(ptr addrspace(1) nocapture %ou
   ; HSA-VI-NEXT:   G_STORE [[LOAD2]](s32), [[LOAD]](p1) :: (volatile store (s32) into %ir.out, addrspace 1)
   ; HSA-VI-NEXT:   G_STORE [[LOAD1]](s32), [[LOAD]](p1) :: (volatile store (s32) into %ir.out, addrspace 1)
   ; HSA-VI-NEXT:   S_ENDPGM 0
-  ;
   ; LEGACY-MESA-VI-LABEL: name: byref_constant_i32_arg
   ; LEGACY-MESA-VI: bb.1 (%ir-block.0):
   ; LEGACY-MESA-VI-NEXT:   liveins: $sgpr0_sgpr1
@@ -1589,7 +1545,6 @@ define amdgpu_kernel void @byref_constant_v4i32_arg(ptr addrspace(1) nocapture %
   ; HSA-VI-NEXT:   G_STORE [[LOAD2]](<4 x s32>), [[LOAD]](p1) :: (volatile store (<4 x s32>) into %ir.out, align 4, addrspace 1)
   ; HSA-VI-NEXT:   G_STORE [[LOAD1]](s32), [[LOAD]](p1) :: (volatile store (s32) into %ir.out, addrspace 1)
   ; HSA-VI-NEXT:   S_ENDPGM 0
-  ;
   ; LEGACY-MESA-VI-LABEL: name: byref_constant_v4i32_arg
   ; LEGACY-MESA-VI: bb.1 (%ir-block.0):
   ; LEGACY-MESA-VI-NEXT:   liveins: $sgpr0_sgpr1
@@ -1631,7 +1586,6 @@ define amdgpu_kernel void @byref_align_constant_i32_arg(ptr addrspace(1) nocaptu
   ; HSA-VI-NEXT:   G_STORE [[LOAD2]](s32), [[LOAD]](p1) :: (volatile store (s32) into %ir.out, addrspace 1)
   ; HSA-VI-NEXT:   G_STORE [[LOAD1]](s32), [[LOAD]](p1) :: (volatile store (s32) into %ir.out, addrspace 1)
   ; HSA-VI-NEXT:   S_ENDPGM 0
-  ;
   ; LEGACY-MESA-VI-LABEL: name: byref_align_constant_i32_arg
   ; LEGACY-MESA-VI: bb.1 (%ir-block.0):
   ; LEGACY-MESA-VI-NEXT:   liveins: $sgpr0_sgpr1
@@ -1673,7 +1627,6 @@ define amdgpu_kernel void @byref_natural_align_constant_v16i32_arg(ptr addrspace
   ; HSA-VI-NEXT:   G_STORE [[LOAD2]](<16 x s32>), [[LOAD]](p1) :: (volatile store (<16 x s32>) into %ir.out, align 4, addrspace 1)
   ; HSA-VI-NEXT:   G_STORE [[LOAD1]](s32), [[LOAD]](p1) :: (volatile store (s32) into %ir.out, addrspace 1)
   ; HSA-VI-NEXT:   S_ENDPGM 0
-  ;
   ; LEGACY-MESA-VI-LABEL: name: byref_natural_align_constant_v16i32_arg
   ; LEGACY-MESA-VI: bb.1 (%ir-block.1):
   ; LEGACY-MESA-VI-NEXT:   liveins: $sgpr0_sgpr1
@@ -1713,7 +1666,6 @@ define amdgpu_kernel void @byref_global_i32_arg(ptr addrspace(1) nocapture %out,
   ; HSA-VI-NEXT:   [[LOAD1:%[0-9]+]]:_(s32) = G_LOAD [[ADDRSPACE_CAST]](p1) :: (dereferenceable "amdgpu-noclobber" load (s32) from %ir.in.byref, addrspace 1)
   ; HSA-VI-NEXT:   G_STORE [[LOAD1]](s32), [[LOAD]](p1) :: (store (s32) into %ir.out, addrspace 1)
   ; HSA-VI-NEXT:   S_ENDPGM 0
-  ;
   ; LEGACY-MESA-VI-LABEL: name: byref_global_i32_arg
   ; LEGACY-MESA-VI: bb.1 (%ir-block.0):
   ; LEGACY-MESA-VI-NEXT:   liveins: $sgpr0_sgpr1
@@ -1748,7 +1700,6 @@ define amdgpu_kernel void @byref_flat_i32_arg(ptr addrspace(1) nocapture %out, p
   ; HSA-VI-NEXT:   [[LOAD1:%[0-9]+]]:_(s32) = G_LOAD [[ADDRSPACE_CAST]](p0) :: (dereferenceable load (s32) from %ir.in.byref)
   ; HSA-VI-NEXT:   G_STORE [[LOAD1]](s32), [[LOAD]](p1) :: (store (s32) into %ir.out, addrspace 1)
   ; HSA-VI-NEXT:   S_ENDPGM 0
-  ;
   ; LEGACY-MESA-VI-LABEL: name: byref_flat_i32_arg
   ; LEGACY-MESA-VI: bb.1 (%ir-block.0):
   ; LEGACY-MESA-VI-NEXT:   liveins: $sgpr0_sgpr1
@@ -1783,7 +1734,6 @@ define amdgpu_kernel void @byref_constant_32bit_i32_arg(ptr addrspace(1) nocaptu
   ; HSA-VI-NEXT:   [[LOAD1:%[0-9]+]]:_(s32) = G_LOAD [[ADDRSPACE_CAST]](p6) :: (dereferenceable invariant load (s32) from %ir.in.byref, addrspace 6)
   ; HSA-VI-NEXT:   G_STORE [[LOAD1]](s32), [[LOAD]](p1) :: (store (s32) into %ir.out, addrspace 1)
   ; HSA-VI-NEXT:   S_ENDPGM 0
-  ;
   ; LEGACY-MESA-VI-LABEL: name: byref_constant_32bit_i32_arg
   ; LEGACY-MESA-VI: bb.1 (%ir-block.0):
   ; LEGACY-MESA-VI-NEXT:   liveins: $sgpr0_sgpr1
@@ -1818,7 +1768,6 @@ define amdgpu_kernel void @byref_unknown_as_i32_arg(ptr addrspace(1) nocapture %
   ; HSA-VI-NEXT:   [[LOAD1:%[0-9]+]]:_(s32) = G_LOAD [[ADDRSPACE_CAST]](p999) :: (dereferenceable load (s32) from %ir.in.byref, addrspace 999)
   ; HSA-VI-NEXT:   G_STORE [[LOAD1]](s32), [[LOAD]](p1) :: (store (s32) into %ir.out, addrspace 1)
   ; HSA-VI-NEXT:   S_ENDPGM 0
-  ;
   ; LEGACY-MESA-VI-LABEL: name: byref_unknown_as_i32_arg
   ; LEGACY-MESA-VI: bb.1 (%ir-block.0):
   ; LEGACY-MESA-VI-NEXT:   liveins: $sgpr0_sgpr1
@@ -1854,7 +1803,6 @@ define amdgpu_kernel void @byref_local_i32_arg(ptr addrspace(1) nocapture %out, 
   ; HSA-VI-NEXT:   [[LOAD1:%[0-9]+]]:_(s32) = G_LOAD [[ADDRSPACE_CAST]](p3) :: (dereferenceable load (s32) from %ir.in.byref, addrspace 3)
   ; HSA-VI-NEXT:   G_STORE [[LOAD1]](s32), [[LOAD]](p1) :: (store (s32) into %ir.out, addrspace 1)
   ; HSA-VI-NEXT:   S_ENDPGM 0
-  ;
   ; LEGACY-MESA-VI-LABEL: name: byref_local_i32_arg
   ; LEGACY-MESA-VI: bb.1 (%ir-block.0):
   ; LEGACY-MESA-VI-NEXT:   liveins: $sgpr0_sgpr1
@@ -1896,7 +1844,6 @@ define amdgpu_kernel void @multi_byref_constant_i32_arg(ptr addrspace(1) nocaptu
   ; HSA-VI-NEXT:   G_STORE [[LOAD3]](s32), [[LOAD]](p1) :: (volatile store (s32) into %ir.out, addrspace 1)
   ; HSA-VI-NEXT:   G_STORE [[LOAD1]](s32), [[LOAD]](p1) :: (volatile store (s32) into %ir.out, addrspace 1)
   ; HSA-VI-NEXT:   S_ENDPGM 0
-  ;
   ; LEGACY-MESA-VI-LABEL: name: multi_byref_constant_i32_arg
   ; LEGACY-MESA-VI: bb.1 (%ir-block.0):
   ; LEGACY-MESA-VI-NEXT:   liveins: $sgpr0_sgpr1
@@ -1938,7 +1885,6 @@ define amdgpu_kernel void @byref_constant_i32_arg_offset0(ptr addrspace(4) byref
   ; HSA-VI-NEXT:   [[LOAD:%[0-9]+]]:_(s32) = G_LOAD [[PTR_ADD]](p4) :: (dereferenceable invariant load (s32) from %ir.in.byref, addrspace 4)
   ; HSA-VI-NEXT:   G_STORE [[LOAD]](s32), [[DEF]](p1) :: (store (s32) into `ptr addrspace(1) undef`, addrspace 1)
   ; HSA-VI-NEXT:   S_ENDPGM 0
-  ;
   ; LEGACY-MESA-VI-LABEL: name: byref_constant_i32_arg_offset0
   ; LEGACY-MESA-VI: bb.1 (%ir-block.0):
   ; LEGACY-MESA-VI-NEXT:   liveins: $sgpr0_sgpr1
@@ -1967,7 +1913,6 @@ define amdgpu_kernel void @p3i8_arg(ptr addrspace(3) %arg) nounwind {
   ; HSA-VI-NEXT:   [[C1:%[0-9]+]]:_(s8) = G_CONSTANT i8 9
   ; HSA-VI-NEXT:   G_STORE [[C1]](s8), [[LOAD]](p3) :: (store (s8) into %ir.arg, align 4, addrspace 3)
   ; HSA-VI-NEXT:   S_ENDPGM 0
-  ;
   ; LEGACY-MESA-VI-LABEL: name: p3i8_arg
   ; LEGACY-MESA-VI: bb.1 (%ir-block.0):
   ; LEGACY-MESA-VI-NEXT:   liveins: $sgpr0_sgpr1
@@ -1993,7 +1938,6 @@ define amdgpu_kernel void @p1i8_arg(ptr addrspace(1) %arg) nounwind {
   ; HSA-VI-NEXT:   [[C1:%[0-9]+]]:_(p3) = G_CONSTANT i32 0
   ; HSA-VI-NEXT:   G_STORE [[C]](s8), [[C1]](p3) :: (store (s8) into `ptr addrspace(3) null`, addrspace 3)
   ; HSA-VI-NEXT:   S_ENDPGM 0
-  ;
   ; LEGACY-MESA-VI-LABEL: name: p1i8_arg
   ; LEGACY-MESA-VI: bb.1 (%ir-block.0):
   ; LEGACY-MESA-VI-NEXT:   liveins: $sgpr0_sgpr1
@@ -2019,7 +1963,6 @@ define amdgpu_kernel void @v2p1i8_arg(<2 x ptr addrspace(1)> %arg) nounwind {
   ; HSA-VI-NEXT:   [[DEF:%[0-9]+]]:_(p1) = G_IMPLICIT_DEF
   ; HSA-VI-NEXT:   G_STORE [[LOAD]](<2 x p1>), [[DEF]](p1) :: (store (<2 x p1>) into `ptr addrspace(1) undef`, addrspace 1)
   ; HSA-VI-NEXT:   S_ENDPGM 0
-  ;
   ; LEGACY-MESA-VI-LABEL: name: v2p1i8_arg
   ; LEGACY-MESA-VI: bb.1 (%ir-block.0):
   ; LEGACY-MESA-VI-NEXT:   liveins: $sgpr0_sgpr1
@@ -2047,7 +1990,6 @@ define amdgpu_kernel void @v2p3i8_arg(<2 x ptr addrspace(3)> %arg) nounwind {
   ; HSA-VI-NEXT:   [[DEF:%[0-9]+]]:_(p1) = G_IMPLICIT_DEF
   ; HSA-VI-NEXT:   G_STORE [[LOAD]](<2 x p3>), [[DEF]](p1) :: (store (<2 x p3>) into `ptr addrspace(1) undef`, addrspace 1)
   ; HSA-VI-NEXT:   S_ENDPGM 0
-  ;
   ; LEGACY-MESA-VI-LABEL: name: v2p3i8_arg
   ; LEGACY-MESA-VI: bb.1 (%ir-block.0):
   ; LEGACY-MESA-VI-NEXT:   liveins: $sgpr0_sgpr1
@@ -2081,7 +2023,6 @@ define amdgpu_kernel void @v2p1i8_in_struct_arg({ <2 x ptr addrspace(1)>, <2 x p
   ; HSA-VI-NEXT:   [[PTR_ADD2:%[0-9]+]]:_(p1) = G_PTR_ADD [[DEF]], [[C2]](s64)
   ; HSA-VI-NEXT:   G_STORE [[LOAD1]](<2 x p3>), [[PTR_ADD2]](p1) :: (store (<2 x p3>) into `ptr addrspace(1) undef` + 16, align 16, addrspace 1)
   ; HSA-VI-NEXT:   S_ENDPGM 0
-  ;
   ; LEGACY-MESA-VI-LABEL: name: v2p1i8_in_struct_arg
   ; LEGACY-MESA-VI: bb.1 (%ir-block.0):
   ; LEGACY-MESA-VI-NEXT:   liveins: $sgpr0_sgpr1

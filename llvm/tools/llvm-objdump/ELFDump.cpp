@@ -28,7 +28,7 @@ namespace {
 template <typename ELFT> class ELFDumper : public Dumper {
 public:
   ELFDumper(const ELFObjectFile<ELFT> &O) : Dumper(O), Obj(O) {}
-  void printPrivateHeaders() override;
+  void printPrivateHeaders(bool MachOOnlyFirst) override;
   void printDynamicRelocations() override;
 
 private:
@@ -38,7 +38,6 @@ private:
   void printDynamicSection();
   void printProgramHeaders();
   void printSymbolVersion();
-  void printSymbolVersionDependency(const typename ELFT::Shdr &Sec);
 };
 } // namespace
 
@@ -68,7 +67,7 @@ static Expected<StringRef> getDynamicStrTab(const ELFFile<ELFT> &Elf) {
     if (Dyn.d_tag == ELF::DT_STRTAB) {
       auto MappedAddrOrError = Elf.toMappedAddr(Dyn.getPtr());
       if (!MappedAddrOrError)
-        return MappedAddrOrError.takeError();
+        consumeError(MappedAddrOrError.takeError());
       return StringRef(reinterpret_cast<const char *>(*MappedAddrOrError));
     }
   }
@@ -181,10 +180,8 @@ static uint64_t getSectionLMA(const ELFFile<ELFT> &Obj,
   // Search for a PT_LOAD segment containing the requested section. Use this
   // segment's p_addr to calculate the section's LMA.
   for (const typename ELFT::Phdr &Phdr : *PhdrRangeOrErr)
-    if ((Phdr.p_type == ELF::PT_LOAD) &&
-        (isSectionInSegment<ELFT>(
-            Phdr, *cast<const ELFObjectFile<ELFT>>(Sec.getObject())
-                       ->getSection(Sec.getRawDataRefImpl()))))
+    if ((Phdr.p_type == ELF::PT_LOAD) && (Phdr.p_vaddr <= Sec.getAddress()) &&
+        (Phdr.p_vaddr + Phdr.p_memsz > Sec.getAddress()))
       return Sec.getAddress() - Phdr.p_vaddr + Phdr.p_paddr;
 
   // Return section's VMA if it isn't in a PT_LOAD segment.
@@ -223,6 +220,7 @@ template <class ELFT> void ELFDumper<ELFT>::printDynamicSection() {
       continue;
 
     std::string Str = Elf.getDynamicTagAsString(Dyn.d_tag);
+    outs() << format(TagFmt.c_str(), Str.c_str());
 
     const char *Fmt =
         ELFT::Is64Bits ? "0x%016" PRIx64 "\n" : "0x%08" PRIx64 "\n";
@@ -231,16 +229,14 @@ template <class ELFT> void ELFDumper<ELFT>::printDynamicSection() {
         Dyn.d_tag == ELF::DT_AUXILIARY || Dyn.d_tag == ELF::DT_FILTER) {
       Expected<StringRef> StrTabOrErr = getDynamicStrTab(Elf);
       if (StrTabOrErr) {
-        const char *Data = StrTabOrErr->data();
-        outs() << format(TagFmt.c_str(), Str.c_str()) << Data + Dyn.getVal()
-               << "\n";
+        const char *Data = StrTabOrErr.get().data();
+        outs() << (Data + Dyn.d_un.d_val) << "\n";
         continue;
       }
       reportWarning(toString(StrTabOrErr.takeError()), Obj.getFileName());
       consumeError(StrTabOrErr.takeError());
     }
-    outs() << format(TagFmt.c_str(), Str.c_str())
-           << format(Fmt, (uint64_t)Dyn.getVal());
+    outs() << format(Fmt, (uint64_t)Dyn.d_un.d_val);
   }
 }
 
@@ -286,14 +282,8 @@ template <class ELFT> void ELFDumper<ELFT>::printProgramHeaders() {
     case ELF::PT_OPENBSD_MUTABLE:
       outs() << "OPENBSD_MUTABLE ";
       break;
-    case ELF::PT_OPENBSD_NOBTCFI:
-      outs() << "OPENBSD_NOBTCFI ";
-      break;
     case ELF::PT_OPENBSD_RANDOMIZE:
       outs() << "OPENBSD_RANDOMIZE ";
-      break;
-    case ELF::PT_OPENBSD_SYSCALLS:
-      outs() << "OPENBSD_SYSCALLS ";
       break;
     case ELF::PT_OPENBSD_WXNEEDED:
       outs() << "OPENBSD_WXNEEDED ";
@@ -356,13 +346,19 @@ template <typename ELFT> void ELFDumper<ELFT>::printDynamicRelocations() {
 }
 
 template <class ELFT>
-void ELFDumper<ELFT>::printSymbolVersionDependency(
-    const typename ELFT::Shdr &Sec) {
+static void printSymbolVersionDependency(StringRef FileName,
+                                         const ELFFile<ELFT> &Obj,
+                                         const typename ELFT::Shdr &Sec) {
   outs() << "\nVersion References:\n";
+
+  auto WarningHandler = [&](const Twine &Msg) {
+    reportWarning(Msg, FileName);
+    return Error::success();
+  };
   Expected<std::vector<VerNeed>> V =
-      getELFFile().getVersionDependencies(Sec, this->WarningHandler);
+      Obj.getVersionDependencies(Sec, WarningHandler);
   if (!V) {
-    reportWarning(toString(V.takeError()), Obj.getFileName());
+    reportWarning(toString(V.takeError()), FileName);
     return;
   }
 
@@ -424,13 +420,13 @@ template <class ELFT> void ELFDumper<ELFT>::printSymbolVersion() {
     StringRef StrTab = unwrapOrError(Elf.getStringTable(*StrTabSec), FileName);
 
     if (Shdr.sh_type == ELF::SHT_GNU_verneed)
-      printSymbolVersionDependency(Shdr);
+      printSymbolVersionDependency<ELFT>(FileName, Elf, Shdr);
     else
       printSymbolVersionDefinition<ELFT>(Shdr, Contents, StrTab);
   }
 }
 
-template <class ELFT> void ELFDumper<ELFT>::printPrivateHeaders() {
+template <class ELFT> void ELFDumper<ELFT>::printPrivateHeaders(bool) {
   printProgramHeaders();
   printDynamicSection();
   printSymbolVersion();

@@ -18,6 +18,7 @@
 
 #include "AArch64.h"
 #include "llvm/ADT/DepthFirstIterator.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/CodeGen/MachineBranchProbabilityInfo.h"
 #include "llvm/CodeGen/MachineDominators.h"
@@ -299,7 +300,7 @@ MachineInstr *SSACCmpConv::findConvertibleCompare(MachineBasicBlock *MBB) {
   if (I == MBB->end())
     return nullptr;
   // The terminator must be controlled by the flags.
-  if (!I->readsRegister(AArch64::NZCV, /*TRI=*/nullptr)) {
+  if (!I->readsRegister(AArch64::NZCV)) {
     switch (I->getOpcode()) {
     case AArch64::CBZW:
     case AArch64::CBZX:
@@ -934,7 +935,7 @@ bool AArch64ConditionalCompares::runOnMachineFunction(MachineFunction &MF) {
   SchedModel = MF.getSubtarget().getSchedModel();
   MRI = &MF.getRegInfo();
   DomTree = &getAnalysis<MachineDominatorTree>();
-  Loops = &getAnalysis<MachineLoopInfo>();
+  Loops = getAnalysisIfAvailable<MachineLoopInfo>();
   MBPI = &getAnalysis<MachineBranchProbabilityInfo>();
   Traces = &getAnalysis<MachineTraceMetrics>();
   MinInstr = nullptr;

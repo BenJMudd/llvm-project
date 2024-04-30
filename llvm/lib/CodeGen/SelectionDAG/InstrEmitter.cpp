@@ -285,30 +285,6 @@ Register InstrEmitter::getVR(SDValue Op,
   return I->second;
 }
 
-static bool isConvergenceCtrlMachineOp(SDValue Op) {
-  if (Op->isMachineOpcode()) {
-    switch (Op->getMachineOpcode()) {
-    case TargetOpcode::CONVERGENCECTRL_ANCHOR:
-    case TargetOpcode::CONVERGENCECTRL_ENTRY:
-    case TargetOpcode::CONVERGENCECTRL_LOOP:
-    case TargetOpcode::CONVERGENCECTRL_GLUE:
-      return true;
-    }
-    return false;
-  }
-
-  // We can reach here when CopyFromReg is encountered. But rather than making a
-  // special case for that, we just make sure we don't reach here in some
-  // surprising way.
-  switch (Op->getOpcode()) {
-  case ISD::CONVERGENCECTRL_ANCHOR:
-  case ISD::CONVERGENCECTRL_ENTRY:
-  case ISD::CONVERGENCECTRL_LOOP:
-  case ISD::CONVERGENCECTRL_GLUE:
-    llvm_unreachable("Convergence control should have been selected by now.");
-  }
-  return false;
-}
 
 /// AddRegisterOperand - Add the specified register as an operand to the
 /// specified machine instr. Insert register copies if the register is
@@ -370,12 +346,9 @@ InstrEmitter::AddRegisterOperand(MachineInstrBuilder &MIB,
   // multiple uses.
   // Tied operands are never killed, so we need to check that. And that
   // means we need to determine the index of the operand.
-  // Don't kill convergence control tokens. Initially they are only used in glue
-  // nodes, and the InstrEmitter later adds implicit uses on the users of the
-  // glue node. This can sometimes make it seem like there is only one use,
-  // which is the glue node itself.
-  bool isKill = Op.hasOneUse() && !isConvergenceCtrlMachineOp(Op) &&
-                Op.getNode()->getOpcode() != ISD::CopyFromReg && !IsDebug &&
+  bool isKill = Op.hasOneUse() &&
+                Op.getNode()->getOpcode() != ISD::CopyFromReg &&
+                !IsDebug &&
                 !(IsClone || IsCloned);
   if (isKill) {
     unsigned Idx = MIB->getNumOperands();
@@ -522,7 +495,7 @@ void InstrEmitter::EmitSubregNode(SDNode *Node,
     // EXTRACT_SUBREG is lowered as %dst = COPY %src:sub.  There are no
     // constraints on the %dst register, COPY can target all legal register
     // classes.
-    unsigned SubIdx = Node->getConstantOperandVal(1);
+    unsigned SubIdx = cast<ConstantSDNode>(Node->getOperand(1))->getZExtValue();
     const TargetRegisterClass *TRC =
       TLI->getRegClassFor(Node->getSimpleValueType(0), Node->isDivergent());
 
@@ -578,7 +551,7 @@ void InstrEmitter::EmitSubregNode(SDNode *Node,
     SDValue N0 = Node->getOperand(0);
     SDValue N1 = Node->getOperand(1);
     SDValue N2 = Node->getOperand(2);
-    unsigned SubIdx = N2->getAsZExtVal();
+    unsigned SubIdx = cast<ConstantSDNode>(N2)->getZExtValue();
 
     // Figure out the register class to create for the destreg.  It should be
     // the largest legal register class supporting SubIdx sub-registers.
@@ -638,7 +611,7 @@ InstrEmitter::EmitCopyToRegClassNode(SDNode *Node,
   unsigned VReg = getVR(Node->getOperand(0), VRBaseMap);
 
   // Create the new VReg in the destination class and emit a copy.
-  unsigned DstRCIdx = Node->getConstantOperandVal(1);
+  unsigned DstRCIdx = cast<ConstantSDNode>(Node->getOperand(1))->getZExtValue();
   const TargetRegisterClass *DstRC =
     TRI->getAllocatableClass(TRI->getRegClass(DstRCIdx));
   Register NewVReg = MRI->createVirtualRegister(DstRC);
@@ -656,7 +629,7 @@ InstrEmitter::EmitCopyToRegClassNode(SDNode *Node,
 void InstrEmitter::EmitRegSequence(SDNode *Node,
                                   DenseMap<SDValue, Register> &VRBaseMap,
                                   bool IsClone, bool IsCloned) {
-  unsigned DstRCIdx = Node->getConstantOperandVal(0);
+  unsigned DstRCIdx = cast<ConstantSDNode>(Node->getOperand(0))->getZExtValue();
   const TargetRegisterClass *RC = TRI->getRegClass(DstRCIdx);
   Register NewVReg = MRI->createVirtualRegister(TRI->getAllocatableClass(RC));
   const MCInstrDesc &II = TII->get(TargetOpcode::REG_SEQUENCE);
@@ -677,7 +650,7 @@ void InstrEmitter::EmitRegSequence(SDNode *Node,
       // Skip physical registers as they don't have a vreg to get and we'll
       // insert copies for them in TwoAddressInstructionPass anyway.
       if (!R || !R->getReg().isPhysical()) {
-        unsigned SubIdx = Op->getAsZExtVal();
+        unsigned SubIdx = cast<ConstantSDNode>(Op)->getZExtValue();
         unsigned SubReg = getVR(Node->getOperand(i-1), VRBaseMap);
         const TargetRegisterClass *TRC = MRI->getRegClass(SubReg);
         const TargetRegisterClass *SRC =
@@ -1218,17 +1191,6 @@ EmitMachineNode(SDNode *Node, bool IsClone, bool IsCloned,
     }
   }
 
-  if (SDNode *GluedNode = Node->getGluedNode()) {
-    // FIXME: Possibly iterate over multiple glue nodes?
-    if (GluedNode->getOpcode() ==
-        ~(unsigned)TargetOpcode::CONVERGENCECTRL_GLUE) {
-      Register VReg = getVR(GluedNode->getOperand(0), VRBaseMap);
-      MachineOperand MO = MachineOperand::CreateReg(VReg, /*isDef=*/false,
-                                                    /*isImp=*/true);
-      MIB->addOperand(MO);
-    }
-  }
-
   // Run post-isel target hook to adjust this instruction if needed.
   if (II.hasPostISelHook())
     TLI->AdjustInstrPostInstrSelection(*MIB, Node);
@@ -1347,16 +1309,17 @@ EmitSpecialNode(SDNode *Node, bool IsClone, bool IsCloned,
 
     // Add all of the operand registers to the instruction.
     for (unsigned i = InlineAsm::Op_FirstOperand; i != NumOps;) {
-      unsigned Flags = Node->getConstantOperandVal(i);
-      const InlineAsm::Flag F(Flags);
-      const unsigned NumVals = F.getNumOperandRegisters();
+      unsigned Flags =
+        cast<ConstantSDNode>(Node->getOperand(i))->getZExtValue();
+      const unsigned NumVals = InlineAsm::getNumOperandRegisters(Flags);
 
       GroupIdx.push_back(MIB->getNumOperands());
       MIB.addImm(Flags);
       ++i;  // Skip the ID value.
 
-      switch (F.getKind()) {
-      case InlineAsm::Kind::RegDef:
+      switch (InlineAsm::getKind(Flags)) {
+      default: llvm_unreachable("Bad flags!");
+        case InlineAsm::Kind_RegDef:
         for (unsigned j = 0; j != NumVals; ++j, ++i) {
           Register Reg = cast<RegisterSDNode>(Node->getOperand(i))->getReg();
           // FIXME: Add dead flags for physical and virtual registers defined.
@@ -1365,8 +1328,8 @@ EmitSpecialNode(SDNode *Node, bool IsClone, bool IsCloned,
           MIB.addReg(Reg, RegState::Define | getImplRegState(Reg.isPhysical()));
         }
         break;
-      case InlineAsm::Kind::RegDefEarlyClobber:
-      case InlineAsm::Kind::Clobber:
+      case InlineAsm::Kind_RegDefEarlyClobber:
+      case InlineAsm::Kind_Clobber:
         for (unsigned j = 0; j != NumVals; ++j, ++i) {
           Register Reg = cast<RegisterSDNode>(Node->getOperand(i))->getReg();
           MIB.addReg(Reg, RegState::Define | RegState::EarlyClobber |
@@ -1374,9 +1337,9 @@ EmitSpecialNode(SDNode *Node, bool IsClone, bool IsCloned,
           ECRegs.push_back(Reg);
         }
         break;
-      case InlineAsm::Kind::RegUse: // Use of register.
-      case InlineAsm::Kind::Imm:    // Immediate.
-      case InlineAsm::Kind::Mem:    // Non-function addressing mode.
+      case InlineAsm::Kind_RegUse:  // Use of register.
+      case InlineAsm::Kind_Imm:  // Immediate.
+      case InlineAsm::Kind_Mem:  // Non-function addressing mode.
         // The addressing mode has been selected, just add all of the
         // operands to the machine instruction.
         for (unsigned j = 0; j != NumVals; ++j, ++i)
@@ -1384,9 +1347,9 @@ EmitSpecialNode(SDNode *Node, bool IsClone, bool IsCloned,
                      /*IsDebug=*/false, IsClone, IsCloned);
 
         // Manually set isTied bits.
-        if (F.isRegUseKind()) {
-          unsigned DefGroup;
-          if (F.isUseOperandTiedToDef(DefGroup)) {
+        if (InlineAsm::getKind(Flags) == InlineAsm::Kind_RegUse) {
+          unsigned DefGroup = 0;
+          if (InlineAsm::isUseOperandTiedToDef(Flags, DefGroup)) {
             unsigned DefIdx = GroupIdx[DefGroup] + 1;
             unsigned UseIdx = GroupIdx.back() + 1;
             for (unsigned j = 0; j != NumVals; ++j)
@@ -1394,7 +1357,7 @@ EmitSpecialNode(SDNode *Node, bool IsClone, bool IsCloned,
           }
         }
         break;
-      case InlineAsm::Kind::Func: // Function addressing mode.
+      case InlineAsm::Kind_Func: // Function addressing mode.
         for (unsigned j = 0; j != NumVals; ++j, ++i) {
           SDValue Op = Node->getOperand(i);
           AddOperand(MIB, Op, 0, nullptr, VRBaseMap,
@@ -1420,7 +1383,7 @@ EmitSpecialNode(SDNode *Node, bool IsClone, bool IsCloned,
     for (unsigned Reg : ECRegs) {
       if (MIB->readsRegister(Reg, TRI)) {
         MachineOperand *MO =
-            MIB->findRegisterDefOperand(Reg, TRI, false, false);
+            MIB->findRegisterDefOperand(Reg, false, false, TRI);
         assert(MO && "No def operand for clobbered register?");
         MO->setIsEarlyClobber(false);
       }

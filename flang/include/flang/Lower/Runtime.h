@@ -34,7 +34,6 @@ namespace parser {
 struct EventPostStmt;
 struct EventWaitStmt;
 struct LockStmt;
-struct NotifyWaitStmt;
 struct PauseStmt;
 struct StopStmt;
 struct SyncAllStmt;
@@ -50,8 +49,6 @@ class AbstractConverter;
 
 // Lowering of Fortran statement related runtime (other than IO and maths)
 
-void genNotifyWaitStatement(AbstractConverter &,
-                            const parser::NotifyWaitStmt &);
 void genEventPostStatement(AbstractConverter &, const parser::EventPostStmt &);
 void genEventWaitStatement(AbstractConverter &, const parser::EventWaitStmt &);
 void genLockStatement(AbstractConverter &, const parser::LockStmt &);

@@ -233,9 +233,13 @@ private:
   void factorArrayIndex(Value *ArrayIdx, const SCEV *Base, uint64_t ElementSize,
                         GetElementPtrInst *GEP);
 
-  // Emit code that computes the "bump" from Basis to C.
+  // Emit code that computes the "bump" from Basis to C. If the candidate is a
+  // GEP and the bump is not divisible by the element size of the GEP, this
+  // function sets the BumpWithUglyGEP flag to notify its caller to bump the
+  // basis using an ugly GEP.
   static Value *emitBump(const Candidate &Basis, const Candidate &C,
-                         IRBuilder<> &Builder, const DataLayout *DL);
+                         IRBuilder<> &Builder, const DataLayout *DL,
+                         bool &BumpWithUglyGEP);
 
   const DataLayout *DL = nullptr;
   DominatorTree *DT = nullptr;
@@ -543,7 +547,7 @@ void StraightLineStrengthReduce::allocateCandidatesAndFindBasisForGEP(
     // indices except this current one.
     const SCEV *BaseExpr = SE->getGEPExpr(cast<GEPOperator>(GEP), IndexExprs);
     Value *ArrayIdx = GEP->getOperand(I);
-    uint64_t ElementSize = GTI.getSequentialElementStride(*DL);
+    uint64_t ElementSize = DL->getTypeAllocSize(GTI.getIndexedType());
     if (ArrayIdx->getType()->getIntegerBitWidth() <=
         DL->getIndexSizeInBits(GEP->getAddressSpace())) {
       // Skip factoring if ArrayIdx is wider than the index size, because
@@ -577,10 +581,25 @@ static void unifyBitWidth(APInt &A, APInt &B) {
 Value *StraightLineStrengthReduce::emitBump(const Candidate &Basis,
                                             const Candidate &C,
                                             IRBuilder<> &Builder,
-                                            const DataLayout *DL) {
+                                            const DataLayout *DL,
+                                            bool &BumpWithUglyGEP) {
   APInt Idx = C.Index->getValue(), BasisIdx = Basis.Index->getValue();
   unifyBitWidth(Idx, BasisIdx);
   APInt IndexOffset = Idx - BasisIdx;
+
+  BumpWithUglyGEP = false;
+  if (Basis.CandidateKind == Candidate::GEP) {
+    APInt ElementSize(
+        IndexOffset.getBitWidth(),
+        DL->getTypeAllocSize(
+            cast<GetElementPtrInst>(Basis.Ins)->getResultElementType()));
+    APInt Q, R;
+    APInt::sdivrem(IndexOffset, ElementSize, Q, R);
+    if (R == 0)
+      IndexOffset = Q;
+    else
+      BumpWithUglyGEP = true;
+  }
 
   // Compute Bump = C - Basis = (i' - i) * S.
   // Common case 1: if (i' - i) is 1, Bump = S.
@@ -626,7 +645,8 @@ void StraightLineStrengthReduce::rewriteCandidateWithBasis(
     return;
 
   IRBuilder<> Builder(C.Ins);
-  Value *Bump = emitBump(Basis, C, Builder, DL);
+  bool BumpWithUglyGEP;
+  Value *Bump = emitBump(Basis, C, Builder, DL, BumpWithUglyGEP);
   Value *Reduced = nullptr; // equivalent to but weaker than C.Ins
   switch (C.CandidateKind) {
   case Candidate::Add:
@@ -653,12 +673,28 @@ void StraightLineStrengthReduce::rewriteCandidateWithBasis(
     }
     break;
   }
-  case Candidate::GEP: {
+  case Candidate::GEP:
+    {
+    Type *OffsetTy = DL->getIndexType(C.Ins->getType());
     bool InBounds = cast<GetElementPtrInst>(C.Ins)->isInBounds();
-    // C = (char *)Basis + Bump
-    Reduced = Builder.CreatePtrAdd(Basis.Ins, Bump, "", InBounds);
-    break;
-  }
+    if (BumpWithUglyGEP) {
+      // C = (char *)Basis + Bump
+      unsigned AS = Basis.Ins->getType()->getPointerAddressSpace();
+      Type *CharTy = Type::getInt8PtrTy(Basis.Ins->getContext(), AS);
+      Reduced = Builder.CreateBitCast(Basis.Ins, CharTy);
+      Reduced =
+          Builder.CreateGEP(Builder.getInt8Ty(), Reduced, Bump, "", InBounds);
+      Reduced = Builder.CreateBitCast(Reduced, C.Ins->getType());
+    } else {
+      // C = gep Basis, Bump
+      // Canonicalize bump to pointer size.
+      Bump = Builder.CreateSExtOrTrunc(Bump, OffsetTy);
+      Reduced = Builder.CreateGEP(
+          cast<GetElementPtrInst>(Basis.Ins)->getResultElementType(), Basis.Ins,
+          Bump, "", InBounds);
+    }
+      break;
+    }
   default:
     llvm_unreachable("C.CandidateKind is invalid");
   };

@@ -47,7 +47,6 @@ bool WebAssemblyTargetInfo::hasFeature(StringRef Feature) const {
   return llvm::StringSwitch<bool>(Feature)
       .Case("simd128", SIMDLevel >= SIMD128)
       .Case("relaxed-simd", SIMDLevel >= RelaxedSIMD)
-      .Case("half-precision", HasHalfPrecision)
       .Case("nontrapping-fptoint", HasNontrappingFPToInt)
       .Case("sign-ext", HasSignExt)
       .Case("exception-handling", HasExceptionHandling)
@@ -58,7 +57,6 @@ bool WebAssemblyTargetInfo::hasFeature(StringRef Feature) const {
       .Case("tail-call", HasTailCall)
       .Case("reference-types", HasReferenceTypes)
       .Case("extended-const", HasExtendedConst)
-      .Case("multimemory", HasMultiMemory)
       .Default(false);
 }
 
@@ -98,8 +96,6 @@ void WebAssemblyTargetInfo::getTargetDefines(const LangOptions &Opts,
     Builder.defineMacro("__wasm_reference_types__");
   if (HasExtendedConst)
     Builder.defineMacro("__wasm_extended_const__");
-  if (HasMultiMemory)
-    Builder.defineMacro("__wasm_multimemory__");
 
   Builder.defineMacro("__GCC_HAVE_SYNC_COMPARE_AND_SWAP_1");
   Builder.defineMacro("__GCC_HAVE_SYNC_COMPARE_AND_SWAP_2");
@@ -148,26 +144,18 @@ void WebAssemblyTargetInfo::setFeatureEnabled(llvm::StringMap<bool> &Features,
 bool WebAssemblyTargetInfo::initFeatureMap(
     llvm::StringMap<bool> &Features, DiagnosticsEngine &Diags, StringRef CPU,
     const std::vector<std::string> &FeaturesVec) const {
-  auto addGenericFeatures = [&]() {
-    Features["multivalue"] = true;
-    Features["mutable-globals"] = true;
-    Features["reference-types"] = true;
-    Features["sign-ext"] = true;
-  };
-  auto addBleedingEdgeFeatures = [&]() {
-    addGenericFeatures();
-    Features["atomics"] = true;
-    Features["bulk-memory"] = true;
-    Features["multimemory"] = true;
+  if (CPU == "bleeding-edge") {
     Features["nontrapping-fptoint"] = true;
+    Features["sign-ext"] = true;
+    Features["bulk-memory"] = true;
+    Features["atomics"] = true;
+    Features["mutable-globals"] = true;
     Features["tail-call"] = true;
-    Features["half-precision"] = true;
+    Features["reference-types"] = true;
     setSIMDLevel(Features, SIMD128, true);
-  };
-  if (CPU == "generic") {
-    addGenericFeatures();
-  } else if (CPU == "bleeding-edge") {
-    addBleedingEdgeFeatures();
+  } else if (CPU == "generic") {
+    Features["sign-ext"] = true;
+    Features["mutable-globals"] = true;
   }
 
   return TargetInfo::initFeatureMap(Features, Diags, CPU, FeaturesVec);
@@ -224,15 +212,6 @@ bool WebAssemblyTargetInfo::handleTargetFeatures(
       HasBulkMemory = false;
       continue;
     }
-    if (Feature == "+half-precision") {
-      SIMDLevel = std::max(SIMDLevel, SIMD128);
-      HasHalfPrecision = true;
-      continue;
-    }
-    if (Feature == "-half-precision") {
-      HasHalfPrecision = false;
-      continue;
-    }
     if (Feature == "+atomics") {
       HasAtomics = true;
       continue;
@@ -279,14 +258,6 @@ bool WebAssemblyTargetInfo::handleTargetFeatures(
     }
     if (Feature == "-extended-const") {
       HasExtendedConst = false;
-      continue;
-    }
-    if (Feature == "+multimemory") {
-      HasMultiMemory = true;
-      continue;
-    }
-    if (Feature == "-multimemory") {
-      HasMultiMemory = false;
       continue;
     }
 

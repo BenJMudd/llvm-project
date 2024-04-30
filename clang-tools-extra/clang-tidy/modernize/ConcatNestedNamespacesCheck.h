@@ -45,7 +45,8 @@ public:
 private:
   using NamespaceContextVec = llvm::SmallVector<NS, 6>;
 
-  void reportDiagnostic(const SourceManager &SM, const LangOptions &LangOpts);
+  void reportDiagnostic(const SourceManager &Sources,
+                        const LangOptions &LangOpts);
   NamespaceContextVec Namespaces;
 };
 } // namespace clang::tidy::modernize

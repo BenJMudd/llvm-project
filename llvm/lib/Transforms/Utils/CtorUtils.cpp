@@ -52,9 +52,12 @@ static void removeGlobalCtors(GlobalVariable *GCL, const BitVector &CtorsToRemov
   NGV->takeName(GCL);
 
   // Nuke the old list, replacing any uses with the new one.
-  if (!GCL->use_empty())
-    GCL->replaceAllUsesWith(NGV);
-
+  if (!GCL->use_empty()) {
+    Constant *V = NGV;
+    if (V->getType() != GCL->getType())
+      V = ConstantExpr::getBitCast(V, GCL->getType());
+    GCL->replaceAllUsesWith(V);
+  }
   GCL->eraseFromParent();
 }
 

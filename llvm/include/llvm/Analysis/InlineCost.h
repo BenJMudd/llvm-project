@@ -65,8 +65,7 @@ const char MaxInlineStackSizeAttributeName[] = "inline-max-stacksize";
 // The cost-benefit pair computed by cost-benefit analysis.
 class CostBenefitPair {
 public:
-  CostBenefitPair(APInt Cost, APInt Benefit)
-      : Cost(std::move(Cost)), Benefit(std::move(Benefit)) {}
+  CostBenefitPair(APInt Cost, APInt Benefit) : Cost(Cost), Benefit(Benefit) {}
 
   const APInt &getCost() const { return Cost; }
 
@@ -260,8 +259,7 @@ InlineParams getInlineParams(unsigned OptLevel, unsigned SizeOptLevel);
 
 /// Return the cost associated with a callsite, including parameter passing
 /// and the call/return instruction.
-int getCallsiteCost(const TargetTransformInfo &TTI, const CallBase &Call,
-                    const DataLayout &DL);
+int getCallsiteCost(const CallBase &Call, const DataLayout &DL);
 
 /// Get an InlineCost object representing the cost of inlining this
 /// callsite.
@@ -344,7 +342,6 @@ struct InlineCostAnnotationPrinterPass
 public:
   explicit InlineCostAnnotationPrinterPass(raw_ostream &OS) : OS(OS) {}
   PreservedAnalyses run(Function &F, FunctionAnalysisManager &FAM);
-  static bool isRequired() { return true; }
 };
 } // namespace llvm
 

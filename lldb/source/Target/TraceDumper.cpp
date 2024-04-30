@@ -57,7 +57,7 @@ static bool FileLineAndColumnMatches(const LineEntry &a, const LineEntry &b) {
     return false;
   if (a.column != b.column)
     return false;
-  return a.GetFile() == b.GetFile();
+  return a.file == b.file;
 }
 
 /// Compare the symbol contexts of the provided \a SymbolInfo
@@ -396,7 +396,7 @@ public:
         m_j.attribute(
             "source",
             ToOptionalString(
-                item.symbol_info->sc.line_entry.GetFile().GetPath().c_str()));
+                item.symbol_info->sc.line_entry.file.GetPath().c_str()));
         m_j.attribute("line", item.symbol_info->sc.line_entry.line);
         m_j.attribute("column", item.symbol_info->sc.line_entry.column);
       }
@@ -472,7 +472,7 @@ TraceDumper::TraceItem TraceDumper::CreatRawTraceItem() {
 static SymbolContext
 CalculateSymbolContext(const Address &address,
                        const SymbolContext &prev_symbol_context) {
-  lldb_private::AddressRange range;
+  AddressRange range;
   if (prev_symbol_context.GetAddressRange(eSymbolContextEverything, 0,
                                           /*inline_block_range*/ true, range) &&
       range.Contains(address))
@@ -508,8 +508,7 @@ CalculateDisass(const TraceDumper::SymbolInfo &symbol_info,
   // We fallback to a single instruction disassembler
   Target &target = exe_ctx.GetTargetRef();
   const ArchSpec arch = target.GetArchitecture();
-  lldb_private::AddressRange range(symbol_info.address,
-                                   arch.GetMaximumOpcodeByteSize());
+  AddressRange range(symbol_info.address, arch.GetMaximumOpcodeByteSize());
   DisassemblerSP disassembler =
       Disassembler::DisassembleRange(arch, /*plugin_name*/ nullptr,
                                      /*flavor*/ nullptr, target, range);
@@ -779,7 +778,7 @@ static TraceDumper::FunctionCall &AppendInstructionToFunctionCallForest(
     return *roots.back();
   }
 
-  lldb_private::AddressRange range;
+  AddressRange range;
   if (symbol_info.sc.GetAddressRange(
           eSymbolContextBlock | eSymbolContextFunction | eSymbolContextSymbol,
           0, /*inline_block_range*/ true, range)) {

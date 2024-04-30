@@ -20,7 +20,7 @@ target triple = "hexagon"
 
 define void @test1(ptr %arg, i32 %N) #0 {
 entry:
-  %tmp = alloca i32
+  %tmp = alloca i8
   br label %loop
 
 loop:                                              ; preds = %bb2, %bb
@@ -47,8 +47,7 @@ loop:                                              ; preds = %bb2, %bb
   %tmp25 = add nuw nsw i32 %idx.start, 6
   %tmp26 = getelementptr inbounds i32, ptr %arg, i32 %tmp25
   %tmp27 = load i32, ptr %tmp26, align 4
-  %add = add i32 %tmp7, %tmp27
-  store i32 %add, ptr %tmp, align 1
+  store i8 0, ptr %tmp, align 1
   %iv.next= add nuw nsw i32 %iv, 1
   %exit.cond = icmp eq i32 %iv.next, %N
   br i1 %exit.cond, label %exit, label %loop
@@ -65,7 +64,7 @@ exit:                                             ; preds = %loop
 ; CHECK-NOT: load <{{.*}} x i32>
 define void @test2(ptr %arg) #1 {
 entry:
-  %tmp = alloca i32
+  %tmp = alloca i8
   br label %loop
 
 loop:                                              ; preds = %bb2, %bb
@@ -82,8 +81,7 @@ loop:                                              ; preds = %bb2, %bb
   %tmp14 = add nuw nsw i32 %idx.start, 3
   %tmp15 = getelementptr inbounds i32, ptr %arg, i32 %tmp14
   %tmp16 = load i32, ptr %tmp15, align 4
-  %add = add i32 %tmp7, %tmp16
-  store i32 %add, ptr %tmp, align 1
+  store i8 0, ptr %tmp, align 1
   %iv.next= add nuw nsw i32 %iv, 1
   %exit.cond = icmp eq i32 %iv.next, 128
   br i1 %exit.cond, label %exit, label %loop

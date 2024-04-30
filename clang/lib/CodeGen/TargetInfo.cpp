@@ -137,7 +137,7 @@ llvm::Value *TargetCodeGenInfo::performAddrSpaceCast(
   if (auto *C = dyn_cast<llvm::Constant>(Src))
     return performAddrSpaceCast(CGF.CGM, C, SrcAddr, DestAddr, DestTy);
   // Try to preserve the source's name to make IR more readable.
-  return CGF.Builder.CreateAddrSpaceCast(
+  return CGF.Builder.CreatePointerBitCastOrAddrSpaceCast(
       Src, DestTy, Src->hasName() ? Src->getName() + ".ascast" : "");
 }
 

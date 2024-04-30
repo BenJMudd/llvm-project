@@ -64,16 +64,14 @@ public:
 
   const Address &GetAddress() const { return m_address; }
 
-  const char *GetMnemonic(const ExecutionContext *exe_ctx,
-                          bool markup = false) {
+  const char *GetMnemonic(const ExecutionContext *exe_ctx) {
     CalculateMnemonicOperandsAndCommentIfNeeded(exe_ctx);
-    return markup ? m_markup_opcode_name.c_str() : m_opcode_name.c_str();
+    return m_opcode_name.c_str();
   }
 
-  const char *GetOperands(const ExecutionContext *exe_ctx,
-                          bool markup = false) {
+  const char *GetOperands(const ExecutionContext *exe_ctx) {
     CalculateMnemonicOperandsAndCommentIfNeeded(exe_ctx);
-    return markup ? m_markup_mnemonics.c_str() : m_mnemonics.c_str();
+    return m_mnemonics.c_str();
   }
 
   const char *GetComment(const ExecutionContext *exe_ctx) {
@@ -246,9 +244,7 @@ private:
 protected:
   Opcode m_opcode; // The opcode for this instruction
   std::string m_opcode_name;
-  std::string m_markup_opcode_name;
   std::string m_mnemonics;
-  std::string m_markup_mnemonics;
   std::string m_comment;
   bool m_calculated_strings;
 
@@ -538,7 +534,7 @@ protected:
   ElideMixedSourceAndDisassemblyLine(const ExecutionContext &exe_ctx,
                                      const SymbolContext &sc, LineEntry &line) {
     SourceLine sl;
-    sl.file = line.GetFile();
+    sl.file = line.file;
     sl.line = line.line;
     sl.column = line.column;
     return ElideMixedSourceAndDisassemblyLine(exe_ctx, sc, sl);
@@ -547,6 +543,7 @@ protected:
   // Classes that inherit from Disassembler can see and modify these
   ArchSpec m_arch;
   InstructionList m_instruction_list;
+  lldb::addr_t m_base_addr;
   std::string m_flavor;
 
 private:

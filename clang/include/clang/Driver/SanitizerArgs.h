@@ -76,7 +76,6 @@ public:
                 bool DiagnoseErrors = true);
 
   bool needsSharedRt() const { return SharedRuntime; }
-  bool needsStableAbi() const { return StableABI; }
 
   bool needsMemProfRt() const { return NeedsMemProfRt; }
   bool needsAsanRt() const { return Sanitizers.has(SanitizerKind::Address); }

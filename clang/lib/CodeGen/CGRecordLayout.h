@@ -71,7 +71,6 @@ struct CGBitFieldInfo {
   unsigned Size : 15;
 
   /// Whether the bit-field is signed.
-  LLVM_PREFERRED_TYPE(bool)
   unsigned IsSigned : 1;
 
   /// The storage size in bits which should be used when accessing this

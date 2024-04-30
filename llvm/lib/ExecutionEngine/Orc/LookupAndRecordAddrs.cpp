@@ -73,7 +73,7 @@ Error lookupAndRecordAddrs(
                                    inconvertibleErrorCode());
 
   for (unsigned I = 0; I != Pairs.size(); ++I)
-    *Pairs[I].second = Result->front()[I].getAddress();
+    *Pairs[I].second = Result->front()[I];
 
   return Error::success();
 }

@@ -3,8 +3,6 @@ STRING_EXTENSION_OUTSIDE(SBData)
 %extend lldb::SBData {
 #ifdef SWIGPYTHON
     %pythoncode %{
-        def __len__(self):
-            return self.GetByteSize()
 
         class read_data_helper:
             def __init__(self, sbdata, readerfunc, item_size):

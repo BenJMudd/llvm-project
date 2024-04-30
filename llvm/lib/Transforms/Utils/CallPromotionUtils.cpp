@@ -111,7 +111,7 @@ static void createRetPHINode(Instruction *OrigInst, Instruction *NewInst,
   if (OrigInst->getType()->isVoidTy() || OrigInst->use_empty())
     return;
 
-  Builder.SetInsertPoint(MergeBlock, MergeBlock->begin());
+  Builder.SetInsertPoint(&MergeBlock->front());
   PHINode *Phi = Builder.CreatePHI(OrigInst->getType(), 0);
   SmallVector<User *, 16> UsersToUpdate(OrigInst->users());
   for (User *U : UsersToUpdate)
@@ -168,12 +168,12 @@ static void createRetBitCast(CallBase &CB, Type *RetTy, CastInst **RetBitCast) {
 
   // Determine an appropriate location to create the bitcast for the return
   // value. The location depends on if we have a call or invoke instruction.
-  BasicBlock::iterator InsertBefore;
+  Instruction *InsertBefore = nullptr;
   if (auto *Invoke = dyn_cast<InvokeInst>(&CB))
     InsertBefore =
-        SplitEdge(Invoke->getParent(), Invoke->getNormalDest())->begin();
+        &SplitEdge(Invoke->getParent(), Invoke->getNormalDest())->front();
   else
-    InsertBefore = std::next(CB.getIterator());
+    InsertBefore = &*std::next(CB.getIterator());
 
   // Bitcast the return value to the correct type.
   auto *Cast = CastInst::CreateBitOrPointerCast(&CB, RetTy, "", InsertBefore);
@@ -509,7 +509,7 @@ CallBase &llvm::promoteCall(CallBase &CB, Function *Callee,
     Type *FormalTy = CalleeType->getParamType(ArgNo);
     Type *ActualTy = Arg->getType();
     if (FormalTy != ActualTy) {
-      auto *Cast = CastInst::CreateBitOrPointerCast(Arg, FormalTy, "", CB.getIterator());
+      auto *Cast = CastInst::CreateBitOrPointerCast(Arg, FormalTy, "", &CB);
       CB.setArgOperand(ArgNo, Cast);
 
       // Remove any incompatible attributes for the argument.
@@ -597,13 +597,16 @@ bool llvm::tryPromoteCall(CallBase &CB) {
     // Not in the form of a global constant variable with an initializer.
     return false;
 
+  Constant *VTableGVInitializer = GV->getInitializer();
   APInt VTableGVOffset = VTableOffsetGVBase + VTableOffset;
   if (!(VTableGVOffset.getActiveBits() <= 64))
     return false; // Out of range.
-
-  Function *DirectCallee = nullptr;
-  std::tie(DirectCallee, std::ignore) =
-      getFunctionAtVTableOffset(GV, VTableGVOffset.getZExtValue(), *M);
+  Constant *Ptr = getPointerAtOffset(VTableGVInitializer,
+                                     VTableGVOffset.getZExtValue(),
+                                     *M);
+  if (!Ptr)
+    return false; // No constant (function) pointer found.
+  Function *DirectCallee = dyn_cast<Function>(Ptr->stripPointerCasts());
   if (!DirectCallee)
     return false; // No function pointer found.
 

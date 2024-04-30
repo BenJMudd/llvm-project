@@ -10,7 +10,9 @@
 #define _LIBCPP___TYPE_TRAITS_APPLY_CV_H
 
 #include <__config>
-#include <__type_traits/copy_cv.h>
+#include <__type_traits/is_const.h>
+#include <__type_traits/is_volatile.h>
+#include <__type_traits/remove_reference.h>
 
 #if !defined(_LIBCPP_HAS_NO_PRAGMA_SYSTEM_HEADER)
 #  pragma GCC system_header
@@ -18,16 +20,54 @@
 
 _LIBCPP_BEGIN_NAMESPACE_STD
 
-template <class _Tp>
+template <class _Tp,
+          bool = is_const<__libcpp_remove_reference_t<_Tp> >::value,
+          bool = is_volatile<__libcpp_remove_reference_t<_Tp> >::value>
 struct __apply_cv_impl {
   template <class _Up>
-  using __apply _LIBCPP_NODEBUG = __copy_cv_t<_Tp, _Up>;
+  using __apply _LIBCPP_NODEBUG = _Up;
 };
 
 template <class _Tp>
-struct __apply_cv_impl<_Tp&> {
+struct __apply_cv_impl<_Tp, true, false> {
   template <class _Up>
-  using __apply _LIBCPP_NODEBUG = __copy_cv_t<_Tp, _Up>&;
+  using __apply _LIBCPP_NODEBUG = const _Up;
+};
+
+template <class _Tp>
+struct __apply_cv_impl<_Tp, false, true> {
+  template <class _Up>
+  using __apply _LIBCPP_NODEBUG = volatile _Up;
+};
+
+template <class _Tp>
+struct __apply_cv_impl<_Tp, true, true> {
+  template <class _Up>
+  using __apply _LIBCPP_NODEBUG = const volatile _Up;
+};
+
+template <class _Tp>
+struct __apply_cv_impl<_Tp&, false, false> {
+  template <class _Up>
+  using __apply _LIBCPP_NODEBUG = _Up&;
+};
+
+template <class _Tp>
+struct __apply_cv_impl<_Tp&, true, false> {
+  template <class _Up>
+  using __apply _LIBCPP_NODEBUG = const _Up&;
+};
+
+template <class _Tp>
+struct __apply_cv_impl<_Tp&, false, true> {
+  template <class _Up>
+  using __apply _LIBCPP_NODEBUG = volatile _Up&;
+};
+
+template <class _Tp>
+struct __apply_cv_impl<_Tp&, true, true> {
+  template <class _Up>
+  using __apply _LIBCPP_NODEBUG = const volatile _Up&;
 };
 
 template <class _Tp, class _Up>

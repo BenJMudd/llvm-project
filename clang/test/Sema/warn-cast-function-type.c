@@ -1,5 +1,4 @@
 // RUN: %clang_cc1 %s -fsyntax-only -Wcast-function-type -Wno-cast-function-type-strict -verify
-// RUN: %clang_cc1 %s -fsyntax-only -Wextra -Wno-cast-function-type-strict -verify
 
 int x(long);
 

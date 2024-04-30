@@ -42,13 +42,6 @@ namespace fir {
 
 #define DEBUG_TYPE "stack-arrays"
 
-static llvm::cl::opt<std::size_t> maxAllocsPerFunc(
-    "stack-arrays-max-allocs",
-    llvm::cl::desc("The maximum number of heap allocations to consider in one "
-                   "function before skipping (to save compilation time). Set "
-                   "to 0 for no limit."),
-    llvm::cl::init(1000), llvm::cl::Hidden);
-
 namespace {
 
 /// The state of an SSA value at each program point
@@ -146,9 +139,9 @@ public:
 };
 
 class AllocationAnalysis
-    : public mlir::dataflow::DenseForwardDataFlowAnalysis<LatticePoint> {
+    : public mlir::dataflow::DenseDataFlowAnalysis<LatticePoint> {
 public:
-  using DenseForwardDataFlowAnalysis::DenseForwardDataFlowAnalysis;
+  using DenseDataFlowAnalysis::DenseDataFlowAnalysis;
 
   void visitOperation(mlir::Operation *op, const LatticePoint &before,
                       LatticePoint *after) override;
@@ -351,7 +344,7 @@ void AllocationAnalysis::visitOperation(mlir::Operation *op,
     }
 
     auto retTy = allocmem.getAllocatedType();
-    if (!mlir::isa<fir::SequenceType>(retTy)) {
+    if (!retTy.isa<fir::SequenceType>()) {
       LLVM_DEBUG(llvm::dbgs()
                  << "--Allocation is not for an array: skipping\n");
       return;
@@ -418,17 +411,6 @@ void AllocationAnalysis::processOperation(mlir::Operation *op) {
 mlir::LogicalResult
 StackArraysAnalysisWrapper::analyseFunction(mlir::Operation *func) {
   assert(mlir::isa<mlir::func::FuncOp>(func));
-  size_t nAllocs = 0;
-  func->walk([&nAllocs](fir::AllocMemOp) { nAllocs++; });
-  // don't bother with the analysis if there are no heap allocations
-  if (nAllocs == 0)
-    return mlir::success();
-  if ((maxAllocsPerFunc != 0) && (nAllocs > maxAllocsPerFunc)) {
-    LLVM_DEBUG(llvm::dbgs() << "Skipping stack arrays for function with "
-                            << nAllocs << " heap allocations");
-    return mlir::success();
-  }
-
   mlir::DataFlowSolver solver;
   // constant propagation is required for dead code analysis, dead code analysis
   // is required to mark blocks live (required for mlir dense dfa)
@@ -449,7 +431,7 @@ StackArraysAnalysisWrapper::analyseFunction(mlir::Operation *func) {
     const LatticePoint *lattice = solver.lookupState<LatticePoint>(op);
     // there will be no lattice for an unreachable block
     if (lattice)
-      (void)point.join(*lattice);
+      point.join(*lattice);
   };
   func->walk([&](mlir::func::ReturnOp child) { joinOperationLattice(child); });
   func->walk([&](fir::UnreachableOp child) { joinOperationLattice(child); });
@@ -775,4 +757,8 @@ void StackArraysPass::runOnFunc(mlir::Operation *func) {
     mlir::emitError(func->getLoc(), "error in stack arrays optimization\n");
     signalPassFailure();
   }
+}
+
+std::unique_ptr<mlir::Pass> fir::createStackArraysPass() {
+  return std::make_unique<StackArraysPass>();
 }

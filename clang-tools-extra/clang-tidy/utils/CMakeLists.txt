@@ -6,9 +6,7 @@ set(LLVM_LINK_COMPONENTS
 add_clang_library(clangTidyUtils
   Aliasing.cpp
   ASTUtils.cpp
-  BracesAroundStatement.cpp
   DeclRefExprUtils.cpp
-  DesignatedInitializers.cpp
   ExceptionAnalyzer.cpp
   ExceptionSpecAnalyzer.cpp
   ExprSequence.cpp
@@ -19,7 +17,6 @@ add_clang_library(clangTidyUtils
   IncludeInserter.cpp
   IncludeSorter.cpp
   LexerUtils.cpp
-  Matchers.cpp
   NamespaceAliaser.cpp
   OptionsUtils.cpp
   RenamerClangTidyCheck.cpp
@@ -32,7 +29,6 @@ add_clang_library(clangTidyUtils
 
   DEPENDS
   omp_gen
-  ClangDriverOptions
   )
 
 clang_target_link_libraries(clangTidyUtils

@@ -9,7 +9,7 @@ define void @test_kcfi_bundle(i64 %arg0, i32 %arg1, ptr %arg2) {
 ; CHECK-NEXT: call void %arg2() [ "kcfi"(i64 42) ]
   call void %arg2() [ "kcfi"(i64 42) ]
 
-; CHECK-NOT: call void
+; CHECK-NOT: call
   call void %arg2() [ "kcfi"(i32 42) ] ; OK
   call void %arg2() [ "kcfi"(i32 42) ] ; OK
   ret void

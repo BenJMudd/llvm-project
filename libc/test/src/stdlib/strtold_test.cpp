@@ -7,27 +7,26 @@
 //===----------------------------------------------------------------------===//
 
 #include "src/__support/FPUtil/FPBits.h"
-#include "src/__support/uint128.h"
+#include "src/__support/UInt128.h"
 #include "src/errno/libc_errno.h"
 #include "src/stdlib/strtold.h"
 
 #include "test/UnitTest/Test.h"
 
+#include <limits.h>
 #include <stddef.h>
 
-#if defined(LIBC_TYPES_LONG_DOUBLE_IS_FLOAT64)
+#if defined(LONG_DOUBLE_IS_DOUBLE)
 #define SELECT_CONST(val, _, __) val
-#elif defined(LIBC_TYPES_LONG_DOUBLE_IS_X86_FLOAT80)
+#elif defined(SPECIAL_X86_LONG_DOUBLE)
 #define SELECT_CONST(_, val, __) val
-#elif defined(LIBC_TYPES_LONG_DOUBLE_IS_FLOAT128)
-#define SELECT_CONST(_, __, val) val
 #else
-#error "Unknown long double type"
+#define SELECT_CONST(_, __, val) val
 #endif
 
-class LlvmLibcStrToLDTest : public LIBC_NAMESPACE::testing::Test {
+class LlvmLibcStrToLDTest : public __llvm_libc::testing::Test {
 public:
-#if defined(LIBC_TYPES_LONG_DOUBLE_IS_FLOAT64)
+#if defined(LONG_DOUBLE_IS_DOUBLE)
   void run_test(const char *inputString, const ptrdiff_t expectedStrLen,
                 const uint64_t expectedRawData, const int expectedErrno = 0)
 #else
@@ -75,24 +74,24 @@ public:
     //         +-- 15 Exponent Bits
     char *str_end = nullptr;
 
-    LIBC_NAMESPACE::fputil::FPBits<long double> expected_fp =
-        LIBC_NAMESPACE::fputil::FPBits<long double>(expectedRawData);
+    __llvm_libc::fputil::FPBits<long double> expected_fp =
+        __llvm_libc::fputil::FPBits<long double>(expectedRawData);
     const int expected_errno = expectedErrno;
 
-    LIBC_NAMESPACE::libc_errno = 0;
-    long double result = LIBC_NAMESPACE::strtold(inputString, &str_end);
+    libc_errno = 0;
+    long double result = __llvm_libc::strtold(inputString, &str_end);
 
-    LIBC_NAMESPACE::fputil::FPBits<long double> actual_fp =
-        LIBC_NAMESPACE::fputil::FPBits<long double>();
-    actual_fp = LIBC_NAMESPACE::fputil::FPBits<long double>(result);
+    __llvm_libc::fputil::FPBits<long double> actual_fp =
+        __llvm_libc::fputil::FPBits<long double>();
+    actual_fp = __llvm_libc::fputil::FPBits<long double>(result);
 
     EXPECT_EQ(str_end - inputString, expectedStrLen);
 
-    EXPECT_EQ(actual_fp.uintval(), expected_fp.uintval());
-    EXPECT_EQ(actual_fp.is_neg(), expected_fp.is_neg());
+    EXPECT_EQ(actual_fp.bits, expected_fp.bits);
+    EXPECT_EQ(actual_fp.get_sign(), expected_fp.get_sign());
     EXPECT_EQ(actual_fp.get_exponent(), expected_fp.get_exponent());
     EXPECT_EQ(actual_fp.get_mantissa(), expected_fp.get_mantissa());
-    ASSERT_ERRNO_EQ(expected_errno);
+    EXPECT_EQ(libc_errno, expected_errno);
   }
 };
 

@@ -8,25 +8,12 @@
 
 #include "mlir/Analysis/AliasAnalysis/LocalAliasAnalysis.h"
 
-#include "mlir/Analysis/AliasAnalysis.h"
-#include "mlir/IR/Attributes.h"
-#include "mlir/IR/Block.h"
+#include "mlir/IR/FunctionInterfaces.h"
 #include "mlir/IR/Matchers.h"
-#include "mlir/IR/OpDefinition.h"
-#include "mlir/IR/Operation.h"
-#include "mlir/IR/Region.h"
-#include "mlir/IR/Value.h"
-#include "mlir/IR/ValueRange.h"
 #include "mlir/Interfaces/ControlFlowInterfaces.h"
-#include "mlir/Interfaces/FunctionInterfaces.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "mlir/Interfaces/ViewLikeInterface.h"
-#include "mlir/Support/LLVM.h"
-#include "mlir/Support/LogicalResult.h"
-#include "llvm/Support/Casting.h"
-#include <cassert>
 #include <optional>
-#include <utility>
 
 using namespace mlir;
 
@@ -58,9 +45,9 @@ static void collectUnderlyingAddressValues(RegionBranchOpInterface branch,
   // this region predecessor that correspond to the input values of `region`. If
   // an index could not be found, std::nullopt is returned instead.
   auto getOperandIndexIfPred =
-      [&](RegionBranchPoint pred) -> std::optional<unsigned> {
+      [&](std::optional<unsigned> predIndex) -> std::optional<unsigned> {
     SmallVector<RegionSuccessor, 2> successors;
-    branch.getSuccessorRegions(pred, successors);
+    branch.getSuccessorRegions(predIndex, successors);
     for (RegionSuccessor &successor : successors) {
       if (successor.getSuccessor() != region)
         continue;
@@ -88,29 +75,31 @@ static void collectUnderlyingAddressValues(RegionBranchOpInterface branch,
   };
 
   // Check branches from the parent operation.
-  auto branchPoint = RegionBranchPoint::parent();
-  if (region)
-    branchPoint = region;
-
+  std::optional<unsigned> regionIndex;
+  if (region) {
+    // Determine the actual region number from the passed region.
+    regionIndex = region->getRegionNumber();
+  }
   if (std::optional<unsigned> operandIndex =
-          getOperandIndexIfPred(/*predIndex=*/RegionBranchPoint::parent())) {
+          getOperandIndexIfPred(/*predIndex=*/std::nullopt)) {
     collectUnderlyingAddressValues(
-        branch.getEntrySuccessorOperands(branchPoint)[*operandIndex], maxDepth,
+        branch.getSuccessorEntryOperands(regionIndex)[*operandIndex], maxDepth,
         visited, output);
   }
   // Check branches from each child region.
   Operation *op = branch.getOperation();
-  for (Region &region : op->getRegions()) {
-    if (std::optional<unsigned> operandIndex = getOperandIndexIfPred(region)) {
-      for (Block &block : region) {
+  for (int i = 0, e = op->getNumRegions(); i != e; ++i) {
+    if (std::optional<unsigned> operandIndex = getOperandIndexIfPred(i)) {
+      for (Block &block : op->getRegion(i)) {
+        Operation *term = block.getTerminator();
         // Try to determine possible region-branch successor operands for the
         // current region.
-        if (auto term = dyn_cast<RegionBranchTerminatorOpInterface>(
-                block.getTerminator())) {
-          collectUnderlyingAddressValues(
-              term.getSuccessorOperands(branchPoint)[*operandIndex], maxDepth,
-              visited, output);
-        } else if (block.getNumSuccessors()) {
+        auto successorOperands =
+            getRegionBranchSuccessorOperands(term, regionIndex);
+        if (successorOperands) {
+          collectUnderlyingAddressValues((*successorOperands)[*operandIndex],
+                                         maxDepth, visited, output);
+        } else if (term->getNumSuccessors()) {
           // Otherwise, if this terminator may exit the region we can't make
           // any assumptions about which values get passed.
           output.push_back(inputValue);

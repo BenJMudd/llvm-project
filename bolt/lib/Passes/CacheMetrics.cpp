@@ -14,19 +14,22 @@
 #include "bolt/Passes/CacheMetrics.h"
 #include "bolt/Core/BinaryBasicBlock.h"
 #include "bolt/Core/BinaryFunction.h"
+#include "llvm/Support/CommandLine.h"
 #include <unordered_map>
 
 using namespace llvm;
 using namespace bolt;
 
-namespace {
+namespace opts {
 
-/// The following constants are used to estimate the number of i-TLB cache
-/// misses for a given code layout. Empirically the values result in high
-/// correlations between the estimations and the perf measurements.
-/// The constants do not affect the code layout algorithms.
-constexpr unsigned ITLBPageSize = 4096;
-constexpr unsigned ITLBEntries = 16;
+extern cl::OptionCategory BoltOptCategory;
+
+extern cl::opt<unsigned> ITLBPageSize;
+extern cl::opt<unsigned> ITLBEntries;
+
+} // namespace opts
+
+namespace {
 
 /// Initialize and return a position map for binary basic blocks
 void extractBasicBlockInfo(
@@ -130,6 +133,9 @@ double expectedCacheHitRatio(
     const std::vector<BinaryFunction *> &BinaryFunctions,
     const std::unordered_map<BinaryBasicBlock *, uint64_t> &BBAddr,
     const std::unordered_map<BinaryBasicBlock *, uint64_t> &BBSize) {
+
+  const double PageSize = opts::ITLBPageSize;
+  const uint64_t CacheEntries = opts::ITLBEntries;
   std::unordered_map<const BinaryFunction *, Predecessors> Calls =
       extractFunctionCalls(BinaryFunctions);
   // Compute 'hotness' of the functions
@@ -149,8 +155,7 @@ double expectedCacheHitRatio(
   for (BinaryFunction *BF : BinaryFunctions) {
     if (BF->getLayout().block_empty())
       continue;
-    const uint64_t Page =
-        BBAddr.at(BF->getLayout().block_front()) / ITLBPageSize;
+    double Page = BBAddr.at(BF->getLayout().block_front()) / PageSize;
     PageSamples[Page] += FunctionSamples.at(BF);
   }
 
@@ -161,17 +166,15 @@ double expectedCacheHitRatio(
     if (BF->getLayout().block_empty() || FunctionSamples.at(BF) == 0.0)
       continue;
     double Samples = FunctionSamples.at(BF);
-    const uint64_t Page =
-        BBAddr.at(BF->getLayout().block_front()) / ITLBPageSize;
+    double Page = BBAddr.at(BF->getLayout().block_front()) / PageSize;
     // The probability that the page is not present in the cache
-    const double MissProb =
-        pow(1.0 - PageSamples[Page] / TotalSamples, ITLBEntries);
+    double MissProb = pow(1.0 - PageSamples[Page] / TotalSamples, CacheEntries);
 
     // Processing all callers of the function
     for (std::pair<BinaryFunction *, uint64_t> Pair : Calls[BF]) {
       BinaryFunction *SrcFunction = Pair.first;
-      const uint64_t SrcPage =
-          BBAddr.at(SrcFunction->getLayout().block_front()) / ITLBPageSize;
+      double SrcPage =
+          BBAddr.at(SrcFunction->getLayout().block_front()) / PageSize;
       // Is this a 'long' or a 'short' call?
       if (Page != SrcPage) {
         // This is a miss
@@ -189,8 +192,7 @@ double expectedCacheHitRatio(
 
 } // namespace
 
-void CacheMetrics::printAll(raw_ostream &OS,
-                            const std::vector<BinaryFunction *> &BFs) {
+void CacheMetrics::printAll(const std::vector<BinaryFunction *> &BFs) {
   // Stats related to hot-cold code splitting
   size_t NumFunctions = 0;
   size_t NumProfiledFunctions = 0;
@@ -223,36 +225,36 @@ void CacheMetrics::printAll(raw_ostream &OS,
     }
   }
 
-  OS << format("  There are %zu functions;", NumFunctions)
-     << format(" %zu (%.2lf%%) are in the hot section,", NumHotFunctions,
-               100.0 * NumHotFunctions / NumFunctions)
-     << format(" %zu (%.2lf%%) have profile\n", NumProfiledFunctions,
-               100.0 * NumProfiledFunctions / NumFunctions);
-  OS << format("  There are %zu basic blocks;", NumBlocks)
-     << format(" %zu (%.2lf%%) are in the hot section\n", NumHotBlocks,
-               100.0 * NumHotBlocks / NumBlocks);
+  outs() << format("  There are %zu functions;", NumFunctions)
+         << format(" %zu (%.2lf%%) are in the hot section,", NumHotFunctions,
+                   100.0 * NumHotFunctions / NumFunctions)
+         << format(" %zu (%.2lf%%) have profile\n", NumProfiledFunctions,
+                   100.0 * NumProfiledFunctions / NumFunctions);
+  outs() << format("  There are %zu basic blocks;", NumBlocks)
+         << format(" %zu (%.2lf%%) are in the hot section\n", NumHotBlocks,
+                   100.0 * NumHotBlocks / NumBlocks);
 
   assert(TotalCodeMinAddr <= TotalCodeMaxAddr && "incorrect output addresses");
   size_t HotCodeSize = HotCodeMaxAddr - HotCodeMinAddr;
   size_t TotalCodeSize = TotalCodeMaxAddr - TotalCodeMinAddr;
 
   size_t HugePage2MB = 2 << 20;
-  OS << format("  Hot code takes %.2lf%% of binary (%zu bytes out of %zu, "
-               "%.2lf huge pages)\n",
-               100.0 * HotCodeSize / TotalCodeSize, HotCodeSize, TotalCodeSize,
-               double(HotCodeSize) / HugePage2MB);
+  outs() << format("  Hot code takes %.2lf%% of binary (%zu bytes out of %zu, "
+                   "%.2lf huge pages)\n",
+                   100.0 * HotCodeSize / TotalCodeSize, HotCodeSize,
+                   TotalCodeSize, double(HotCodeSize) / HugePage2MB);
 
   // Stats related to expected cache performance
   std::unordered_map<BinaryBasicBlock *, uint64_t> BBAddr;
   std::unordered_map<BinaryBasicBlock *, uint64_t> BBSize;
   extractBasicBlockInfo(BFs, BBAddr, BBSize);
 
-  OS << "  Expected i-TLB cache hit ratio: "
-     << format("%.2lf%%\n", expectedCacheHitRatio(BFs, BBAddr, BBSize));
+  outs() << "  Expected i-TLB cache hit ratio: "
+         << format("%.2lf%%\n", expectedCacheHitRatio(BFs, BBAddr, BBSize));
 
   auto Stats = calcTSPScore(BFs, BBAddr, BBSize);
-  OS << "  TSP score: "
-     << format("%.2lf%% (%zu out of %zu)\n",
-               100.0 * Stats.first / std::max<uint64_t>(Stats.second, 1),
-               Stats.first, Stats.second);
+  outs() << "  TSP score: "
+         << format("%.2lf%% (%zu out of %zu)\n",
+                   100.0 * Stats.first / std::max<uint64_t>(Stats.second, 1),
+                   Stats.first, Stats.second);
 }

@@ -41,8 +41,8 @@ MarkupFilter::MarkupFilter(raw_ostream &OS, LLVMSymbolizer &Symbolizer,
       ColorsEnabled(
           ColorsEnabled.value_or(WithColor::defaultAutoDetectFunction()(OS))) {}
 
-void MarkupFilter::filter(std::string &&InputLine) {
-  Line = std::move(InputLine);
+void MarkupFilter::filter(StringRef Line) {
+  this->Line = Line;
   resetColor();
 
   Parser.parseLine(Line);
@@ -552,7 +552,7 @@ std::optional<uint64_t> MarkupFilter::parseAddr(StringRef Str) const {
   }
   if (all_of(Str, [](char C) { return C == '0'; }))
     return 0;
-  if (!Str.starts_with("0x")) {
+  if (!Str.startswith("0x")) {
     reportTypeError(Str, "address");
     return std::nullopt;
   }
@@ -611,9 +611,12 @@ std::optional<std::string> MarkupFilter::parseMode(StringRef Str) const {
 
   // Pop off each of r/R, w/W, and x/X from the front, in that order.
   StringRef Remainder = Str;
-  Remainder.consume_front_insensitive("r");
-  Remainder.consume_front_insensitive("w");
-  Remainder.consume_front_insensitive("x");
+  if (!Remainder.empty() && tolower(Remainder.front()) == 'r')
+    Remainder = Remainder.drop_front();
+  if (!Remainder.empty() && tolower(Remainder.front()) == 'w')
+    Remainder = Remainder.drop_front();
+  if (!Remainder.empty() && tolower(Remainder.front()) == 'x')
+    Remainder = Remainder.drop_front();
 
   // If anything remains, then the string wasn't a mode.
   if (!Remainder.empty()) {
@@ -692,9 +695,7 @@ void MarkupFilter::reportTypeError(StringRef Str, StringRef TypeName) const {
 // passed to beginLine().
 void MarkupFilter::reportLocation(StringRef::iterator Loc) const {
   errs() << Line;
-  WithColor(errs().indent(Loc - StringRef(Line).begin()),
-            HighlightColor::String)
-      << '^';
+  WithColor(errs().indent(Loc - Line.begin()), HighlightColor::String) << '^';
   errs() << '\n';
 }
 
@@ -740,7 +741,7 @@ uint64_t MarkupFilter::adjustAddr(uint64_t Addr, PCType Type) const {
 }
 
 StringRef MarkupFilter::lineEnding() const {
-  return StringRef(Line).ends_with("\r\n") ? "\r\n" : "\n";
+  return Line.endswith("\r\n") ? "\r\n" : "\n";
 }
 
 bool MarkupFilter::MMap::contains(uint64_t Addr) const {

@@ -19,14 +19,6 @@ namespace clang {
 std::pair<const Expr *, bool>
 tryToFindPtrOrigin(const Expr *E, bool StopAtFirstRefCountedObj) {
   while (E) {
-    if (auto *tempExpr = dyn_cast<MaterializeTemporaryExpr>(E)) {
-      E = tempExpr->getSubExpr();
-      continue;
-    }
-    if (auto *tempExpr = dyn_cast<CXXBindTemporaryExpr>(E)) {
-      E = tempExpr->getSubExpr();
-      continue;
-    }
     if (auto *cast = dyn_cast<CastExpr>(E)) {
       if (StopAtFirstRefCountedObj) {
         if (auto *ConversionFunc =
@@ -42,15 +34,13 @@ tryToFindPtrOrigin(const Expr *E, bool StopAtFirstRefCountedObj) {
     }
     if (auto *call = dyn_cast<CallExpr>(E)) {
       if (auto *memberCall = dyn_cast<CXXMemberCallExpr>(call)) {
-        if (auto *decl = memberCall->getMethodDecl()) {
-          std::optional<bool> IsGetterOfRefCt = isGetterOfRefCounted(decl);
-          if (IsGetterOfRefCt && *IsGetterOfRefCt) {
-            E = memberCall->getImplicitObjectArgument();
-            if (StopAtFirstRefCountedObj) {
-              return {E, true};
-            }
-            continue;
+        std::optional<bool> IsGetterOfRefCt = isGetterOfRefCounted(memberCall->getMethodDecl());
+        if (IsGetterOfRefCt && *IsGetterOfRefCt) {
+          E = memberCall->getImplicitObjectArgument();
+          if (StopAtFirstRefCountedObj) {
+            return {E, true};
           }
+          continue;
         }
       }
 
@@ -69,12 +59,6 @@ tryToFindPtrOrigin(const Expr *E, bool StopAtFirstRefCountedObj) {
           E = call->getArg(0);
           continue;
         }
-
-        if (isReturnValueRefCounted(callee))
-          return {E, true};
-
-        if (isSingleton(callee))
-          return {E, true};
 
         if (isPtrConversion(callee)) {
           E = call->getArg(0);

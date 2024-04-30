@@ -263,7 +263,6 @@ protected:
   llvm::StringRef GetSectionName(const section_header_t &sect);
   static lldb::SectionType GetSectionType(llvm::StringRef sect_name,
                                           const section_header_t &sect);
-  size_t GetSectionDataSize(lldb_private::Section *section) override;
 
   typedef std::vector<section_header_t> SectionHeaderColl;
   typedef SectionHeaderColl::iterator SectionHeaderCollIter;

@@ -6,8 +6,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "flang/Parser/token-sequence.h"
-
+#include "token-sequence.h"
 #include "prescan.h"
 #include "flang/Parser/characters.h"
 #include "flang/Parser/message.h"
@@ -137,10 +136,7 @@ void TokenSequence::Put(
 }
 
 void TokenSequence::Put(const CharBlock &t, Provenance provenance) {
-  // Avoid t[0] if t is empty: it would create a reference to nullptr,
-  // which is UB.
-  const char *addr{t.size() ? &t[0] : nullptr};
-  Put(addr, t.size(), provenance);
+  Put(&t[0], t.size(), provenance);
 }
 
 void TokenSequence::Put(const std::string &s, Provenance provenance) {
@@ -347,29 +343,27 @@ ProvenanceRange TokenSequence::GetProvenanceRange() const {
 }
 
 const TokenSequence &TokenSequence::CheckBadFortranCharacters(
-    Messages &messages, const Prescanner &prescanner) const {
+    Messages &messages) const {
   std::size_t tokens{SizeInTokens()};
+  bool isBangOk{true};
   for (std::size_t j{0}; j < tokens; ++j) {
     CharBlock token{TokenAt(j)};
     char ch{token.FirstNonBlank()};
     if (ch != ' ' && !IsValidFortranTokenCharacter(ch)) {
-      if (ch == '!') {
-        if (prescanner.IsCompilerDirectiveSentinel(token)) {
-          continue;
-        } else if (j + 1 < tokens &&
-            prescanner.IsCompilerDirectiveSentinel(
-                TokenAt(j + 1))) { // !dir$, &c.
-          ++j;
-          continue;
-        }
-      }
-      if (ch < ' ' || ch >= '\x7f') {
+      if (ch == '!' && isBangOk) {
+        // allow in !dir$
+      } else if (ch < ' ' || ch >= '\x7f') {
         messages.Say(GetTokenProvenanceRange(j),
             "bad character (0x%02x) in Fortran token"_err_en_US, ch & 0xff);
       } else {
         messages.Say(GetTokenProvenanceRange(j),
             "bad character ('%c') in Fortran token"_err_en_US, ch);
       }
+    }
+    if (ch == ';') {
+      isBangOk = true;
+    } else if (ch != ' ') {
+      isBangOk = false;
     }
   }
   return *this;
@@ -382,13 +376,11 @@ const TokenSequence &TokenSequence::CheckBadParentheses(
   std::size_t tokens{SizeInTokens()};
   for (std::size_t j{0}; j < tokens; ++j) {
     CharBlock token{TokenAt(j)};
-    char ch{token.OnlyNonBlank()};
+    char ch{token.FirstNonBlank()};
     if (ch == '(') {
       ++nesting;
     } else if (ch == ')') {
-      if (nesting-- == 0) {
-        break;
-      }
+      --nesting;
     }
   }
   if (nesting != 0) {
@@ -396,7 +388,7 @@ const TokenSequence &TokenSequence::CheckBadParentheses(
     std::vector<std::size_t> stack;
     for (std::size_t j{0}; j < tokens; ++j) {
       CharBlock token{TokenAt(j)};
-      char ch{token.OnlyNonBlank()};
+      char ch{token.FirstNonBlank()};
       if (ch == '(') {
         stack.push_back(j);
       } else if (ch == ')') {

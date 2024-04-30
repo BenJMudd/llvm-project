@@ -13,6 +13,7 @@
 #include "llvm/Analysis/TensorSpec.h"
 
 #include <array>
+#include <string>
 #include <vector>
 
 namespace llvm {
@@ -39,8 +40,6 @@ namespace llvm {
   M(int64_t, {1}, jump_table_penalty, "Accumulation of costs for jump tables") \
   M(int64_t, {1}, case_cluster_penalty,                                        \
     "Accumulation of costs for case clusters")                                 \
-  M(int64_t, {1}, switch_default_dest_penalty,                                 \
-    "Accumulation of costs for switch default destination")                    \
   M(int64_t, {1}, switch_penalty,                                              \
     "Accumulation of costs for switch statements")                             \
   M(int64_t, {1}, unsimplified_common_instructions,                            \
@@ -93,8 +92,8 @@ constexpr bool isHeuristicInlineCostFeature(InlineCostFeatureIndex Feature) {
 
 // List of features. Each feature is defined through a triple:
 // - the name of an enum member, which will be the feature index
-// - a textual name, used for ML model binding (so it needs to match the
-// names used by the ML model).
+// - a textual name, used for Tensorflow model binding (so it needs to match the
+// names used by the Tensorflow model)
 // - a documentation description. Currently, that is not used anywhere
 // programmatically, and serves as workaround to inability of inserting comments
 // in macros.

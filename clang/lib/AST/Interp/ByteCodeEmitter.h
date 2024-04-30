@@ -1,4 +1,4 @@
-//===--- ByteCodeEmitter.h - Instruction emitter for the VM -----*- C++ -*-===//
+//===--- ByteCodeEmitter.h - Instruction emitter for the VM ---------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -13,13 +13,19 @@
 #ifndef LLVM_CLANG_AST_INTERP_LINKEMITTER_H
 #define LLVM_CLANG_AST_INTERP_LINKEMITTER_H
 
+#include "ByteCodeGenError.h"
 #include "Context.h"
+#include "InterpStack.h"
+#include "InterpState.h"
 #include "PrimType.h"
 #include "Program.h"
 #include "Source.h"
+#include "llvm/Support/Error.h"
 
 namespace clang {
 namespace interp {
+class Context;
+class SourceInfo;
 enum Opcode : uint32_t;
 
 /// An emitter which links the program to bytecode for later use.
@@ -31,7 +37,7 @@ protected:
 
 public:
   /// Compiles the function into the module.
-  Function *compileFunc(const FunctionDecl *FuncDecl);
+  llvm::Expected<Function *> compileFunc(const FunctionDecl *FuncDecl);
 
 protected:
   ByteCodeEmitter(Context &Ctx, Program &P) : Ctx(Ctx), P(P) {}
@@ -48,6 +54,11 @@ protected:
   virtual bool visitExpr(const Expr *E) = 0;
   virtual bool visitDecl(const VarDecl *E) = 0;
 
+  /// Bails out if a given node cannot be compiled.
+  bool bail(const Stmt *S) { return bail(S->getBeginLoc()); }
+  bool bail(const Decl *D) { return bail(D->getBeginLoc()); }
+  bool bail(const SourceLocation &Loc);
+
   /// Emits jumps.
   bool jumpTrue(const LabelTy &Label);
   bool jumpFalse(const LabelTy &Label);
@@ -58,11 +69,11 @@ protected:
   Local createLocal(Descriptor *D);
 
   /// Parameter indices.
-  llvm::DenseMap<const ParmVarDecl *, ParamOffset> Params;
+  llvm::DenseMap<const ParmVarDecl *, unsigned> Params;
   /// Lambda captures.
-  llvm::DenseMap<const ValueDecl *, ParamOffset> LambdaCaptures;
-  /// Offset of the This parameter in a lambda record.
-  ParamOffset LambdaThisCapture{0, false};
+  /// Map from Decl* to [Offset, IsReference] pair.
+  llvm::DenseMap<const ValueDecl *, std::pair<unsigned, bool>> LambdaCaptures;
+  unsigned LambdaThisCapture;
   /// Local descriptors.
   llvm::SmallVector<SmallVector<Local, 8>, 2> Descriptors;
 
@@ -75,6 +86,8 @@ private:
   LabelTy NextLabel = 0;
   /// Offset of the next local variable.
   unsigned NextLocalOffset = 0;
+  /// Location of a failure.
+  std::optional<SourceLocation> BailLocation;
   /// Label information for linker.
   llvm::DenseMap<LabelTy, unsigned> LabelOffsets;
   /// Location of label relocations.

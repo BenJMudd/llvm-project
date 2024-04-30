@@ -786,6 +786,9 @@ RefLeakReportVisitor::getEndPath(BugReporterContext &BRC,
   assert(RV);
 
   if (RV->getKind() == RefVal::ErrorLeakReturned) {
+    // FIXME: Per comments in rdar://6320065, "create" only applies to CF
+    // objects.  Only "copy", "alloc", "retain" and "new" transfer ownership
+    // to the caller for NS objects.
     const Decl *D = &EndN->getCodeDecl();
 
     os << (isa<ObjCMethodDecl>(D) ? " is returned from a method "
@@ -977,7 +980,7 @@ void RefLeakReport::findBindingToReport(CheckerContext &Ctx,
     //       something like derived regions if we want to construct SVal from
     //       Sym. Instead, we take the value that is definitely stored in that
     //       region, thus guaranteeing that trackStoredValue will work.
-    bugreporter::trackStoredValue(AllVarBindings[0].second,
+    bugreporter::trackStoredValue(AllVarBindings[0].second.castAs<KnownSVal>(),
                                   AllocBindingToReport, *this);
   } else {
     AllocBindingToReport = AllocFirstBinding;

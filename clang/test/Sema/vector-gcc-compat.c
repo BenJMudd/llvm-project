@@ -20,14 +20,14 @@ typedef int v4i32 __attribute((vector_size(16)));
 // Verify that we can use the [[]] spelling of the attribute.
 // We intentionally use the same type alias name to check that both versions
 // define the same type.
-typedef long long v2i64 [[gnu::vector_size(16)]]; // expected-warning{{[[]] attributes are a C23 extension}}
-typedef int v2i32 [[gnu::vector_size(8)]]; // expected-warning{{[[]] attributes are a C23 extension}}
+typedef long long v2i64 [[gnu::vector_size(16)]]; // expected-warning{{[[]] attributes are a C2x extension}}
+typedef int v2i32 [[gnu::vector_size(8)]]; // expected-warning{{[[]] attributes are a C2x extension}}
 
 // Check various positions where the [[]] spelling can or cannot be used.
-[[gnu::vector_size(16)]] typedef long long v2i64; // expected-warning{{[[]] attributes are a C23 extension}}
+[[gnu::vector_size(16)]] typedef long long v2i64; // expected-warning{{[[]] attributes are a C2x extension}}
 typedef long long [[gnu::vector_size(16)]] v2i64_ignored;
   // expected-warning@-1{{'vector_size' attribute ignored}}
-  // expected-warning@-2{{[[]] attributes are a C23 extension}}
+  // expected-warning@-2{{[[]] attributes are a C2x extension}}
 // FIXME: Contrary to the error message that we emit, GCC does actually allow
 // the attribute in the following position. Somewhat surprisingly, the attribute
 // is applied not to the pointer but to the base type, i.e. this declaration has
@@ -35,10 +35,10 @@ typedef long long [[gnu::vector_size(16)]] v2i64_ignored;
 typedef long long *[[gnu::vector_size(16)]] v2i64_doesnt_work;
   // expected-error@-1{{invalid vector element type 'long long *'}}
   // expected-warning@-2{{GCC does not allow the 'vector_size' attribute to be written on a type}}
-  // expected-warning@-3{{[[]] attributes are a C23 extension}}
+  // expected-warning@-3{{[[]] attributes are a C2x extension}}
 
 // Verify that we can use the attribute outside of a typedef.
-static int v2i32_var [[gnu::vector_size(8)]]; // expected-warning{{[[]] attributes are a C23 extension}}
+static int v2i32_var [[gnu::vector_size(8)]]; // expected-warning{{[[]] attributes are a C2x extension}}
 
 void arithmeticTest(void);
 void logicTest(void);

@@ -96,13 +96,6 @@ void MCXCOFFStreamer::emitXCOFFRefDirective(const MCSymbol *Symbol) {
   DF->getFixups().push_back(Fixup);
 }
 
-void MCXCOFFStreamer::emitXCOFFRenameDirective(const MCSymbol *Name,
-                                               StringRef Rename) {
-  const MCSymbolXCOFF *Symbol = cast<const MCSymbolXCOFF>(Name);
-  if (!Symbol->hasRename())
-    report_fatal_error("Only explicit .rename is supported for XCOFF.");
-}
-
 void MCXCOFFStreamer::emitXCOFFExceptDirective(const MCSymbol *Symbol,
                                                const MCSymbol *Trap,
                                                unsigned Lang, unsigned Reason,
@@ -162,9 +155,12 @@ void MCXCOFFStreamer::emitInstToData(const MCInst &Inst,
 MCStreamer *llvm::createXCOFFStreamer(MCContext &Context,
                                       std::unique_ptr<MCAsmBackend> &&MAB,
                                       std::unique_ptr<MCObjectWriter> &&OW,
-                                      std::unique_ptr<MCCodeEmitter> &&CE) {
+                                      std::unique_ptr<MCCodeEmitter> &&CE,
+                                      bool RelaxAll) {
   MCXCOFFStreamer *S = new MCXCOFFStreamer(Context, std::move(MAB),
                                            std::move(OW), std::move(CE));
+  if (RelaxAll)
+    S->getAssembler().setRelaxAll(true);
   return S;
 }
 

@@ -375,10 +375,11 @@ AliasResult TypeBasedAAResult::alias(const MemoryLocation &LocA,
                                      const MemoryLocation &LocB,
                                      AAQueryInfo &AAQI, const Instruction *) {
   if (!EnableTBAA)
-    return AliasResult::MayAlias;
+    return AAResultBase::alias(LocA, LocB, AAQI, nullptr);
 
+  // If accesses may alias, chain to the next AliasAnalysis.
   if (Aliases(LocA.AATags.TBAA, LocB.AATags.TBAA))
-    return AliasResult::MayAlias;
+    return AAResultBase::alias(LocA, LocB, AAQI, nullptr);
 
   // Otherwise return a definitive result.
   return AliasResult::NoAlias;
@@ -388,11 +389,11 @@ ModRefInfo TypeBasedAAResult::getModRefInfoMask(const MemoryLocation &Loc,
                                                 AAQueryInfo &AAQI,
                                                 bool IgnoreLocals) {
   if (!EnableTBAA)
-    return ModRefInfo::ModRef;
+    return AAResultBase::getModRefInfoMask(Loc, AAQI, IgnoreLocals);
 
   const MDNode *M = Loc.AATags.TBAA;
   if (!M)
-    return ModRefInfo::ModRef;
+    return AAResultBase::getModRefInfoMask(Loc, AAQI, IgnoreLocals);
 
   // If this is an "immutable" type, we can assume the pointer is pointing
   // to constant memory.
@@ -400,13 +401,13 @@ ModRefInfo TypeBasedAAResult::getModRefInfoMask(const MemoryLocation &Loc,
       (isStructPathTBAA(M) && TBAAStructTagNode(M).isTypeImmutable()))
     return ModRefInfo::NoModRef;
 
-  return ModRefInfo::ModRef;
+  return AAResultBase::getModRefInfoMask(Loc, AAQI, IgnoreLocals);
 }
 
 MemoryEffects TypeBasedAAResult::getMemoryEffects(const CallBase *Call,
                                                   AAQueryInfo &AAQI) {
   if (!EnableTBAA)
-    return MemoryEffects::unknown();
+    return AAResultBase::getMemoryEffects(Call, AAQI);
 
   // If this is an "immutable" type, the access is not observable.
   if (const MDNode *M = Call->getMetadata(LLVMContext::MD_tbaa))
@@ -414,40 +415,40 @@ MemoryEffects TypeBasedAAResult::getMemoryEffects(const CallBase *Call,
         (isStructPathTBAA(M) && TBAAStructTagNode(M).isTypeImmutable()))
       return MemoryEffects::none();
 
-  return MemoryEffects::unknown();
+  return AAResultBase::getMemoryEffects(Call, AAQI);
 }
 
 MemoryEffects TypeBasedAAResult::getMemoryEffects(const Function *F) {
-  // Functions don't have metadata.
-  return MemoryEffects::unknown();
+  // Functions don't have metadata. Just chain to the next implementation.
+  return AAResultBase::getMemoryEffects(F);
 }
 
 ModRefInfo TypeBasedAAResult::getModRefInfo(const CallBase *Call,
                                             const MemoryLocation &Loc,
                                             AAQueryInfo &AAQI) {
   if (!EnableTBAA)
-    return ModRefInfo::ModRef;
+    return AAResultBase::getModRefInfo(Call, Loc, AAQI);
 
   if (const MDNode *L = Loc.AATags.TBAA)
     if (const MDNode *M = Call->getMetadata(LLVMContext::MD_tbaa))
       if (!Aliases(L, M))
         return ModRefInfo::NoModRef;
 
-  return ModRefInfo::ModRef;
+  return AAResultBase::getModRefInfo(Call, Loc, AAQI);
 }
 
 ModRefInfo TypeBasedAAResult::getModRefInfo(const CallBase *Call1,
                                             const CallBase *Call2,
                                             AAQueryInfo &AAQI) {
   if (!EnableTBAA)
-    return ModRefInfo::ModRef;
+    return AAResultBase::getModRefInfo(Call1, Call2, AAQI);
 
   if (const MDNode *M1 = Call1->getMetadata(LLVMContext::MD_tbaa))
     if (const MDNode *M2 = Call2->getMetadata(LLVMContext::MD_tbaa))
       if (!Aliases(M1, M2))
         return ModRefInfo::NoModRef;
 
-  return ModRefInfo::ModRef;
+  return AAResultBase::getModRefInfo(Call1, Call2, AAQI);
 }
 
 bool MDNode::isTBAAVtableAccess() const {
@@ -816,37 +817,4 @@ MDNode *AAMDNodes::extendToTBAA(MDNode *MD, ssize_t Len) {
   NextNodes[3] =
       ConstantAsMetadata::get(ConstantInt::get(PreviousSize->getType(), Len));
   return MDNode::get(MD->getContext(), NextNodes);
-}
-
-AAMDNodes AAMDNodes::adjustForAccess(unsigned AccessSize) {
-  AAMDNodes New = *this;
-  MDNode *M = New.TBAAStruct;
-  if (M && M->getNumOperands() >= 3 && M->getOperand(0) &&
-      mdconst::hasa<ConstantInt>(M->getOperand(0)) &&
-      mdconst::extract<ConstantInt>(M->getOperand(0))->isZero() &&
-      M->getOperand(1) && mdconst::hasa<ConstantInt>(M->getOperand(1)) &&
-      mdconst::extract<ConstantInt>(M->getOperand(1))->getValue() ==
-          AccessSize &&
-      M->getOperand(2) && isa<MDNode>(M->getOperand(2))) {
-    New.TBAAStruct = nullptr;
-    New.TBAA = cast<MDNode>(M->getOperand(2));
-  }
-  return New;
-}
-
-AAMDNodes AAMDNodes::adjustForAccess(size_t Offset, Type *AccessTy,
-                                     const DataLayout &DL) {
-  AAMDNodes New = shift(Offset);
-  if (!DL.typeSizeEqualsStoreSize(AccessTy))
-    return New;
-  TypeSize Size = DL.getTypeStoreSize(AccessTy);
-  if (Size.isScalable())
-    return New;
-
-  return New.adjustForAccess(Size.getKnownMinValue());
-}
-
-AAMDNodes AAMDNodes::adjustForAccess(size_t Offset, unsigned AccessSize) {
-  AAMDNodes New = shift(Offset);
-  return New.adjustForAccess(AccessSize);
 }

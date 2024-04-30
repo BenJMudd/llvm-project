@@ -223,13 +223,13 @@ MachineBasicBlock::SkipPHIsAndLabels(MachineBasicBlock::iterator I) {
 
 MachineBasicBlock::iterator
 MachineBasicBlock::SkipPHIsLabelsAndDebug(MachineBasicBlock::iterator I,
-                                          Register Reg, bool SkipPseudoOp) {
+                                          bool SkipPseudoOp) {
   const TargetInstrInfo *TII = getParent()->getSubtarget().getInstrInfo();
 
   iterator E = end();
   while (I != E && (I->isPHI() || I->isPosition() || I->isDebugInstr() ||
                     (SkipPseudoOp && I->isPseudoProbe()) ||
-                    TII->isBasicBlockPrologue(*I, Reg)))
+                    TII->isBasicBlockPrologue(*I)))
     ++I;
   // FIXME: This needs to change if we wish to bundle labels / dbg_values
   // inside the bundle.
@@ -567,14 +567,7 @@ void MachineBasicBlock::printName(raw_ostream &os, unsigned printNameFlags,
     }
     if (getBBID().has_value()) {
       os << (hasAttributes ? ", " : " (");
-      os << "bb_id " << getBBID()->BaseID;
-      if (getBBID()->CloneID != 0)
-        os << " " << getBBID()->CloneID;
-      hasAttributes = true;
-    }
-    if (CallFrameSize != 0) {
-      os << (hasAttributes ? ", " : " (");
-      os << "call-frame-size " << CallFrameSize;
+      os << "bb_id " << *getBBID();
       hasAttributes = true;
     }
   }
@@ -888,7 +881,7 @@ void MachineBasicBlock::replaceSuccessor(MachineBasicBlock *Old,
   removeSuccessor(OldI);
 }
 
-void MachineBasicBlock::copySuccessor(const MachineBasicBlock *Orig,
+void MachineBasicBlock::copySuccessor(MachineBasicBlock *Orig,
                                       succ_iterator I) {
   if (!Orig->Probs.empty())
     addSuccessor(*I, Orig->getSuccProbability(I));
@@ -960,10 +953,6 @@ bool MachineBasicBlock::isLayoutSuccessor(const MachineBasicBlock *MBB) const {
 
 const MachineBasicBlock *MachineBasicBlock::getSingleSuccessor() const {
   return Successors.size() == 1 ? Successors[0] : nullptr;
-}
-
-const MachineBasicBlock *MachineBasicBlock::getSinglePredecessor() const {
-  return Predecessors.size() == 1 ? Predecessors[0] : nullptr;
 }
 
 MachineBasicBlock *MachineBasicBlock::getFallThrough(bool JumpToFallThrough) {
@@ -1099,36 +1088,6 @@ static bool jumpTableHasOtherUses(const MachineFunction &MF,
   return false;
 }
 
-class SlotIndexUpdateDelegate : public MachineFunction::Delegate {
-private:
-  MachineFunction &MF;
-  SlotIndexes *Indexes;
-  SmallSetVector<MachineInstr *, 2> Insertions;
-
-public:
-  SlotIndexUpdateDelegate(MachineFunction &MF, SlotIndexes *Indexes)
-      : MF(MF), Indexes(Indexes) {
-    MF.setDelegate(this);
-  }
-
-  ~SlotIndexUpdateDelegate() {
-    MF.resetDelegate(this);
-    for (auto MI : Insertions)
-      Indexes->insertMachineInstrInMaps(*MI);
-  }
-
-  void MF_HandleInsertion(MachineInstr &MI) override {
-    // This is called before MI is inserted into block so defer index update.
-    if (Indexes)
-      Insertions.insert(&MI);
-  }
-
-  void MF_HandleRemoval(MachineInstr &MI) override {
-    if (Indexes && !Insertions.remove(&MI))
-      Indexes->removeMachineInstrFromMaps(MI);
-  }
-};
-
 MachineBasicBlock *MachineBasicBlock::SplitCriticalEdge(
     MachineBasicBlock *Succ, Pass &P,
     std::vector<SparseBitVector<>> *LiveInSets) {
@@ -1137,9 +1096,9 @@ MachineBasicBlock *MachineBasicBlock::SplitCriticalEdge(
 
   MachineFunction *MF = getParent();
   MachineBasicBlock *PrevFallthrough = getNextNode();
+  DebugLoc DL;  // FIXME: this is nowhere
 
   MachineBasicBlock *NMBB = MF->CreateMachineBasicBlock();
-  NMBB->setCallFrameSize(Succ->getCallFrameSize());
 
   // Is there an indirect jump with jump table?
   bool ChangedIndirectJump = false;
@@ -1201,32 +1160,51 @@ MachineBasicBlock *MachineBasicBlock::SplitCriticalEdge(
 
   ReplaceUsesOfBlockWith(Succ, NMBB);
 
+  // If updateTerminator() removes instructions, we need to remove them from
+  // SlotIndexes.
+  SmallVector<MachineInstr*, 4> Terminators;
+  if (Indexes) {
+    for (MachineInstr &MI :
+         llvm::make_range(getFirstInstrTerminator(), instr_end()))
+      Terminators.push_back(&MI);
+  }
+
   // Since we replaced all uses of Succ with NMBB, that should also be treated
   // as the fallthrough successor
   if (Succ == PrevFallthrough)
     PrevFallthrough = NMBB;
 
-  if (!ChangedIndirectJump) {
-    SlotIndexUpdateDelegate SlotUpdater(*MF, Indexes);
+  if (!ChangedIndirectJump)
     updateTerminator(PrevFallthrough);
+
+  if (Indexes) {
+    SmallVector<MachineInstr*, 4> NewTerminators;
+    for (MachineInstr &MI :
+         llvm::make_range(getFirstInstrTerminator(), instr_end()))
+      NewTerminators.push_back(&MI);
+
+    for (MachineInstr *Terminator : Terminators) {
+      if (!is_contained(NewTerminators, Terminator))
+        Indexes->removeMachineInstrFromMaps(*Terminator);
+    }
   }
 
   // Insert unconditional "jump Succ" instruction in NMBB if necessary.
   NMBB->addSuccessor(Succ);
   if (!NMBB->isLayoutSuccessor(Succ)) {
-    SlotIndexUpdateDelegate SlotUpdater(*MF, Indexes);
     SmallVector<MachineOperand, 4> Cond;
     const TargetInstrInfo *TII = getParent()->getSubtarget().getInstrInfo();
-
-    // In original 'this' BB, there must be a branch instruction targeting at
-    // Succ. We can not find it out since currently getBranchDestBlock was not
-    // implemented for all targets. However, if the merged DL has column or line
-    // number, the scope and non-zero column and line number is same with that
-    // branch instruction so we can safely use it.
-    DebugLoc DL, MergedDL = findBranchDebugLoc();
-    if (MergedDL && (MergedDL.getLine() || MergedDL.getCol()))
-      DL = MergedDL;
     TII->insertBranch(*NMBB, Succ, nullptr, Cond, DL);
+
+    if (Indexes) {
+      for (MachineInstr &MI : NMBB->instrs()) {
+        // Some instructions may have been moved to NMBB by updateTerminator(),
+        // so we first remove any instruction that already has an index.
+        if (Indexes->hasIndex(MI))
+          Indexes->removeMachineInstrFromMaps(MI);
+        Indexes->insertMachineInstrInMaps(MI);
+      }
+    }
   }
 
   // Fix PHI nodes in Succ so they refer to NMBB instead of this.
@@ -1291,8 +1269,6 @@ MachineBasicBlock *MachineBasicBlock::SplitCriticalEdge(
           assert(VNI &&
                  "PHI sources should be live out of their predecessors.");
           LI.addSegment(LiveInterval::Segment(StartIndex, EndIndex, VNI));
-          for (auto &SR : LI.subranges())
-            SR.addSegment(LiveInterval::Segment(StartIndex, EndIndex, VNI));
         }
       }
     }
@@ -1312,16 +1288,8 @@ MachineBasicBlock *MachineBasicBlock::SplitCriticalEdge(
         VNInfo *VNI = LI.getVNInfoAt(PrevIndex);
         assert(VNI && "LiveInterval should have VNInfo where it is live.");
         LI.addSegment(LiveInterval::Segment(StartIndex, EndIndex, VNI));
-        // Update subranges with live values
-        for (auto &SR : LI.subranges()) {
-          VNInfo *VNI = SR.getVNInfoAt(PrevIndex);
-          if (VNI)
-            SR.addSegment(LiveInterval::Segment(StartIndex, EndIndex, VNI));
-        }
       } else if (!isLiveOut && !isLastMBB) {
         LI.removeSegment(StartIndex, EndIndex);
-        for (auto &SR : LI.subranges())
-          SR.removeSegment(StartIndex, EndIndex);
       }
     }
 
@@ -1728,12 +1696,6 @@ void MachineBasicBlock::clearLiveIns() {
   LiveIns.clear();
 }
 
-void MachineBasicBlock::clearLiveIns(
-    std::vector<RegisterMaskPair> &OldLiveIns) {
-  assert(OldLiveIns.empty() && "Vector must be empty");
-  std::swap(LiveIns, OldLiveIns);
-}
-
 MachineBasicBlock::livein_iterator MachineBasicBlock::livein_begin() const {
   assert(getParent()->getProperties().hasProperty(
       MachineFunctionProperties::Property::TracksLiveness) &&
@@ -1766,6 +1728,11 @@ bool MachineBasicBlock::sizeWithoutDebugLargerThan(unsigned Limit) const {
       return true;
   }
   return false;
+}
+
+unsigned MachineBasicBlock::getBBIDOrNumber() const {
+  uint8_t BBAddrMapVersion = getParent()->getContext().getBBAddrMapVersion();
+  return BBAddrMapVersion < 2 ? getNumber() : *getBBID();
 }
 
 const MBBSectionID MBBSectionID::ColdSectionID(MBBSectionID::SectionType::Cold);

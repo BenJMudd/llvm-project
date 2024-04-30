@@ -28,11 +28,14 @@ class MCCodeEmitter;
 class MCOperand;
 
 namespace AMDGPU {
-struct MCKernelDescriptor;
 namespace HSAMD {
 class MetadataStreamer;
 }
 } // namespace AMDGPU
+
+namespace amdhsa {
+struct kernel_descriptor_t;
+}
 
 class AMDGPUAsmPrinter final : public AsmPrinter {
 private:
@@ -72,9 +75,9 @@ private:
   uint16_t getAmdhsaKernelCodeProperties(
       const MachineFunction &MF) const;
 
-  AMDGPU::MCKernelDescriptor
-  getAmdhsaKernelDescriptor(const MachineFunction &MF,
-                            const SIProgramInfo &PI) const;
+  amdhsa::kernel_descriptor_t getAmdhsaKernelDescriptor(
+      const MachineFunction &MF,
+      const SIProgramInfo &PI) const;
 
   void initTargetStreamer(Module &M);
 
@@ -113,8 +116,6 @@ public:
 
   void emitFunctionBodyEnd() override;
 
-  void emitImplicitDef(const MachineInstr *MI) const override;
-
   void emitFunctionEntryLabel() override;
 
   void emitBasicBlockStart(const MachineBasicBlock &MBB) override;
@@ -124,6 +125,9 @@ public:
   void emitStartOfAsmFile(Module &M) override;
 
   void emitEndOfAsmFile(Module &M) override;
+
+  bool isBlockOnlyReachableByFallthrough(
+    const MachineBasicBlock *MBB) const override;
 
   bool PrintAsmOperand(const MachineInstr *MI, unsigned OpNo,
                        const char *ExtraCode, raw_ostream &O) override;

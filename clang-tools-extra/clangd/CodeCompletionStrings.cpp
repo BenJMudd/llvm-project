@@ -12,7 +12,6 @@
 #include "clang/AST/RawCommentList.h"
 #include "clang/Basic/SourceManager.h"
 #include "clang/Sema/CodeCompleteConsumer.h"
-#include "llvm/Support/Compiler.h"
 #include "llvm/Support/JSON.h"
 #include <limits>
 #include <utility>
@@ -23,7 +22,7 @@ namespace {
 
 bool isInformativeQualifierChunk(CodeCompletionString::Chunk const &Chunk) {
   return Chunk.Kind == CodeCompletionString::CK_Informative &&
-         llvm::StringRef(Chunk.Text).ends_with("::");
+         llvm::StringRef(Chunk.Text).endswith("::");
 }
 
 void appendEscapeSnippet(const llvm::StringRef Text, std::string *Out) {
@@ -119,8 +118,7 @@ std::string getDeclComment(const ASTContext &Ctx, const NamedDecl &Decl) {
 void getSignature(const CodeCompletionString &CCS, std::string *Signature,
                   std::string *Snippet,
                   CodeCompletionResult::ResultKind ResultKind,
-                  CXCursorKind CursorKind, bool IncludeFunctionArguments,
-                  std::string *RequiredQualifiers) {
+                  CXCursorKind CursorKind, std::string *RequiredQualifiers) {
   // Placeholder with this index will be $0 to mark final cursor position.
   // Usually we do not add $0, so the cursor is placed at end of completed text.
   unsigned CursorSnippetArg = std::numeric_limits<unsigned>::max();
@@ -140,8 +138,6 @@ void getSignature(const CodeCompletionString &CCS, std::string *Signature,
   unsigned SnippetArg = 0;
   bool HadObjCArguments = false;
   bool HadInformativeChunks = false;
-
-  std::optional<unsigned> TruncateSnippetAt;
   for (const auto &Chunk : CCS) {
     // Informative qualifier chunks only clutter completion results, skip
     // them.
@@ -165,7 +161,7 @@ void getSignature(const CodeCompletionString &CCS, std::string *Signature,
       //   Completing a method declaration itself (not a method expression) is
       //   similar except that we use the `RequiredQualifiers` to store the
       //   text before the selector, e.g. `- (void)`.
-      if (!llvm::StringRef(Chunk.Text).ends_with(":")) { // Treat as C++.
+      if (!llvm::StringRef(Chunk.Text).endswith(":")) { // Treat as C++.
         if (RequiredQualifiers)
           *RequiredQualifiers = std::move(*Signature);
         Signature->clear();
@@ -247,13 +243,6 @@ void getSignature(const CodeCompletionString &CCS, std::string *Signature,
                        "CompletionItems");
       break;
     case CodeCompletionString::CK_LeftParen:
-      // We're assuming that a LeftParen in a declaration starts a function
-      // call, and arguments following the parenthesis could be discarded if
-      // IncludeFunctionArguments is false.
-      if (!IncludeFunctionArguments &&
-          ResultKind == CodeCompletionResult::RK_Declaration)
-        TruncateSnippetAt.emplace(Snippet->size());
-      [[fallthrough]];
     case CodeCompletionString::CK_RightParen:
     case CodeCompletionString::CK_LeftBracket:
     case CodeCompletionString::CK_RightBracket:
@@ -275,8 +264,6 @@ void getSignature(const CodeCompletionString &CCS, std::string *Signature,
       break;
     }
   }
-  if (TruncateSnippetAt)
-    *Snippet = Snippet->substr(0, *TruncateSnippetAt);
 }
 
 std::string formatDocumentation(const CodeCompletionString &CCS,

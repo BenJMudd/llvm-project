@@ -106,13 +106,12 @@ public:
     /// Value means passed by value at the mlir level, it is not necessarily
     /// implied by Fortran Value attribute.
     Value,
-    /// ValueAttribute means dummy has the Fortran VALUE attribute.
+    /// ValueAttribute means dummy has the the Fortran VALUE attribute.
     BaseAddressValueAttribute,
     CharBoxValueAttribute, // BoxChar with VALUE
     // Passing a character procedure as a <procedure address, result length>
     // tuple.
-    CharProcTuple,
-    BoxProcRef
+    CharProcTuple
   };
   /// Different properties of an entity that can be passed/returned.
   /// One-to-One mapping with PassEntityBy but for
@@ -125,8 +124,7 @@ public:
     CharProcTuple,
     Box,
     MutableBox,
-    Value,
-    BoxProcRef
+    Value
   };
 
   using FortranEntity = typename PassedEntityTypes<T>::FortranEntity;
@@ -174,12 +172,6 @@ public:
     /// May the dummy argument require INTENT(OUT) finalization
     /// on entry to the invoked procedure? Provides conservative answer.
     bool mayRequireIntentoutFinalization() const;
-    /// Is the dummy argument an explicit-shape or assumed-size array that
-    /// must be passed by descriptor? Sequence association imply the actual
-    /// argument shape/rank may differ with the dummy shape/rank (see F'2023
-    /// section 15.5.2.12), so care is needed when creating the descriptor
-    /// for the dummy argument.
-    bool isSequenceAssociatedDescriptor() const;
     /// How entity is passed by.
     PassEntityBy passBy;
     /// What is the entity (SymbolRef for callee/ActualArgument* for caller)
@@ -279,6 +271,8 @@ public:
     actualInputs.resize(getNumFIRArguments());
   }
 
+  using ExprVisitor = std::function<void(evaluate::Expr<evaluate::SomeType>)>;
+
   /// CRTP callbacks
   bool hasAlternateReturns() const;
   std::string getMangledName() const;
@@ -307,20 +301,9 @@ public:
   /// index.
   std::optional<unsigned> getPassArgIndex() const;
 
-  /// Get the passed-object if any. Crashes if there is a passed object
-  /// but it was not placed in the inputs yet. Return a null value
-  /// otherwise.
-  mlir::Value getIfPassedArg() const;
-
   /// Return the procedure symbol if this is a call to a user defined
   /// procedure.
   const Fortran::semantics::Symbol *getProcedureSymbol() const;
-
-  /// Return the dummy argument symbol if this is a call to a user
-  /// defined procedure with explicit interface. Returns nullptr if there
-  /// is no user defined explicit interface.
-  const Fortran::semantics::Symbol *
-  getDummySymbol(const PassedEntity &entity) const;
 
   /// Helpers to place the lowered arguments at the right place once they
   /// have been lowered.
@@ -328,12 +311,9 @@ public:
   void placeAddressAndLengthInput(const PassedEntity &passedEntity,
                                   mlir::Value addr, mlir::Value len);
 
-  /// Get lowered FIR argument given the Fortran argument.
-  mlir::Value getInput(const PassedEntity &passedEntity);
-
   /// If this is a call to a procedure pointer or dummy, returns the related
-  /// procedure designator. Nullptr otherwise.
-  const Fortran::evaluate::ProcedureDesignator *getIfIndirectCall() const;
+  /// symbol. Nullptr otherwise.
+  const Fortran::semantics::Symbol *getIfIndirectCallSymbol() const;
 
   /// Get the input vector once it is complete.
   llvm::ArrayRef<mlir::Value> getInputs() const {
@@ -346,27 +326,13 @@ public:
   /// the result specification expressions (extents and lengths) ? If needed,
   /// this mapping must be done after argument lowering, and before the call
   /// itself.
-  bool mustMapInterfaceSymbolsForResult() const;
-  /// Must the caller map function interface symbols in order to evaluate
-  /// the specification expressions of a given dummy argument?
-  bool mustMapInterfaceSymbolsForDummyArgument(const PassedEntity &) const;
-
-  /// Visitor for specification expression. Boolean indicate the specification
-  /// expression is for the last extent of an assumed size array.
-  using ExprVisitor =
-      std::function<void(evaluate::Expr<evaluate::SomeType>, bool)>;
+  bool mustMapInterfaceSymbols() const;
 
   /// Walk the result non-deferred extent specification expressions.
-  void walkResultExtents(const ExprVisitor &) const;
+  void walkResultExtents(ExprVisitor) const;
 
   /// Walk the result non-deferred length specification expressions.
-  void walkResultLengths(const ExprVisitor &) const;
-  /// Walk non-deferred extent specification expressions of a dummy argument.
-  void walkDummyArgumentExtents(const PassedEntity &,
-                                const ExprVisitor &) const;
-  /// Walk non-deferred length specification expressions of a dummy argument.
-  void walkDummyArgumentLengths(const PassedEntity &,
-                                const ExprVisitor &) const;
+  void walkResultLengths(ExprVisitor) const;
 
   /// Get the mlir::Value that is passed as argument \p sym of the function
   /// being called. The arguments must have been placed before calling this
@@ -382,14 +348,14 @@ public:
   /// returns the storage type.
   mlir::Type getResultStorageType() const;
 
-  /// Return FIR type of argument.
-  mlir::Type getDummyArgumentType(const PassedEntity &) const;
-
   // Copy of base implementation.
   static constexpr bool hasHostAssociated() { return false; }
   mlir::Type getHostAssociatedTy() const {
     llvm_unreachable("getting host associated type in CallerInterface");
   }
+
+  /// Set attributes on MLIR function.
+  void setFuncAttrs(mlir::func::FuncOp) const {}
 
 private:
   /// Check that the input vector is complete.
@@ -441,6 +407,7 @@ public:
   bool hasHostAssociated() const;
   mlir::Type getHostAssociatedTy() const;
   mlir::Value getHostAssociatedTuple() const;
+  void setFuncAttrs(mlir::func::FuncOp) const;
 
 private:
   Fortran::lower::pft::FunctionLikeUnit &funit;
@@ -451,14 +418,15 @@ mlir::FunctionType
 translateSignature(const Fortran::evaluate::ProcedureDesignator &,
                    Fortran::lower::AbstractConverter &);
 
-/// Declare or find the mlir::func::FuncOp for the procedure designator
-/// \p proc. If the mlir::func::FuncOp does not exist yet, declare it with
-/// the signature translated from the ProcedureDesignator argument.
+/// Declare or find the mlir::func::FuncOp named \p name. If the
+/// mlir::func::FuncOp does not exist yet, declare it with the signature
+/// translated from the ProcedureDesignator argument.
 /// Due to Fortran implicit function typing rules, the returned FuncOp is not
 /// guaranteed to have the signature from ProcedureDesignator if the FuncOp was
 /// already declared.
 mlir::func::FuncOp
-getOrDeclareFunction(const Fortran::evaluate::ProcedureDesignator &,
+getOrDeclareFunction(llvm::StringRef name,
+                     const Fortran::evaluate::ProcedureDesignator &,
                      Fortran::lower::AbstractConverter &);
 
 /// Return the type of an argument that is a dummy procedure. This may be an

@@ -27,7 +27,6 @@ add_mlir_dialect_library(MLIRSPIRVDialect
   ${MLIR_MAIN_INCLUDE_DIR}/mlir/Dialect/SPIRV
 
   DEPENDS
-  MLIRGPUDialect
   MLIRSPIRVAttributeIncGen
   MLIRSPIRVAttrUtilsGen
   MLIRSPIRVAvailabilityIncGen
@@ -38,11 +37,9 @@ add_mlir_dialect_library(MLIRSPIRVDialect
 
   LINK_LIBS PUBLIC
   MLIRControlFlowInterfaces
-  MLIRFunctionInterfaces
   MLIRIR
   MLIRParser
   MLIRSideEffectInterfaces
   MLIRSupport
   MLIRTransforms
-  MLIRUBDialect
 )

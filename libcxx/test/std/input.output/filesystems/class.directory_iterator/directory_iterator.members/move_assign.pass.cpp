@@ -6,8 +6,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-// REQUIRES: can-create-symlinks
-// UNSUPPORTED: c++03, c++11, c++14
+// UNSUPPORTED: c++03
 // UNSUPPORTED: no-filesystem
 // UNSUPPORTED: availability-filesystem-missing
 
@@ -17,19 +16,19 @@
 
 // directory_iterator& operator=(directory_iterator const&);
 
-#include <filesystem>
+#include "filesystem_include.h"
 #include <type_traits>
 #include <set>
 #include <cassert>
 
 #include "test_macros.h"
 #include "filesystem_test_helper.h"
-namespace fs = std::filesystem;
-using namespace fs;
 
 // The filesystem specification explicitly allows for self-move on
 // the directory iterators. Turn off this warning so we can test it.
 TEST_CLANG_DIAGNOSTIC_IGNORED("-Wself-move")
+
+using namespace fs;
 
 static void test_assignment_signature()
 {

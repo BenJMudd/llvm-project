@@ -7,7 +7,7 @@
 //===----------------------------------------------------------------------===//
 
 // This test breaks when enabling LSV.
-// UNSUPPORTED: clang-modules-build
+// UNSUPPORTED: modules-build
 
 // UNSUPPORTED: c++03, c++11, c++14
 

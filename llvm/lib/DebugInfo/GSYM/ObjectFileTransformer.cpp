@@ -14,9 +14,8 @@
 #include "llvm/Support/DataExtractor.h"
 #include "llvm/Support/raw_ostream.h"
 
-#include "llvm/DebugInfo/GSYM/GsymCreator.h"
 #include "llvm/DebugInfo/GSYM/ObjectFileTransformer.h"
-#include "llvm/DebugInfo/GSYM/OutputAggregator.h"
+#include "llvm/DebugInfo/GSYM/GsymCreator.h"
 
 using namespace llvm;
 using namespace gsym;
@@ -69,7 +68,7 @@ static std::vector<uint8_t> getUUID(const object::ObjectFile &Obj) {
 }
 
 llvm::Error ObjectFileTransformer::convert(const object::ObjectFile &Obj,
-                                           OutputAggregator &Out,
+                                           raw_ostream &Log,
                                            GsymCreator &Gsym) {
   using namespace llvm::object;
 
@@ -93,18 +92,15 @@ llvm::Error ObjectFileTransformer::convert(const object::ObjectFile &Obj,
       return AddrOrErr.takeError();
 
     if (SymType.get() != SymbolRef::Type::ST_Function ||
-        !Gsym.IsValidTextAddress(*AddrOrErr))
+        !Gsym.IsValidTextAddress(*AddrOrErr) ||
+        Gsym.hasFunctionInfoForAddress(*AddrOrErr))
       continue;
     // Function size for MachO files will be 0
     constexpr bool NoCopy = false;
     const uint64_t size = IsELF ? ELFSymbolRef(Sym).getSize() : 0;
     Expected<StringRef> Name = Sym.getName();
     if (!Name) {
-      if (Out.GetOS())
-        logAllUnhandledErrors(Name.takeError(), *Out.GetOS(),
-                              "ObjectFileTransformer: ");
-      else
-        consumeError(Name.takeError());
+      logAllUnhandledErrors(Name.takeError(), Log, "ObjectFileTransformer: ");
       continue;
     }
     // Remove the leading '_' character in any symbol names if there is one
@@ -115,8 +111,6 @@ llvm::Error ObjectFileTransformer::convert(const object::ObjectFile &Obj,
         FunctionInfo(*AddrOrErr, size, Gsym.insertString(*Name, NoCopy)));
   }
   size_t FunctionsAddedCount = Gsym.getNumFunctionInfos() - NumBefore;
-  if (Out.GetOS())
-    *Out.GetOS() << "Loaded " << FunctionsAddedCount
-                 << " functions from symbol table.\n";
+  Log << "Loaded " << FunctionsAddedCount << " functions from symbol table.\n";
   return Error::success();
 }

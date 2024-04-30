@@ -7,11 +7,9 @@
 //===----------------------------------------------------------------------===//
 #include "PerfReader.h"
 #include "ProfileGenerator.h"
-#include "llvm/ADT/SmallString.h"
 #include "llvm/DebugInfo/Symbolize/SymbolizableModule.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Process.h"
-#include "llvm/Support/ToolOutputFile.h"
 
 #define DEBUG_TYPE "perf-reader"
 
@@ -363,11 +361,8 @@ PerfScriptReader::convertPerfDataToTrace(ProfiledBinary *Binary,
     exitWithError("Perf not found.");
   }
   std::string PerfPath = *PerfExecutable;
-
-  SmallString<128> PerfTraceFile;
-  sys::fs::createUniquePath("perf-script-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%.tmp",
-                            PerfTraceFile, /*MakeAbsolute=*/true);
-  std::string ErrorFile = std::string(PerfTraceFile) + ".err";
+  std::string PerfTraceFile = PerfData.str() + ".script.tmp";
+  std::string ErrorFile = PerfData.str() + ".script.err.tmp";
   StringRef ScriptMMapArgs[] = {PerfPath, "script",   "--show-mmap-events",
                                 "-F",     "comm,pid", "-i",
                                 PerfData};
@@ -375,9 +370,6 @@ PerfScriptReader::convertPerfDataToTrace(ProfiledBinary *Binary,
                                           StringRef(PerfTraceFile), // Stdout
                                           StringRef(ErrorFile)};    // Stderr
   sys::ExecuteAndWait(PerfPath, ScriptMMapArgs, std::nullopt, Redirects);
-
-  PerfScriptReader::TempFileCleanups.emplace_back(PerfTraceFile);
-  PerfScriptReader::TempFileCleanups.emplace_back(ErrorFile);
 
   // Collect the PIDs
   TraceStream TraceIt(PerfTraceFile);
@@ -408,26 +400,12 @@ PerfScriptReader::convertPerfDataToTrace(ProfiledBinary *Binary,
                                   PIDs,     "-i",         PerfData};
   sys::ExecuteAndWait(PerfPath, ScriptSampleArgs, std::nullopt, Redirects);
 
-  return {std::string(PerfTraceFile), PerfFormat::PerfScript,
-          PerfContent::UnknownContent};
-}
-
-static StringRef filename(StringRef Path, bool UseBackSlash) {
-  llvm::sys::path::Style PathStyle =
-      UseBackSlash ? llvm::sys::path::Style::windows_backslash
-                   : llvm::sys::path::Style::native;
-  StringRef FileName = llvm::sys::path::filename(Path, PathStyle);
-
-  // In case this file use \r\n as newline.
-  if (UseBackSlash && FileName.back() == '\r')
-    return FileName.drop_back();
-
-  return FileName;
+  return {PerfTraceFile, PerfFormat::PerfScript, PerfContent::UnknownContent};
 }
 
 void PerfScriptReader::updateBinaryAddress(const MMapEvent &Event) {
   // Drop the event which doesn't belong to user-provided binary
-  StringRef BinaryName = filename(Event.BinaryPath, Binary->isCOFF());
+  StringRef BinaryName = llvm::sys::path::filename(Event.BinaryPath);
   if (Binary->getName() != BinaryName)
     return;
 
@@ -619,7 +597,7 @@ bool PerfScriptReader::extractCallstack(TraceStream &TraceIt,
   // It's in bottom-up order with each frame in one line.
 
   // Extract stack frames from sample
-  while (!TraceIt.isAtEoF() && !TraceIt.getCurrentLine().starts_with(" 0x")) {
+  while (!TraceIt.isAtEoF() && !TraceIt.getCurrentLine().startswith(" 0x")) {
     StringRef FrameStr = TraceIt.getCurrentLine().ltrim();
     uint64_t FrameAddr = 0;
     if (FrameStr.getAsInteger(16, FrameAddr)) {
@@ -667,7 +645,7 @@ bool PerfScriptReader::extractCallstack(TraceStream &TraceIt,
   // Skip other unrelated line, find the next valid LBR line
   // Note that even for empty call stack, we should skip the address at the
   // bottom, otherwise the following pass may generate a truncated callstack
-  while (!TraceIt.isAtEoF() && !TraceIt.getCurrentLine().starts_with(" 0x")) {
+  while (!TraceIt.isAtEoF() && !TraceIt.getCurrentLine().startswith(" 0x")) {
     TraceIt.advance();
   }
   // Filter out broken stack sample. We may not have complete frame info
@@ -712,14 +690,14 @@ void HybridPerfReader::parseSample(TraceStream &TraceIt, uint64_t Count) {
   // Parsing call stack and populate into PerfSample.CallStack
   if (!extractCallstack(TraceIt, Sample->CallStack)) {
     // Skip the next LBR line matched current call stack
-    if (!TraceIt.isAtEoF() && TraceIt.getCurrentLine().starts_with(" 0x"))
+    if (!TraceIt.isAtEoF() && TraceIt.getCurrentLine().startswith(" 0x"))
       TraceIt.advance();
     return;
   }
 
   warnIfMissingMMap();
 
-  if (!TraceIt.isAtEoF() && TraceIt.getCurrentLine().starts_with(" 0x")) {
+  if (!TraceIt.isAtEoF() && TraceIt.getCurrentLine().startswith(" 0x")) {
     // Parsing LBR stack and populate into PerfSample.LBRStack
     if (extractLBRStack(TraceIt, Sample->LBRStack)) {
       if (IgnoreStackSamples) {
@@ -868,7 +846,7 @@ void UnsymbolizedProfileReader::readUnsymbolizedProfile(StringRef FileName) {
         std::make_shared<StringBasedCtxKey>();
     StringRef Line = TraceIt.getCurrentLine();
     // Read context stack for CS profile.
-    if (Line.starts_with("[")) {
+    if (Line.startswith("[")) {
       ProfileIsCS = true;
       auto I = ContextStrSet.insert(Line.str());
       SampleContext::createCtxVectorFromStr(*I.first, Key->Context);
@@ -992,7 +970,7 @@ bool PerfScriptReader::extractMMap2EventForBinary(ProfiledBinary *Binary,
            << format("0x%" PRIx64 ":", MMap.Address) << " \n";
   }
 
-  StringRef BinaryName = filename(MMap.BinaryPath, Binary->isCOFF());
+  StringRef BinaryName = llvm::sys::path::filename(MMap.BinaryPath);
   return Binary->getName() == BinaryName;
 }
 
@@ -1027,7 +1005,7 @@ bool PerfScriptReader::isLBRSample(StringRef Line) {
   Line.trim().split(Records, " ", 2, false);
   if (Records.size() < 2)
     return false;
-  if (Records[1].starts_with("0x") && Records[1].contains('/'))
+  if (Records[1].startswith("0x") && Records[1].contains('/'))
     return true;
   return false;
 }
@@ -1223,8 +1201,6 @@ void PerfScriptReader::parsePerfTraces() {
   if (SkipSymbolization)
     writeUnsymbolizedProfile(OutputFilename);
 }
-
-SmallVector<CleanupInstaller, 2> PerfScriptReader::TempFileCleanups;
 
 } // end namespace sampleprof
 } // end namespace llvm

@@ -16,12 +16,10 @@
 #include "AMDGPUArgumentUsageInfo.h"
 #include "AMDGPUMachineFunction.h"
 #include "AMDGPUTargetMachine.h"
-#include "GCNSubtarget.h"
 #include "MCTargetDesc/AMDGPUMCTargetDesc.h"
 #include "SIInstrInfo.h"
 #include "SIModeRegisterDefaults.h"
 #include "llvm/ADT/SetVector.h"
-#include "llvm/ADT/SmallVector.h"
 #include "llvm/CodeGen/MIRYamlMapping.h"
 #include "llvm/CodeGen/PseudoSourceValue.h"
 #include "llvm/Support/raw_ostream.h"
@@ -258,7 +256,6 @@ struct SIMachineFunctionInfo final : public yaml::MachineFunctionInfo {
   uint32_t GDSSize = 0;
   Align DynLDSAlign;
   bool IsEntryFunction = false;
-  bool IsChainFunction = false;
   bool NoSignedZerosFPMath = false;
   bool MemoryBound = false;
   bool WaveLimiter = false;
@@ -307,7 +304,6 @@ template <> struct MappingTraits<SIMachineFunctionInfo> {
     YamlIO.mapOptional("gdsSize", MFI.GDSSize, 0u);
     YamlIO.mapOptional("dynLDSAlign", MFI.DynLDSAlign, Align());
     YamlIO.mapOptional("isEntryFunction", MFI.IsEntryFunction, false);
-    YamlIO.mapOptional("isChainFunction", MFI.IsChainFunction, false);
     YamlIO.mapOptional("noSignedZerosFPMath", MFI.NoSignedZerosFPMath, false);
     YamlIO.mapOptional("memoryBound", MFI.MemoryBound, false);
     YamlIO.mapOptional("waveLimiter", MFI.WaveLimiter, false);
@@ -426,9 +422,6 @@ class SIMachineFunctionInfo final : public AMDGPUMachineFunction,
 
   const AMDGPUGWSResourcePseudoSourceValue GWSResourcePSV;
 
-  // Default/requested number of work groups for the function.
-  SmallVector<unsigned> MaxNumWorkGroups = {0, 0, 0};
-
 private:
   unsigned NumUserSGPRs = 0;
   unsigned NumSystemSGPRs = 0;
@@ -441,9 +434,13 @@ private:
   unsigned NumSpilledSGPRs = 0;
   unsigned NumSpilledVGPRs = 0;
 
-  // Tracks information about user SGPRs that will be setup by hardware which
-  // will apply to all wavefronts of the grid.
-  GCNUserSGPRUsageInfo UserSGPRInfo;
+  // Feature bits required for inputs passed in user SGPRs.
+  bool PrivateSegmentBuffer : 1;
+  bool DispatchPtr : 1;
+  bool QueuePtr : 1;
+  bool KernargSegmentPtr : 1;
+  bool DispatchID : 1;
+  bool FlatScratchInit : 1;
 
   // Feature bits required for inputs passed in system SGPRs.
   bool WorkGroupIDX : 1; // Always initialized.
@@ -456,6 +453,11 @@ private:
   bool WorkItemIDX : 1; // Always initialized.
   bool WorkItemIDY : 1;
   bool WorkItemIDZ : 1;
+
+  // Private memory buffer
+  // Compute directly in sgpr[0:1]
+  // Other shaders indirect 64-bits at sgpr[0:1]
+  bool ImplicitBufferPtr : 1;
 
   // Pointer to where the ABI inserts special kernel arguments separate from the
   // user arguments. This is an offset from the KernargSegmentPtr.
@@ -494,18 +496,16 @@ public:
   };
 
 private:
-  // To track virtual VGPR + lane index for each subregister of the SGPR spilled
-  // to frameindex key during SILowerSGPRSpills pass.
+  // To track VGPR + lane index for each subregister of the SGPR spilled to
+  // frameindex key during SILowerSGPRSpills pass.
+  DenseMap<int, std::vector<SIRegisterInfo::SpilledReg>> SGPRSpillToVGPRLanes;
+  // To track VGPR + lane index for spilling special SGPRs like Frame Pointer
+  // identified during PrologEpilogInserter.
   DenseMap<int, std::vector<SIRegisterInfo::SpilledReg>>
-      SGPRSpillsToVirtualVGPRLanes;
-  // To track physical VGPR + lane index for CSR SGPR spills and special SGPRs
-  // like Frame Pointer identified during PrologEpilogInserter.
-  DenseMap<int, std::vector<SIRegisterInfo::SpilledReg>>
-      SGPRSpillsToPhysicalVGPRLanes;
-  unsigned NumVirtualVGPRSpillLanes = 0;
-  unsigned NumPhysicalVGPRSpillLanes = 0;
+      PrologEpilogSGPRSpillToVGPRLanes;
+  unsigned NumVGPRSpillLanes = 0;
+  unsigned NumVGPRPrologEpilogSpillLanes = 0;
   SmallVector<Register, 2> SpillVGPRs;
-  SmallVector<Register, 2> SpillPhysVGPRs;
   using WWMSpillsMap = MapVector<Register, int>;
   // To track the registers used in instructions that can potentially modify the
   // inactive lanes. The WWM instructions and the writelane instructions for
@@ -548,11 +548,10 @@ private:
 private:
   Register VGPRForAGPRCopy;
 
-  bool allocateVirtualVGPRForSGPRSpills(MachineFunction &MF, int FI,
-                                        unsigned LaneIndex);
-  bool allocatePhysicalVGPRForSGPRSpills(MachineFunction &MF, int FI,
-                                         unsigned LaneIndex,
-                                         bool IsPrologEpilog);
+  bool allocateVGPRForSGPRSpills(MachineFunction &MF, int FI,
+                                 unsigned LaneIndex);
+  bool allocateVGPRForPrologEpilogSGPRSpills(MachineFunction &MF, int FI,
+                                             unsigned LaneIndex);
 
 public:
   Register getVGPRForAGPRCopy() const {
@@ -584,25 +583,20 @@ public:
   SIModeRegisterDefaults getMode() const { return Mode; }
 
   ArrayRef<SIRegisterInfo::SpilledReg>
-  getSGPRSpillToVirtualVGPRLanes(int FrameIndex) const {
-    auto I = SGPRSpillsToVirtualVGPRLanes.find(FrameIndex);
-    return (I == SGPRSpillsToVirtualVGPRLanes.end())
+  getSGPRSpillToVGPRLanes(int FrameIndex) const {
+    auto I = SGPRSpillToVGPRLanes.find(FrameIndex);
+    return (I == SGPRSpillToVGPRLanes.end())
                ? ArrayRef<SIRegisterInfo::SpilledReg>()
                : ArrayRef(I->second);
   }
 
   ArrayRef<Register> getSGPRSpillVGPRs() const { return SpillVGPRs; }
-
   const WWMSpillsMap &getWWMSpills() const { return WWMSpills; }
   const ReservedRegSet &getWWMReservedRegs() const { return WWMReservedRegs; }
 
   const PrologEpilogSGPRSpillsMap &getPrologEpilogSGPRSpills() const {
     return PrologEpilogSGPRSpills;
   }
-
-  GCNUserSGPRUsageInfo &getUserSGPRInfo() { return UserSGPRInfo; }
-
-  const GCNUserSGPRUsageInfo &getUserSGPRInfo() const { return UserSGPRInfo; }
 
   void addToPrologEpilogSGPRSpills(Register Reg,
                                    PrologEpilogSGPRSaveRestoreInfo SI) {
@@ -653,9 +647,9 @@ public:
   }
 
   ArrayRef<SIRegisterInfo::SpilledReg>
-  getSGPRSpillToPhysicalVGPRLanes(int FrameIndex) const {
-    auto I = SGPRSpillsToPhysicalVGPRLanes.find(FrameIndex);
-    return (I == SGPRSpillsToPhysicalVGPRLanes.end())
+  getPrologEpilogSGPRSpillToVGPRLanes(int FrameIndex) const {
+    auto I = PrologEpilogSGPRSpillToVGPRLanes.find(FrameIndex);
+    return (I == PrologEpilogSGPRSpillToVGPRLanes.end())
                ? ArrayRef<SIRegisterInfo::SpilledReg>()
                : ArrayRef(I->second);
   }
@@ -672,8 +666,6 @@ public:
 
     return VRegFlags.inBounds(Reg) && VRegFlags[Reg] & Flag;
   }
-
-  bool hasVRegFlags() { return VRegFlags.size(); }
 
   void allocateWWMSpill(MachineFunction &MF, Register VGPR, uint64_t Size = 4,
                         Align Alignment = Align(4));
@@ -707,12 +699,7 @@ public:
       I->second.IsDead = true;
   }
 
-  // To bring the Physical VGPRs in the highest range allocated for CSR SGPR
-  // spilling into the lowest available range.
-  void shiftSpillPhysVGPRsToLowestRange(MachineFunction &MF);
-
   bool allocateSGPRSpillToVGPRLane(MachineFunction &MF, int FI,
-                                   bool SpillToPhysVGPRLane = false,
                                    bool IsPrologEpilog = false);
   bool allocateVGPRSpillToAGPR(MachineFunction &MF, int FI, bool isAGPRtoVGPR);
 
@@ -741,10 +728,6 @@ public:
   Register addFlatScratchInit(const SIRegisterInfo &TRI);
   Register addImplicitBufferPtr(const SIRegisterInfo &TRI);
   Register addLDSKernelId();
-  SmallVectorImpl<MCRegister> *
-  addPreloadedKernArg(const SIRegisterInfo &TRI, const TargetRegisterClass *RC,
-                      unsigned AllocSizeDWord, int KernArgIdx,
-                      int PaddingSGPRs);
 
   /// Increment user SGPRs used for padding the argument list only.
   Register addReservedUserSGPR() {
@@ -754,21 +737,35 @@ public:
   }
 
   // Add system SGPRs.
-  Register addWorkGroupIDX() {
-    ArgInfo.WorkGroupIDX = ArgDescriptor::createRegister(getNextSystemSGPR());
-    NumSystemSGPRs += 1;
+  Register addWorkGroupIDX(bool HasArchitectedSGPRs) {
+    Register Reg =
+        HasArchitectedSGPRs ? (MCPhysReg)AMDGPU::TTMP9 : getNextSystemSGPR();
+    ArgInfo.WorkGroupIDX = ArgDescriptor::createRegister(Reg);
+    if (!HasArchitectedSGPRs)
+      NumSystemSGPRs += 1;
+
     return ArgInfo.WorkGroupIDX.getRegister();
   }
 
-  Register addWorkGroupIDY() {
-    ArgInfo.WorkGroupIDY = ArgDescriptor::createRegister(getNextSystemSGPR());
-    NumSystemSGPRs += 1;
+  Register addWorkGroupIDY(bool HasArchitectedSGPRs) {
+    Register Reg =
+        HasArchitectedSGPRs ? (MCPhysReg)AMDGPU::TTMP7 : getNextSystemSGPR();
+    unsigned Mask = HasArchitectedSGPRs && hasWorkGroupIDZ() ? 0xffff : ~0u;
+    ArgInfo.WorkGroupIDY = ArgDescriptor::createRegister(Reg, Mask);
+    if (!HasArchitectedSGPRs)
+      NumSystemSGPRs += 1;
+
     return ArgInfo.WorkGroupIDY.getRegister();
   }
 
-  Register addWorkGroupIDZ() {
-    ArgInfo.WorkGroupIDZ = ArgDescriptor::createRegister(getNextSystemSGPR());
-    NumSystemSGPRs += 1;
+  Register addWorkGroupIDZ(bool HasArchitectedSGPRs) {
+    Register Reg =
+        HasArchitectedSGPRs ? (MCPhysReg)AMDGPU::TTMP7 : getNextSystemSGPR();
+    unsigned Mask = HasArchitectedSGPRs ? 0xffff << 16 : ~0u;
+    ArgInfo.WorkGroupIDZ = ArgDescriptor::createRegister(Reg, Mask);
+    if (!HasArchitectedSGPRs)
+      NumSystemSGPRs += 1;
+
     return ArgInfo.WorkGroupIDZ.getRegister();
   }
 
@@ -777,8 +774,6 @@ public:
     NumSystemSGPRs += 1;
     return ArgInfo.WorkGroupInfo.getRegister();
   }
-
-  bool hasLDSKernelId() const { return LDSKernelId; }
 
   // Add special VGPR inputs
   void setWorkItemIDX(ArgDescriptor Arg) {
@@ -804,6 +799,30 @@ public:
     ArgInfo.PrivateSegmentWaveByteOffset = ArgDescriptor::createRegister(Reg);
   }
 
+  bool hasPrivateSegmentBuffer() const {
+    return PrivateSegmentBuffer;
+  }
+
+  bool hasDispatchPtr() const {
+    return DispatchPtr;
+  }
+
+  bool hasQueuePtr() const {
+    return QueuePtr;
+  }
+
+  bool hasKernargSegmentPtr() const {
+    return KernargSegmentPtr;
+  }
+
+  bool hasDispatchID() const {
+    return DispatchID;
+  }
+
+  bool hasFlatScratchInit() const {
+    return FlatScratchInit;
+  }
+
   bool hasWorkGroupIDX() const {
     return WorkGroupIDX;
   }
@@ -819,6 +838,8 @@ public:
   bool hasWorkGroupInfo() const {
     return WorkGroupInfo;
   }
+
+  bool hasLDSKernelId() const { return LDSKernelId; }
 
   bool hasPrivateSegmentWaveByteOffset() const {
     return PrivateSegmentWaveByteOffset;
@@ -838,6 +859,10 @@ public:
 
   bool hasImplicitArgPtr() const {
     return ImplicitArgPtr;
+  }
+
+  bool hasImplicitBufferPtr() const {
+    return ImplicitBufferPtr;
   }
 
   AMDGPUFunctionArgInfo &getArgInfo() {
@@ -874,10 +899,6 @@ public:
 
   unsigned getNumPreloadedSGPRs() const {
     return NumUserSGPRs + NumSystemSGPRs;
-  }
-
-  unsigned getNumKernargPreloadedSGPRs() const {
-    return UserSGPRInfo.getNumKernargPreloadSGPRs();
   }
 
   Register getPrivateSegmentWaveByteOffsetSystemSGPR() const {
@@ -1037,6 +1058,22 @@ public:
     return WavesPerEU.second;
   }
 
+  /// \returns SGPR used for \p Dim's work group ID.
+  Register getWorkGroupIDSGPR(unsigned Dim) const {
+    switch (Dim) {
+    case 0:
+      assert(hasWorkGroupIDX());
+      return ArgInfo.WorkGroupIDX.getRegister();
+    case 1:
+      assert(hasWorkGroupIDY());
+      return ArgInfo.WorkGroupIDY.getRegister();
+    case 2:
+      assert(hasWorkGroupIDZ());
+      return ArgInfo.WorkGroupIDZ.getRegister();
+    }
+    llvm_unreachable("unexpected dimension");
+  }
+
   const AMDGPUGWSResourcePseudoSourceValue *
   getGWSPSV(const AMDGPUTargetMachine &TM) {
     return &GWSResourcePSV;
@@ -1075,13 +1112,6 @@ public:
 
   // \returns true if a function needs or may need AGPRs.
   bool usesAGPRs(const MachineFunction &MF) const;
-
-  /// \returns Default/requested number of work groups for this function.
-  SmallVector<unsigned> getMaxNumWorkGroups() const { return MaxNumWorkGroups; }
-
-  unsigned getMaxNumWorkGroupsX() const { return MaxNumWorkGroups[0]; }
-  unsigned getMaxNumWorkGroupsY() const { return MaxNumWorkGroups[1]; }
-  unsigned getMaxNumWorkGroupsZ() const { return MaxNumWorkGroups[2]; }
 };
 
 } // end namespace llvm

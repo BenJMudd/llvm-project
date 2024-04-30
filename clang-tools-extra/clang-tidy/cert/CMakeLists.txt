@@ -12,6 +12,7 @@ add_clang_library(clangTidyCERTModule
   LimitedRandomnessCheck.cpp
   MutatingCopyCheck.cpp
   NonTrivialTypesLibcMemoryCallsCheck.cpp
+  PostfixOperatorCheck.cpp
   ProperlySeededRandomGeneratorCheck.cpp
   SetLongJmpCheck.cpp
   StaticObjectExceptionCheck.cpp
@@ -31,7 +32,6 @@ add_clang_library(clangTidyCERTModule
 
   DEPENDS
   omp_gen
-  ClangDriverOptions
   )
 
 clang_target_link_libraries(clangTidyCERTModule

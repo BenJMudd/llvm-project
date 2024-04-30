@@ -6,11 +6,13 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include <array>
+#include <string>
+
 #include "SnippetRepetitor.h"
 #include "Target.h"
 #include "llvm/ADT/Sequence.h"
 #include "llvm/CodeGen/TargetInstrInfo.h"
-#include "llvm/CodeGen/TargetLowering.h"
 #include "llvm/CodeGen/TargetSubtargetInfo.h"
 
 namespace llvm {
@@ -30,10 +32,10 @@ public:
             CleanupMemory](FunctionFiller &Filler) {
       auto Entry = Filler.getEntry();
       if (!Instructions.empty()) {
-        const unsigned NumRepetitions =
-            divideCeil(MinInstructions, Instructions.size());
-        for (unsigned I = 0; I < NumRepetitions; ++I) {
-          Entry.addInstructions(Instructions);
+        // Add the whole snippet at least once.
+        Entry.addInstructions(Instructions);
+        for (unsigned I = Instructions.size(); I < MinInstructions; ++I) {
+          Entry.addInstruction(Instructions[I % Instructions.size()]);
         }
       }
       Entry.addReturn(State.getExegesisTarget(), CleanupMemory);
@@ -48,8 +50,10 @@ public:
 
 class LoopSnippetRepetitor : public SnippetRepetitor {
 public:
-  explicit LoopSnippetRepetitor(const LLVMState &State, unsigned LoopRegister)
-      : SnippetRepetitor(State), LoopCounter(LoopRegister) {}
+  explicit LoopSnippetRepetitor(const LLVMState &State)
+      : SnippetRepetitor(State),
+        LoopCounter(State.getExegesisTarget().getLoopCounterRegister(
+            State.getTargetMachine().getTargetTriple())) {}
 
   // Loop over the snippet ceil(MinInstructions / Instructions.Size()) times.
   FillFunction Repeat(ArrayRef<MCInst> Instructions, unsigned MinInstructions,
@@ -72,11 +76,6 @@ public:
 
       auto Loop = Filler.addBasicBlock();
       auto Exit = Filler.addBasicBlock();
-
-      // Align the loop machine basic block to a target-specific boundary
-      // to promote optimal instruction fetch/predecoding conditions.
-      Loop.MBB->setAlignment(
-          Filler.MF.getSubtarget().getTargetLowering()->getPrefLoopAlignment());
 
       const unsigned LoopUnrollFactor =
           LoopBodySize <= Instructions.size()
@@ -107,12 +106,12 @@ public:
         for (const auto &LiveIn : Entry.MBB->liveins())
           Loop.MBB->addLiveIn(LiveIn);
       }
-      for (auto _ : seq(LoopUnrollFactor)) {
+      for (auto _ : seq(0U, LoopUnrollFactor)) {
         (void)_;
         Loop.addInstructions(Instructions);
       }
-      ET.decrementLoopCounterAndJump(*Loop.MBB, *Loop.MBB, State.getInstrInfo(),
-                                     LoopCounter);
+      ET.decrementLoopCounterAndJump(*Loop.MBB, *Loop.MBB,
+                                     State.getInstrInfo());
 
       // Set up the exit basic block.
       Loop.MBB->addSuccessor(Exit.MBB, BranchProbability::getZero());
@@ -136,14 +135,12 @@ SnippetRepetitor::~SnippetRepetitor() {}
 
 std::unique_ptr<const SnippetRepetitor>
 SnippetRepetitor::Create(Benchmark::RepetitionModeE Mode,
-                         const LLVMState &State, unsigned LoopRegister) {
+                         const LLVMState &State) {
   switch (Mode) {
   case Benchmark::Duplicate:
-  case Benchmark::MiddleHalfDuplicate:
     return std::make_unique<DuplicateSnippetRepetitor>(State);
   case Benchmark::Loop:
-  case Benchmark::MiddleHalfLoop:
-    return std::make_unique<LoopSnippetRepetitor>(State, LoopRegister);
+    return std::make_unique<LoopSnippetRepetitor>(State);
   case Benchmark::AggregateMin:
     break;
   }

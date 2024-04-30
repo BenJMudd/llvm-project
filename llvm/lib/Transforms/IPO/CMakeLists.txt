@@ -35,7 +35,6 @@ add_llvm_component_library(LLVMipo
   PartialInlining.cpp
   SampleContextTracker.cpp
   SampleProfile.cpp
-  SampleProfileMatcher.cpp
   SampleProfileProbe.cpp
   SCCP.cpp
   StripDeadPrototypes.cpp

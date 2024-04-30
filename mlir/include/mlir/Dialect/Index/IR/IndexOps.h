@@ -23,13 +23,10 @@
 // Forward Declarations
 //===----------------------------------------------------------------------===//
 
-namespace mlir {
-class PatternRewriter;
-namespace index {
+namespace mlir::index {
 enum class IndexCmpPredicate : uint32_t;
 class IndexCmpPredicateAttr;
-} // namespace index
-} // namespace mlir
+} // namespace mlir::index
 
 //===----------------------------------------------------------------------===//
 // ODS-Generated Declarations

@@ -14,37 +14,13 @@
 
 namespace mlir {
 
-/// Lowering for gpu.dynamic.shared.memory to LLVM dialect. The pattern first
-/// create a 0-sized global array symbol similar as LLVM expects. It constructs
-/// a memref descriptor with these values and return it.
-struct GPUDynamicSharedMemoryOpLowering
-    : public ConvertOpToLLVMPattern<gpu::DynamicSharedMemoryOp> {
-  using ConvertOpToLLVMPattern<
-      gpu::DynamicSharedMemoryOp>::ConvertOpToLLVMPattern;
-  GPUDynamicSharedMemoryOpLowering(const LLVMTypeConverter &converter,
-                                   unsigned alignmentBit = 0)
-      : ConvertOpToLLVMPattern<gpu::DynamicSharedMemoryOp>(converter),
-        alignmentBit(alignmentBit) {}
-
-  LogicalResult
-  matchAndRewrite(gpu::DynamicSharedMemoryOp op, OpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override;
-
-private:
-  // Alignment bit
-  unsigned alignmentBit;
-};
-
 struct GPUFuncOpLowering : ConvertOpToLLVMPattern<gpu::GPUFuncOp> {
-  GPUFuncOpLowering(
-      const LLVMTypeConverter &converter, unsigned allocaAddrSpace,
-      unsigned workgroupAddrSpace, StringAttr kernelAttributeName,
-      std::optional<StringAttr> kernelBlockSizeAttributeName = std::nullopt)
+  GPUFuncOpLowering(LLVMTypeConverter &converter, unsigned allocaAddrSpace,
+                    unsigned workgroupAddrSpace, StringAttr kernelAttributeName)
       : ConvertOpToLLVMPattern<gpu::GPUFuncOp>(converter),
         allocaAddrSpace(allocaAddrSpace),
         workgroupAddrSpace(workgroupAddrSpace),
-        kernelAttributeName(kernelAttributeName),
-        kernelBlockSizeAttributeName(kernelBlockSizeAttributeName) {}
+        kernelAttributeName(kernelAttributeName) {}
 
   LogicalResult
   matchAndRewrite(gpu::GPUFuncOp gpuFuncOp, OpAdaptor adaptor,
@@ -58,9 +34,6 @@ private:
 
   /// The attribute name to use instead of `gpu.kernel`.
   StringAttr kernelAttributeName;
-
-  /// The attribute name to to set block size
-  std::optional<StringAttr> kernelBlockSizeAttributeName;
 };
 
 /// The lowering of gpu.printf to a call to HIP hostcalls
@@ -84,7 +57,7 @@ struct GPUPrintfOpToHIPLowering : public ConvertOpToLLVMPattern<gpu::PrintfOp> {
 /// will lower printf calls to appropriate device-side code
 struct GPUPrintfOpToLLVMCallLowering
     : public ConvertOpToLLVMPattern<gpu::PrintfOp> {
-  GPUPrintfOpToLLVMCallLowering(const LLVMTypeConverter &converter,
+  GPUPrintfOpToLLVMCallLowering(LLVMTypeConverter &converter,
                                 int addressSpace = 0)
       : ConvertOpToLLVMPattern<gpu::PrintfOp>(converter),
         addressSpace(addressSpace) {}
@@ -122,7 +95,7 @@ namespace impl {
 /// Unrolls op if it's operating on vectors.
 LogicalResult scalarizeVectorOp(Operation *op, ValueRange operands,
                                 ConversionPatternRewriter &rewriter,
-                                const LLVMTypeConverter &converter);
+                                LLVMTypeConverter &converter);
 } // namespace impl
 
 /// Rewriting that unrolls SourceOp to scalars if it's operating on vectors.
@@ -138,6 +111,15 @@ public:
                                    *this->getTypeConverter());
   }
 };
+
+/// A function that maps a MemorySpace enum to a target-specific integer value.
+using MemorySpaceMapping =
+    std::function<unsigned(gpu::AddressSpace gpuAddressSpace)>;
+
+/// Populates memory space attribute conversion rules for lowering
+/// gpu.address_space to integer values.
+void populateGpuMemorySpaceAttributeConversions(
+    TypeConverter &typeConverter, const MemorySpaceMapping &mapping);
 } // namespace mlir
 
 #endif // MLIR_CONVERSION_GPUCOMMON_GPUOPSLOWERING_H_

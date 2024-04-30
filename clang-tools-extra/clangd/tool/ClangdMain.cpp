@@ -35,7 +35,6 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/FileSystem.h"
-#include "llvm/Support/InitLLVM.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Support/Program.h"
@@ -563,7 +562,7 @@ public:
     using namespace llvm::sys;
     // Still require "/" in body to mimic file scheme, as we want lengths of an
     // equivalent URI in both schemes to be the same.
-    if (!Body.starts_with("/"))
+    if (!Body.startswith("/"))
       return error(
           "Expect URI body to be an absolute path starting with '/': {0}",
           Body);
@@ -715,8 +714,8 @@ int clangdMain(int argc, char *argv[]) {
   // Clang could run on the main thread. e.g., when the flag '-check' or '-sync'
   // is enabled.
   clang::noteBottomOfStack();
-  llvm::InitLLVM X(argc, argv);
   llvm::InitializeAllTargetInfos();
+  llvm::sys::PrintStackTraceOnErrorSignal(argv[0]);
   llvm::sys::AddSignalHandler(
       [](void *) {
         ThreadCrashReporter::runCrashHandlers();

@@ -883,11 +883,6 @@ bool llvm::isEscapeSource(const Value *V) {
   if (isa<IntToPtrInst>(V))
     return true;
 
-  // Same for inttoptr constant expressions.
-  if (auto *CE = dyn_cast<ConstantExpr>(V))
-    if (CE->getOpcode() == Instruction::IntToPtr)
-      return true;
-
   return false;
 }
 
@@ -901,7 +896,7 @@ bool llvm::isNotVisibleOnUnwind(const Value *Object,
 
   // Byval goes out of scope on unwind.
   if (auto *A = dyn_cast<Argument>(Object))
-    return A->hasByValAttr() || A->hasAttribute(Attribute::DeadOnUnwind);
+    return A->hasByValAttr();
 
   // A noalias return is not accessible from any other code. If the pointer
   // does not escape prior to the unwind, then the caller cannot access the
@@ -912,29 +907,4 @@ bool llvm::isNotVisibleOnUnwind(const Value *Object,
   }
 
   return false;
-}
-
-// We don't consider globals as writable: While the physical memory is writable,
-// we may not have provenance to perform the write.
-bool llvm::isWritableObject(const Value *Object,
-                            bool &ExplicitlyDereferenceableOnly) {
-  ExplicitlyDereferenceableOnly = false;
-
-  // TODO: Alloca might not be writable after its lifetime ends.
-  // See https://github.com/llvm/llvm-project/issues/51838.
-  if (isa<AllocaInst>(Object))
-    return true;
-
-  if (auto *A = dyn_cast<Argument>(Object)) {
-    if (A->hasAttribute(Attribute::Writable)) {
-      ExplicitlyDereferenceableOnly = true;
-      return true;
-    }
-
-    return A->hasByValAttr();
-  }
-
-  // TODO: Noalias shouldn't imply writability, this should check for an
-  // allocator function instead.
-  return isNoAliasCall(Object);
 }

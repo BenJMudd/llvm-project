@@ -23,7 +23,7 @@
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
 namespace mlir {
-#define GEN_PASS_DEF_LINALGINLINESCALAROPERANDSPASS
+#define GEN_PASS_DEF_LINALGINLINESCALAROPERANDS
 #include "mlir/Dialect/Linalg/Passes.h.inc"
 } // namespace mlir
 
@@ -35,7 +35,7 @@ struct InlineScalarOperands : public OpRewritePattern<GenericOp> {
   using OpRewritePattern<GenericOp>::OpRewritePattern;
   LogicalResult matchAndRewrite(GenericOp genericOp,
                                 PatternRewriter &rewriter) const override {
-    if (!genericOp.hasPureTensorSemantics())
+    if (!genericOp.hasTensorSemantics())
       return failure();
 
     SmallVector<size_t> scalarOperands;
@@ -54,9 +54,8 @@ struct InlineScalarOperands : public OpRewritePattern<GenericOp> {
     if (scalarOperands.empty())
       return failure();
 
-    for (OpOperand &opOperand : genericOp.getDpsInitsMutable())
-      newIndexingMaps.emplace_back(
-          genericOp.getMatchingIndexingMap(&opOperand));
+    for (OpOperand *opOperand : genericOp.getDpsInitOperands())
+      newIndexingMaps.emplace_back(genericOp.getMatchingIndexingMap(opOperand));
 
     Location loc = genericOp->getLoc();
     SmallVector<Value> outputOperands = genericOp.getOutputs();
@@ -101,10 +100,8 @@ void mlir::linalg::populateInlineConstantOperandsPatterns(
 namespace {
 /// Pass that removes unit-extent dims within generic ops.
 struct LinalgInlineScalarOperandsPass
-    : public impl::LinalgInlineScalarOperandsPassBase<
+    : public impl::LinalgInlineScalarOperandsBase<
           LinalgInlineScalarOperandsPass> {
-  using impl::LinalgInlineScalarOperandsPassBase<
-      LinalgInlineScalarOperandsPass>::LinalgInlineScalarOperandsPassBase;
   void runOnOperation() override {
     Operation *op = getOperation();
     MLIRContext &ctx = getContext();
@@ -114,3 +111,7 @@ struct LinalgInlineScalarOperandsPass
   }
 };
 } // namespace
+
+std::unique_ptr<Pass> mlir::createLinalgInlineScalarOperandsPass() {
+  return std::make_unique<LinalgInlineScalarOperandsPass>();
+}

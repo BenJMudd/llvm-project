@@ -21,9 +21,6 @@ class Pass;
 void populateVectorToArmSMEPatterns(RewritePatternSet &patterns,
                                     MLIRContext &ctx);
 
-/// Create a pass to lower operations from the vector dialect to Arm SME.
-std::unique_ptr<Pass> createConvertVectorToArmSMEPass();
-
 } // namespace mlir
 
 #endif // MLIR_CONVERSION_VECTORTOARMSME_VECTORTOARMSME_H_

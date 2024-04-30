@@ -519,8 +519,9 @@ public:
   /// Returns true if this instruction is a candidate for remat. This
   /// flag is only used in TargetInstrInfo method isTriviallyRematerializable.
   ///
-  /// If this flag is set, the isReallyTriviallyReMaterializable() method is
-  /// called to verify the instruction is really rematerializable.
+  /// If this flag is set, the isReallyTriviallyReMaterializable()
+  /// or isReallyTriviallyReMaterializableGeneric methods are called to verify
+  /// the instruction is really rematable.
   bool isRematerializable() const {
     return Flags & (1ULL << MCID::Rematerializable);
   }

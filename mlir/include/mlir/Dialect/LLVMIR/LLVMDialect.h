@@ -20,16 +20,17 @@
 #include "mlir/Dialect/LLVMIR/LLVMTypes.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Dialect.h"
+#include "mlir/IR/FunctionInterfaces.h"
 #include "mlir/IR/OpDefinition.h"
 #include "mlir/IR/OpImplementation.h"
 #include "mlir/IR/TypeSupport.h"
 #include "mlir/IR/Types.h"
 #include "mlir/Interfaces/CallInterfaces.h"
 #include "mlir/Interfaces/ControlFlowInterfaces.h"
-#include "mlir/Interfaces/FunctionInterfaces.h"
 #include "mlir/Interfaces/InferTypeOpInterface.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "mlir/Support/ThreadLocalCache.h"
+#include "mlir/Transforms/Mem2Reg.h"
 #include "llvm/ADT/PointerEmbeddedInt.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/LLVMContext.h"
@@ -208,7 +209,8 @@ private:
 /// global and use it to compute the address of the first character in the
 /// string (operations inserted at the builder insertion point).
 Value createGlobalString(Location loc, OpBuilder &builder, StringRef name,
-                         StringRef value, Linkage linkage);
+                         StringRef value, Linkage linkage,
+                         bool useOpaquePointers);
 
 /// LLVM requires some operations to be inside of a Module operation. This
 /// function confirms that the Operation has the desired properties.

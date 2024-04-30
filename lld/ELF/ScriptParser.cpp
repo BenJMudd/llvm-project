@@ -36,7 +36,6 @@
 #include "llvm/Support/TimeProfiler.h"
 #include <cassert>
 #include <limits>
-#include <optional>
 #include <vector>
 
 using namespace llvm;
@@ -137,12 +136,11 @@ private:
   // True if a script being read is in the --sysroot directory.
   bool isUnderSysroot = false;
 
+  bool seenDataAlign = false;
+  bool seenRelroEnd = false;
+
   // A set to detect an INCLUDE() cycle.
   StringSet<> seen;
-
-  // If we are currently parsing a PROVIDE|PROVIDE_HIDDEN command,
-  // then this member is set to the PROVIDE symbol name.
-  std::optional<llvm::StringRef> activeProvideSym;
 };
 } // namespace
 
@@ -293,8 +291,7 @@ void ScriptParser::readDefsym(StringRef name) {
   Expr e = readExpr();
   if (!atEOF())
     setError("EOF expected, but got " + next());
-  auto *cmd = make<SymbolAssignment>(
-      name, e, 0, getCurrentMB().getBufferIdentifier().str());
+  SymbolAssignment *cmd = make<SymbolAssignment>(name, e, getCurrentLocation());
   script->sectionCommands.push_back(cmd);
 }
 
@@ -450,7 +447,6 @@ static std::pair<ELFKind, uint16_t> parseBfdName(StringRef s) {
       .Case("elf32-msp430", {ELF32LEKind, EM_MSP430})
       .Case("elf32-loongarch", {ELF32LEKind, EM_LOONGARCH})
       .Case("elf64-loongarch", {ELF64LEKind, EM_LOONGARCH})
-      .Case("elf64-s390", {ELF64BEKind, EM_S390})
       .Default({ELFNoneKind, EM_NONE});
 }
 
@@ -538,17 +534,13 @@ void ScriptParser::readSearchDir() {
 // linker's sections sanity check failures.
 // https://sourceware.org/binutils/docs/ld/Overlay-Description.html#Overlay-Description
 SmallVector<SectionCommand *, 0> ScriptParser::readOverlay() {
-  Expr addrExpr;
-  if (consume(":")) {
-    addrExpr = [] { return script->getDot(); };
-  } else {
-    addrExpr = readExpr();
-    expect(":");
-  }
-  // When AT is omitted, LMA should equal VMA. script->getDot() when evaluating
-  // lmaExpr will ensure this, even if the start address is specified.
-  Expr lmaExpr =
-      consume("AT") ? readParenExpr() : [] { return script->getDot(); };
+  // VA and LMA expressions are optional, though for simplicity of
+  // implementation we assume they are not. That is what OVERLAY was designed
+  // for first of all: to allow sections with overlapping VAs at different LMAs.
+  Expr addrExpr = readExpr();
+  expect(":");
+  expect("AT");
+  Expr lmaExpr = readParenExpr();
   expect("{");
 
   SmallVector<SectionCommand *, 0> v;
@@ -558,15 +550,10 @@ SmallVector<SectionCommand *, 0> ScriptParser::readOverlay() {
     // starting from the base load address specified.
     OutputDesc *osd = readOverlaySectionDescription();
     osd->osec.addrExpr = addrExpr;
-    if (prev) {
+    if (prev)
       osd->osec.lmaExpr = [=] { return prev->getLMA() + prev->size; };
-    } else {
+    else
       osd->osec.lmaExpr = lmaExpr;
-      // Use first section address for subsequent sections as initial addrExpr
-      // can be DOT. Ensure the first section, even if empty, is not discarded.
-      osd->osec.usedInExpression = true;
-      addrExpr = [=]() -> ExprValue { return {&osd->osec, false, 0, ""}; };
-    }
     v.push_back(osd);
     prev = &osd->osec;
   }
@@ -581,7 +568,7 @@ SmallVector<SectionCommand *, 0> ScriptParser::readOverlay() {
       max = std::max(max, cast<OutputDesc>(cmd)->osec.size);
     return addrExpr().getValue() + max;
   };
-  v.push_back(make<SymbolAssignment>(".", moveDot, 0, getCurrentLocation()));
+  v.push_back(make<SymbolAssignment>(".", moveDot, getCurrentLocation()));
   return v;
 }
 
@@ -613,7 +600,7 @@ void ScriptParser::readSections() {
 
   // If DATA_SEGMENT_RELRO_END is absent, for sections after DATA_SEGMENT_ALIGN,
   // the relro fields should be cleared.
-  if (!script->seenRelroEnd)
+  if (!seenRelroEnd)
     for (SectionCommand *cmd : v)
       if (auto *osd = dyn_cast<OutputDesc>(cmd))
         osd->osec.relro = false;
@@ -722,19 +709,9 @@ SmallVector<SectionPattern, 0> ScriptParser::readInputSectionsList() {
 
     StringMatcher SectionMatcher;
     // Break if the next token is ), EXCLUDE_FILE, or SORT*.
-    while (!errorCount() && peekSortKind() == SortSectionPolicy::Default) {
-      StringRef s = peek();
-      if (s == ")" || s == "EXCLUDE_FILE")
-        break;
-      // Detect common mistakes when certain non-wildcard meta characters are
-      // used without a closing ')'.
-      if (!s.empty() && strchr("(){}", s[0])) {
-        skip();
-        setError("section pattern is expected");
-        break;
-      }
+    while (!errorCount() && peek() != ")" && peek() != "EXCLUDE_FILE" &&
+           peekSortKind() == SortSectionPolicy::Default)
       SectionMatcher.addPattern(unquote(next()));
-    }
 
     if (!SectionMatcher.empty())
       ret.push_back({std::move(excludeFilePat), std::move(SectionMatcher)});
@@ -939,7 +916,7 @@ OutputDesc *ScriptParser::readOutputSectionDescription(StringRef outSec) {
       script->createOutputSection(unquote(outSec), getCurrentLocation());
   OutputSection *osec = &cmd->osec;
   // Maybe relro. Will reset to false if DATA_SEGMENT_RELRO_END is absent.
-  osec->relro = script->seenDataAlign && !script->seenRelroEnd;
+  osec->relro = seenDataAlign && !seenRelroEnd;
 
   size_t symbolsReferenced = script->referencedSymbols.size();
 
@@ -1060,9 +1037,6 @@ SymbolAssignment *ScriptParser::readProvideHidden(bool provide, bool hidden) {
       ;
     return nullptr;
   }
-  llvm::SaveAndRestore saveActiveProvideSym(activeProvideSym);
-  if (provide)
-    activeProvideSym = name;
   SymbolAssignment *cmd = readSymbolAssignment(name);
   cmd->provide = provide;
   cmd->hidden = hidden;
@@ -1073,11 +1047,10 @@ SymbolAssignment *ScriptParser::readProvideHidden(bool provide, bool hidden) {
 SymbolAssignment *ScriptParser::readAssignment(StringRef tok) {
   // Assert expression returns Dot, so this is equal to ".=."
   if (tok == "ASSERT")
-    return make<SymbolAssignment>(".", readAssert(), 0, getCurrentLocation());
+    return make<SymbolAssignment>(".", readAssert(), getCurrentLocation());
 
   size_t oldPos = pos;
   SymbolAssignment *cmd = nullptr;
-  bool savedSeenRelroEnd = script->seenRelroEnd;
   const StringRef op = peek();
   if (op.starts_with("=")) {
     // Support = followed by an expression without whitespace.
@@ -1098,7 +1071,6 @@ SymbolAssignment *ScriptParser::readAssignment(StringRef tok) {
   }
 
   if (cmd) {
-    cmd->dataSegmentRelroEnd = !savedSeenRelroEnd && script->seenRelroEnd;
     cmd->commandString =
         tok.str() + " " +
         llvm::join(tokens.begin() + oldPos, tokens.begin() + pos, " ");
@@ -1112,7 +1084,7 @@ SymbolAssignment *ScriptParser::readSymbolAssignment(StringRef name) {
   StringRef op = next();
   assert(op == "=" || op == "*=" || op == "/=" || op == "+=" || op == "-=" ||
          op == "&=" || op == "^=" || op == "|=" || op == "<<=" || op == ">>=");
-  // Note: GNU ld does not support %=.
+  // Note: GNU ld does not support %= or ^=.
   Expr e = readExpr();
   if (op != "=") {
     std::string loc = getCurrentLocation();
@@ -1145,8 +1117,7 @@ SymbolAssignment *ScriptParser::readSymbolAssignment(StringRef name) {
       }
     };
   }
-  return make<SymbolAssignment>(name, e, ctx.scriptSymOrderCounter++,
-                                getCurrentLocation());
+  return make<SymbolAssignment>(name, e, getCurrentLocation());
 }
 
 // This is an operator-precedence parser to parse a linker
@@ -1467,7 +1438,7 @@ Expr ScriptParser::readPrimary() {
     expect(",");
     readExpr();
     expect(")");
-    script->seenDataAlign = true;
+    seenDataAlign = true;
     return [=] {
       uint64_t align = std::max(uint64_t(1), e().getValue());
       return (script->getDot() + align - 1) & -align;
@@ -1488,18 +1459,15 @@ Expr ScriptParser::readPrimary() {
     expect(",");
     readExpr();
     expect(")");
-    script->seenRelroEnd = true;
-    return [=] { return alignToPowerOf2(script->getDot(), config->maxPageSize); };
+    seenRelroEnd = true;
+    Expr e = getPageSize();
+    return [=] { return alignToPowerOf2(script->getDot(), e().getValue()); };
   }
   if (tok == "DEFINED") {
     StringRef name = unquote(readParenLiteral());
-    // Return 1 if s is defined. If the definition is only found in a linker
-    // script, it must happen before this DEFINED.
-    auto order = ctx.scriptSymOrderCounter++;
     return [=] {
-      Symbol *s = symtab.find(name);
-      return s && s->isDefined() && ctx.scriptSymOrder.lookup(s) < order ? 1
-                                                                         : 0;
+      Symbol *b = symtab.find(name);
+      return (b && b->isDefined()) ? 1 : 0;
     };
   }
   if (tok == "LENGTH") {
@@ -1578,10 +1546,7 @@ Expr ScriptParser::readPrimary() {
     tok = unquote(tok);
   else if (!isValidSymbolName(tok))
     setError("malformed number: " + tok);
-  if (activeProvideSym)
-    script->provideMap[*activeProvideSym].push_back(tok);
-  else
-    script->referencedSymbols.push_back(tok);
+  script->referencedSymbols.push_back(tok);
   return [=] { return script->getSymbolValue(tok, location); };
 }
 

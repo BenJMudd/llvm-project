@@ -7,13 +7,13 @@
 //===----------------------------------------------------------------------===//
 
 #include "src/signal/sigfillset.h"
-
-#include "hdr/types/sigset_t.h"
 #include "src/__support/common.h"
 #include "src/errno/libc_errno.h"
 #include "src/signal/linux/signal_utils.h"
 
-namespace LIBC_NAMESPACE {
+#include <signal.h>
+
+namespace __llvm_libc {
 
 LLVM_LIBC_FUNCTION(int, sigfillset, (sigset_t * set)) {
   if (!set) {
@@ -24,4 +24,4 @@ LLVM_LIBC_FUNCTION(int, sigfillset, (sigset_t * set)) {
   return 0;
 }
 
-} // namespace LIBC_NAMESPACE
+} // namespace __llvm_libc

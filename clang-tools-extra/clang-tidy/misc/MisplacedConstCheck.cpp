@@ -51,7 +51,7 @@ void MisplacedConstCheck::check(const MatchFinder::MatchResult &Result) {
   QualType CanQT = Var->getType().getCanonicalType();
 
   SourceLocation AliasLoc;
-  const char *AliasType = nullptr;
+  const char *AliasType;
   if (const auto *Typedef = Result.Nodes.getNodeAs<TypedefDecl>("typedef")) {
     AliasLoc = Typedef->getLocation();
     AliasType = "typedef";

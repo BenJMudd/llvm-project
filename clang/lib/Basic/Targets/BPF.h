@@ -106,16 +106,12 @@ public:
   void fillValidCPUList(SmallVectorImpl<StringRef> &Values) const override;
 
   bool setCPU(const std::string &Name) override {
-    if (Name == "v3" || Name == "v4") {
+    if (Name == "v3") {
       HasAlu32 = true;
     }
 
     StringRef CPUName(Name);
     return isValidCPUName(CPUName);
-  }
-
-  std::pair<unsigned, unsigned> hardwareInterferenceSizes() const override {
-    return std::make_pair(32, 32);
   }
 };
 } // namespace targets

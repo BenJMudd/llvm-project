@@ -14,9 +14,6 @@
 
 # CHECK: leaq 0x80(%rsp), %rsp
 
-# RUN: FileCheck %s --input-file %t.fdata --check-prefix=CHECK-FDATA
-# CHECK-FDATA: 1 main {{.*}} 1 targetFunc 0 0 1
-
   .text
   .globl  main
   .type main, %function
@@ -35,8 +32,7 @@ main:
   movq %rbp, %rsp
   pop %rbp
   mov -0x10(%rsp),%rax
-  test %rsp, %rsp
-  jne targetFunc
+  jmp targetFunc
 
 .LBBerror:
   addq $0x20, %rsp

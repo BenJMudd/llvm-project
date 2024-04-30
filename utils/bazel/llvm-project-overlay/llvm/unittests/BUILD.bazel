@@ -26,7 +26,6 @@ cc_test(
         "//llvm:Core",
         "//llvm:Support",
         "//llvm:TestingSupport",
-        "//llvm:config",
         "//third-party/unittest:gmock",
         "//third-party/unittest:gtest",
         "//third-party/unittest:gtest_main",
@@ -41,7 +40,6 @@ cc_test(
         allow_empty = False,
         exclude = [
             # TODO: Add this file to the build.
-            "Analysis/ConstraintSystemTest.cpp",
             "Analysis/TFUtilsTest.cpp",
             "Analysis/TrainingLoggerTest.cpp",
             "Analysis/MLModelRunnerTest.cpp",
@@ -50,7 +48,6 @@ cc_test(
     deps = [
         "//llvm:Analysis",
         "//llvm:AsmParser",
-        "//llvm:CodeGen",
         "//llvm:Core",
         "//llvm:Passes",
         "//llvm:Support",
@@ -297,29 +294,17 @@ cc_test(
         ],
         allow_empty = False,
     ),
-    args = [
-        # keep one-per-line
-        "--gtest_filter=-ObjectLinkingLayerTest.TestSetProcessAllSections",
-    ],
-    linkopts = select({
-        "@platforms//os:macos": [],
-        "@platforms//os:windows": [],
-        "//conditions:default": [
-            "-Wl,--export-dynamic-symbol=llvm_orc_registerJITLoaderGDBWrapper",
-        ],
-    }),
+    args = ["--gtest_filter=-ObjectLinkingLayerTest.TestSetProcessAllSections"],
     deps = [
         "//llvm:AllTargetsAsmParsers",
         "//llvm:AllTargetsCodeGens",
         "//llvm:AsmParser",
-        "//llvm:BinaryFormat",
         "//llvm:Core",
         "//llvm:ExecutionEngine",
         "//llvm:IRReader",
         "//llvm:JITLink",
         "//llvm:MC",
         "//llvm:Object",
-        "//llvm:OrcDebugging",
         "//llvm:OrcJIT",
         "//llvm:OrcShared",
         "//llvm:OrcTargetProcess",
@@ -357,11 +342,10 @@ cc_test(
         [
             "IR/*.cpp",
             "IR/*.h",
+            "Support/KnownBitsTest.h",
         ],
         allow_empty = False,
-    ) + [
-        "Support/KnownBitsTest.h",
-    ],
+    ),
     shard_count = 20,
     deps = [
         "//llvm:Analysis",
@@ -372,7 +356,6 @@ cc_test(
         "//llvm:Passes",
         "//llvm:Scalar",
         "//llvm:Support",
-        "//llvm:TargetParser",
         "//llvm:TestingSupport",
         "//llvm:TransformUtils",
         "//llvm:config",
@@ -644,10 +627,7 @@ cc_test(
             "Support/ParallelTest.cpp",
         ],
     ),
-    args = [
-        # keep one-per-line
-        "--gtest_filter=-ProgramTest.CreateProcessTrailingSlash",
-    ],
+    args = ["--gtest_filter=-ProgramTest.CreateProcessTrailingSlash"],
     copts = [
         "$(STACK_FRAME_UNLIMITED)",
     ],
@@ -773,7 +753,6 @@ cc_test(
         "//llvm:TestingSupport",
         "//llvm:TransformUtils",
         "//llvm:Vectorize",
-        "//third-party/unittest:gmock",
         "//third-party/unittest:gtest",
         "//third-party/unittest:gtest_main",
     ],
@@ -807,32 +786,6 @@ cc_test(
         "//llvm:X86CodeGen",
         "//llvm:X86UtilsAndDesc",
         "//third-party/unittest:gmock",
-        "//third-party/unittest:gtest",
-        "//third-party/unittest:gtest_main",
-    ],
-)
-
-cc_test(
-    name = "llvm_mca_tests",
-    size = "small",
-    srcs = glob(
-        [
-            "tools/llvm-mca/*.cpp",
-            "tools/llvm-mca/*.h",
-            "tools/llvm-mca/X86/*.cpp",
-            "tools/llvm-mca/X86/*.h",
-        ],
-        allow_empty = False,
-    ),
-    includes = ["tools/llvm-mca"],
-    deps = [
-        "//llvm:MC",
-        "//llvm:MCA",
-        "//llvm:MCAApplication",
-        "//llvm:Support",
-        "//llvm:TargetParser",
-        "//llvm:X86CodeGen",
-        "//llvm:X86UtilsAndDesc",
         "//third-party/unittest:gtest",
         "//third-party/unittest:gtest_main",
     ],

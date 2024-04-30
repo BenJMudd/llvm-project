@@ -62,4 +62,4 @@ class LoadUsingLazyBind(TestBase):
         frame = thread.GetFrameAtIndex(0)
         val = frame.EvaluateExpression("f1()")
         self.assertTrue(val.IsValid())
-        self.assertEqual(val.GetValueAsSigned(-1), 5)
+        self.assertEquals(val.GetValueAsSigned(-1), 5)

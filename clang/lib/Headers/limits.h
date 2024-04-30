@@ -66,8 +66,10 @@
 
 #define CHAR_BIT  __CHAR_BIT__
 
-/* C23 5.2.4.2.1 */
-#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 202311L
+/* C2x 5.2.4.2.1 */
+/* FIXME: This is using the placeholder dates Clang produces for these macros
+   in C2x mode; switch to the correct values once they've been published. */
+#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 202000L
 #define BOOL_WIDTH   __BOOL_WIDTH__
 #define CHAR_WIDTH   CHAR_BIT
 #define SCHAR_WIDTH  CHAR_BIT

@@ -14,6 +14,7 @@
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/LTO/LTO.h"
+#include "llvm/Object/Archive.h"
 #include "llvm/Object/Wasm.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/TargetParser/Triple.h"
@@ -44,6 +45,7 @@ public:
   enum Kind {
     ObjectKind,
     SharedKind,
+    ArchiveKind,
     BitcodeKind,
     StubKind,
   };
@@ -67,10 +69,6 @@ public:
   void markLive() { live = true; }
   bool isLive() const { return live; }
 
-  // True if this is a relocatable object file/bitcode file in an ar archive
-  // or between --start-lib and --end-lib.
-  bool lazy = false;
-
 protected:
   InputFile(Kind k, MemoryBufferRef m)
       : mb(m), fileKind(k), live(!config->gcSections) {}
@@ -87,14 +85,35 @@ private:
   bool live;
 };
 
+// .a file (ar archive)
+class ArchiveFile : public InputFile {
+public:
+  explicit ArchiveFile(MemoryBufferRef m) : InputFile(ArchiveKind, m) {}
+  static bool classof(const InputFile *f) { return f->kind() == ArchiveKind; }
+
+  void addMember(const llvm::object::Archive::Symbol *sym);
+
+  void parse();
+
+private:
+  std::unique_ptr<llvm::object::Archive> file;
+  llvm::DenseSet<uint64_t> seen;
+};
+
 // .o file (wasm object file)
 class ObjFile : public InputFile {
 public:
-  ObjFile(MemoryBufferRef m, StringRef archiveName, bool lazy = false);
+  explicit ObjFile(MemoryBufferRef m, StringRef archiveName)
+      : InputFile(ObjectKind, m) {
+    this->archiveName = std::string(archiveName);
+
+    // If this isn't part of an archive, it's eagerly linked, so mark it live.
+    if (archiveName.empty())
+      markLive();
+  }
   static bool classof(const InputFile *f) { return f->kind() == ObjectKind; }
 
   void parse(bool ignoreComdats = false);
-  void parseLazy();
 
   // Returns the underlying wasm file.
   const WasmObjectFile *getWasmObj() const { return wasmObj.get(); }
@@ -154,11 +173,10 @@ public:
 class BitcodeFile : public InputFile {
 public:
   BitcodeFile(MemoryBufferRef m, StringRef archiveName,
-              uint64_t offsetInArchive, bool lazy);
+              uint64_t offsetInArchive);
   static bool classof(const InputFile *f) { return f->kind() == BitcodeKind; }
 
-  void parse(StringRef symName);
-  void parseLazy();
+  void parse();
   std::unique_ptr<llvm::lto::InputFile> obj;
 
   // Set to true once LTO is complete in order prevent further bitcode objects
@@ -178,10 +196,14 @@ public:
   llvm::DenseMap<StringRef, std::vector<StringRef>> symbolDependencies;
 };
 
+inline bool isBitcode(MemoryBufferRef mb) {
+  return identify_magic(mb.getBuffer()) == llvm::file_magic::bitcode;
+}
+
 // Will report a fatal() error if the input buffer is not a valid bitcode
 // or wasm object file.
 InputFile *createObjectFile(MemoryBufferRef mb, StringRef archiveName = "",
-                            uint64_t offsetInArchive = 0, bool lazy = false);
+                            uint64_t offsetInArchive = 0);
 
 // Opens a given file.
 std::optional<MemoryBufferRef> readFile(StringRef path);

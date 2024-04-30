@@ -1,13 +1,5 @@
-// RUN: %clang_cc1 -emit-llvm %s -o - | FileCheck %s
-
-// CHECK: @.str.3 = private unnamed_addr constant [28 x i8] c"GlobalValAnnotationWithArgs\00", section "llvm.metadata"
-// CHECK-NEXT: @.args = private unnamed_addr constant { i32, %struct.TestStruct } { i32 42, %struct.TestStruct { i32 1, i32 2 } }, section "llvm.metadata"
-
-// CHECK: llvm.global.annotations
-
-// CHECK: llvm.var.annotation
-// CHECK: llvm.var.annotation
-// CHECK: llvm.var.annotation
+// RUN: %clang_cc1 -emit-llvm %s -o - | grep llvm.global.annotations
+// RUN: %clang_cc1 -emit-llvm %s -o - | grep llvm.var.annotation | count 3
 
 /* Global variable with attribute */
 int X __attribute__((annotate("GlobalValAnnotation")));
@@ -28,11 +20,13 @@ struct TestStruct {
   int b;
 };
 int Y __attribute__((annotate(
-  "GlobalValAnnotationWithArgs",
+  "GlobalValAnnotationWithArgs", 
   42,
   (struct TestStruct) { .a = 1, .b = 2 }
 )));
 
+// CHECK: @.str.3 = private unnamed_addr constant [28 x i8] c"GlobalValAnnotationWithArgs\00", section "llvm.metadata"
+// CHECK-NEXT: @.args = private unnamed_addr constant { i32, %struct.TestStruct } { i32 42, %struct.TestStruct { i32 1, i32 2 } }, section "llvm.metadata"
 
 int main(void) {
   static int a __attribute__((annotate("GlobalValAnnotation")));

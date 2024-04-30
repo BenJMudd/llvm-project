@@ -23,7 +23,7 @@ using namespace mlir::linalg;
 #define DBGSNL() (llvm::dbgs() << "\n")
 
 /// Compute the padded shape of the given operand. The operand is padded to a
-/// static bounding box according to the specified padding options.
+/// static bounding box according to the specified options.
 static LogicalResult computePaddedShape(linalg::LinalgOp opToPad,
                                         OpOperand *opOperand,
                                         const LinalgPaddingOptions &options,
@@ -72,12 +72,10 @@ static LogicalResult computePaddedShape(linalg::LinalgOp opToPad,
     // Otherwise, try to compute a constant upper bound for the size value.
     FailureOr<int64_t> upperBound =
         ValueBoundsConstraintSet::computeConstantBound(
-            presburger::BoundType::UB,
-            {opOperand->get(),
-             /*dim=*/i},
-            /*stopCondition=*/nullptr, /*closedUB=*/true);
+            presburger::BoundType::UB, opOperand->get(),
+            /*dim=*/i, /*stopCondition=*/nullptr, /*closedUB=*/true);
     if (failed(upperBound)) {
-      LLVM_DEBUG(DBGS() << "----could not compute a bounding box for padding");
+      LLVM_DEBUG(DBGS() << "----count not compute a bounding box for padding");
       return failure();
     }
     paddedShape[i] = ceil(*upperBound, shapeDimToMultiple[i]);
@@ -91,7 +89,7 @@ static LogicalResult computePaddedShape(linalg::LinalgOp opToPad,
 /// the nofold flag found in "paddingValues" and "packPaddings", respectively.
 ///
 /// Exit early and return the `opOperand` value if it already has the requested
-/// shape. i.e.:
+/// shape. I.e.:
 /// - static shape
 /// - nofold is not set
 /// - dim sizes are multiples of "padToMultipleOf"
@@ -153,7 +151,7 @@ LogicalResult
 linalg::rewriteAsPaddedOp(RewriterBase &rewriter, LinalgOp opToPad,
                           const LinalgPaddingOptions &constOptions,
                           LinalgOp &paddedOp, SmallVector<Value> &replacements,
-                          SmallVector<tensor::PadOp> &padOps) {
+                          SmallVector<tensor::PadOp> &padOps, bool copyBack) {
   LLVM_DEBUG(DBGS() << "Start rewriteAsPaddedOp : " << opToPad << "\n");
   Location loc = opToPad->getLoc();
 
@@ -170,7 +168,7 @@ linalg::rewriteAsPaddedOp(RewriterBase &rewriter, LinalgOp opToPad,
   }
 
   // TODO: there are cases where we may still want to pad to larger sizes.
-  if (!opToPad.hasPureTensorSemantics())
+  if (!opToPad.hasTensorSemantics())
     return rewriter.notifyMatchFailure(opToPad,
                                        "expected operation on tensors");
 
@@ -227,36 +225,22 @@ linalg::rewriteAsPaddedOp(RewriterBase &rewriter, LinalgOp opToPad,
         strides));
   }
 
-  if (options.copyBackOp == LinalgPaddingOptions::CopyBackOp::None) {
+  if (!copyBack) {
     replacements = std::move(paddedSubtensorResults);
     return success();
   }
 
   // Copy back unpadded results to the original destination (i.e., inits of the
   // linalg op), so that the destination buffer of the computation does not
-  // change. If the padding folds away, this will materialize as a memcpy
+  // change. If the padding folds away, this will materizalize as a memcpy
   // between two identical buffers, which will then also fold away.
   assert(static_cast<int64_t>(paddedSubtensorResults.size()) ==
              opToPad.getNumDpsInits() &&
          "expected matching number of results");
   for (auto it :
-       llvm::zip(paddedSubtensorResults, opToPad.getDpsInitsMutable())) {
-    if (options.copyBackOp == LinalgPaddingOptions::CopyBackOp::LinalgCopy) {
-      replacements.push_back(rewriter
-                                 .create<linalg::CopyOp>(loc, std::get<0>(it),
-                                                         std::get<1>(it).get())
-                                 .getResult(0));
-    } else if (options.copyBackOp ==
-               LinalgPaddingOptions::CopyBackOp::
-                   BufferizationMaterializeInDestination) {
-      replacements.push_back(
-          rewriter
-              .create<bufferization::MaterializeInDestinationOp>(
-                  loc, std::get<0>(it), std::get<1>(it).get())
-              ->getResult(0));
-    } else {
-      llvm_unreachable("unsupported copy back op");
-    }
+       llvm::zip(paddedSubtensorResults, opToPad.getDpsInitOperands())) {
+    replacements.push_back(rewriter.create<bufferization::CopyTensorOp>(
+        loc, std::get<0>(it), std::get<1>(it)->get()));
   }
   return success();
 }
@@ -264,10 +248,7 @@ linalg::rewriteAsPaddedOp(RewriterBase &rewriter, LinalgOp opToPad,
 FailureOr<LinalgOp>
 mlir::linalg::padAndHoistLinalgOp(RewriterBase &rewriter, LinalgOp linalgOp,
                                   const LinalgPaddingOptions &options) {
-  assert(options.copyBackOp == LinalgPaddingOptions::CopyBackOp::None &&
-         "invalid options");
-
-  if (!linalgOp.hasPureTensorSemantics())
+  if (!linalgOp.hasTensorSemantics())
     return rewriter.notifyMatchFailure(
         linalgOp, "only applies to Linalg ops with tensor semantics");
 
@@ -276,7 +257,7 @@ mlir::linalg::padAndHoistLinalgOp(RewriterBase &rewriter, LinalgOp linalgOp,
   SmallVector<Value> newResults;
   SmallVector<tensor::PadOp> padOps;
   if (failed(rewriteAsPaddedOp(rewriter, linalgOp, options, paddedOp,
-                               newResults, padOps)))
+                               newResults, padOps, /*copyBack=*/false)))
     return rewriter.notifyMatchFailure(linalgOp,
                                        "failed to rewrite as a padded op");
 

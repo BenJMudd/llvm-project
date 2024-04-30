@@ -44,23 +44,9 @@ using namespace lld::macho;
 
 // Create table mapping all options defined in Options.td
 static constexpr OptTable::Info optInfo[] = {
-#define OPTION(PREFIX, NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, FLAGS,         \
-               VISIBILITY, PARAM, HELPTEXT, HELPTEXTSFORVARIANTS, METAVAR,     \
-               VALUES)                                                         \
-  {PREFIX,                                                                     \
-   NAME,                                                                       \
-   HELPTEXT,                                                                   \
-   HELPTEXTSFORVARIANTS,                                                       \
-   METAVAR,                                                                    \
-   OPT_##ID,                                                                   \
-   opt::Option::KIND##Class,                                                   \
-   PARAM,                                                                      \
-   FLAGS,                                                                      \
-   VISIBILITY,                                                                 \
-   OPT_##GROUP,                                                                \
-   OPT_##ALIAS,                                                                \
-   ALIASARGS,                                                                  \
-   VALUES},
+#define OPTION(X1, X2, ID, KIND, GROUP, ALIAS, X7, X8, X9, X10, X11, X12)      \
+  {X1, X2, X10,         X11,         OPT_##ID, Option::KIND##Class,            \
+   X9, X8, OPT_##GROUP, OPT_##ALIAS, X7,       X12},
 #include "Options.inc"
 #undef OPTION
 };
@@ -190,7 +176,7 @@ std::string macho::createResponseFile(const InputArgList &args) {
       os << toString(*arg) << "\n";
     }
   }
-  return std::string(data);
+  return std::string(data.str());
 }
 
 static void searchedDylib(const Twine &path, bool found) {

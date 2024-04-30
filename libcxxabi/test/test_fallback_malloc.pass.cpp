@@ -11,7 +11,7 @@
 #include <cassert>
 #include <inttypes.h>
 
-#include <__thread/support.h>
+#include <__threading_support>
 
 // UNSUPPORTED: c++03
 // UNSUPPORTED: modules-build && no-threads
@@ -27,8 +27,6 @@ typedef std::deque<void *> container;
 
 TEST_DIAGNOSTIC_PUSH
 TEST_CLANG_DIAGNOSTIC_IGNORED("-Wprivate-header")
-#define _LIBCXXABI_ASSERT(expr, msg) assert((expr) && (msg))
-
 // #define  DEBUG_FALLBACK_MALLOC
 #define INSTRUMENT_FALLBACK_MALLOC
 #include "../src/fallback_malloc.cpp"

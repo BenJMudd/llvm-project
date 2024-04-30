@@ -39,8 +39,8 @@
 #include <type_traits>
 #include <variant>
 
-// Some environments, viz. glibc 2.17 and *BSD, allow the macro HUGE
-// to leak out of <math.h>.
+// Some environments, viz. clang on Darwin, allow the macro HUGE
+// to leak out of <math.h> even when it is never directly included.
 #undef HUGE
 
 namespace Fortran::evaluate {
@@ -64,7 +64,6 @@ public:
 
   Expr<T> CSHIFT(FunctionRef<T> &&);
   Expr<T> EOSHIFT(FunctionRef<T> &&);
-  Expr<T> MERGE(FunctionRef<T> &&);
   Expr<T> PACK(FunctionRef<T> &&);
   Expr<T> RESHAPE(FunctionRef<T> &&);
   Expr<T> SPREAD(FunctionRef<T> &&);
@@ -201,12 +200,11 @@ std::optional<Constant<T>> Folder<T>::ApplySubscripts(const Constant<T> &array,
   ConstantSubscripts resultShape;
   ConstantSubscripts ssLB;
   for (const auto &ss : subscripts) {
+    CHECK(ss.Rank() <= 1);
     if (ss.Rank() == 1) {
       resultShape.push_back(static_cast<ConstantSubscript>(ss.size()));
       elements *= ss.size();
       ssLB.push_back(ss.lbounds().front());
-    } else if (ss.Rank() > 1) {
-      return std::nullopt; // error recovery
     }
   }
   ConstantSubscripts ssAt(rank, 0), at(rank, 0), tmp(1, 0);
@@ -257,11 +255,11 @@ std::optional<Constant<T>> Folder<T>::ApplyComponent(
     const std::vector<Constant<SubscriptInteger>> *subscripts) {
   if (auto scalar{structures.GetScalarValue()}) {
     if (std::optional<Expr<SomeType>> expr{scalar->Find(component)}) {
-      if (const Constant<T> *value{UnwrapConstantValue<T>(*expr)}) {
-        if (subscripts) {
-          return ApplySubscripts(*value, *subscripts);
+      if (const Constant<T> *value{UnwrapConstantValue<T>(expr.value())}) {
+        if (!subscripts) {
+          return std::move(*value);
         } else {
-          return *value;
+          return ApplySubscripts(*value, *subscripts);
         }
       }
     }
@@ -399,11 +397,9 @@ template <typename T> Expr<T> Folder<T>::Folding(Designator<T> &&designator) {
 template <typename T>
 Constant<T> *Folder<T>::Folding(std::optional<ActualArgument> &arg) {
   if (auto *expr{UnwrapExpr<Expr<SomeType>>(arg)}) {
-    if constexpr (T::category != TypeCategory::Derived) {
-      if (!UnwrapExpr<Expr<T>>(*expr)) {
-        if (auto converted{ConvertToType(T::GetType(), std::move(*expr))}) {
-          *expr = Fold(context_, std::move(*converted));
-        }
+    if (!UnwrapExpr<Expr<T>>(*expr)) {
+      if (auto converted{ConvertToType(T::GetType(), std::move(*expr))}) {
+        *expr = Fold(context_, std::move(*converted));
       }
     }
     return UnwrapConstantValue<T>(*expr);
@@ -415,6 +411,8 @@ template <typename... A, std::size_t... I>
 std::optional<std::tuple<const Constant<A> *...>> GetConstantArgumentsHelper(
     FoldingContext &context, ActualArguments &arguments,
     std::index_sequence<I...>) {
+  static_assert(
+      (... && IsSpecificIntrinsicType<A>)); // TODO derived types for MERGE?
   static_assert(sizeof...(A) > 0);
   std::tuple<const Constant<A> *...> args{
       Folder<A>{context}.Folding(arguments.at(I))...};
@@ -491,15 +489,10 @@ Expr<TR> FoldElementalIntrinsicHelper(FoldingContext &context,
       }
     }
     CHECK(rank == GetRank(shape));
+
     // Compute all the scalar values of the results
     std::vector<Scalar<TR>> results;
-    std::optional<uint64_t> n{TotalElementCount(shape)};
-    if (!n) {
-      context.messages().Say(
-          "Too many elements in elemental intrinsic function result"_err_en_US);
-      return Expr<TR>{std::move(funcRef)};
-    }
-    if (*n > 0) {
+    if (TotalElementCount(shape) > 0) {
       ConstantBounds bounds{shape};
       ConstantSubscripts resultIndex(rank, 1);
       ConstantSubscripts argIndex[]{std::get<I>(*args)->lbounds()...};
@@ -520,13 +513,6 @@ Expr<TR> FoldElementalIntrinsicHelper(FoldingContext &context,
       auto len{static_cast<ConstantSubscript>(
           results.empty() ? 0 : results[0].length())};
       return Expr<TR>{Constant<TR>{len, std::move(results), std::move(shape)}};
-    } else if constexpr (TR::category == TypeCategory::Derived) {
-      if (!results.empty()) {
-        return Expr<TR>{rank == 0
-                ? Constant<TR>{results.front()}
-                : Constant<TR>{results.front().derivedTypeSpec(),
-                      std::move(results), std::move(shape)}};
-      }
     } else {
       return Expr<TR>{Constant<TR>{std::move(results), std::move(shape)}};
     }
@@ -794,16 +780,6 @@ template <typename T> Expr<T> Folder<T>::EOSHIFT(FunctionRef<T> &&funcRef) {
   return MakeInvalidIntrinsic(std::move(funcRef));
 }
 
-template <typename T> Expr<T> Folder<T>::MERGE(FunctionRef<T> &&funcRef) {
-  return FoldElementalIntrinsic<T, T, T, LogicalResult>(context_,
-      std::move(funcRef),
-      ScalarFunc<T, T, T, LogicalResult>(
-          [](const Scalar<T> &ifTrue, const Scalar<T> &ifFalse,
-              const Scalar<LogicalResult> &predicate) -> Scalar<T> {
-            return predicate.IsTrue() ? ifTrue : ifFalse;
-          }));
-}
-
 template <typename T> Expr<T> Folder<T>::PACK(FunctionRef<T> &&funcRef) {
   auto args{funcRef.arguments()};
   CHECK(args.size() == 3);
@@ -886,41 +862,33 @@ template <typename T> Expr<T> Folder<T>::RESHAPE(FunctionRef<T> &&funcRef) {
     context_.messages().Say(
         "'shape=' argument must not have a negative extent"_err_en_US);
   } else {
-    std::optional<uint64_t> optResultElement{TotalElementCount(shape.value())};
-    if (!optResultElement) {
+    int rank{GetRank(shape.value())};
+    std::size_t resultElements{TotalElementCount(shape.value())};
+    std::optional<std::vector<int>> dimOrder;
+    if (order) {
+      dimOrder = ValidateDimensionOrder(rank, *order);
+    }
+    std::vector<int> *dimOrderPtr{dimOrder ? &dimOrder.value() : nullptr};
+    if (order && !dimOrder) {
+      context_.messages().Say("Invalid 'order=' argument in RESHAPE"_err_en_US);
+    } else if (resultElements > source->size() && (!pad || pad->empty())) {
       context_.messages().Say(
-          "'shape=' argument has too many elements"_err_en_US);
+          "Too few elements in 'source=' argument and 'pad=' "
+          "argument is not present or has null size"_err_en_US);
     } else {
-      int rank{GetRank(shape.value())};
-      uint64_t resultElements{*optResultElement};
-      std::optional<std::vector<int>> dimOrder;
-      if (order) {
-        dimOrder = ValidateDimensionOrder(rank, *order);
+      Constant<T> result{!source->empty() || !pad
+              ? source->Reshape(std::move(shape.value()))
+              : pad->Reshape(std::move(shape.value()))};
+      ConstantSubscripts subscripts{result.lbounds()};
+      auto copied{result.CopyFrom(*source,
+          std::min(source->size(), resultElements), subscripts, dimOrderPtr)};
+      if (copied < resultElements) {
+        CHECK(pad);
+        copied += result.CopyFrom(
+            *pad, resultElements - copied, subscripts, dimOrderPtr);
       }
-      std::vector<int> *dimOrderPtr{dimOrder ? &dimOrder.value() : nullptr};
-      if (order && !dimOrder) {
-        context_.messages().Say(
-            "Invalid 'order=' argument in RESHAPE"_err_en_US);
-      } else if (resultElements > source->size() && (!pad || pad->empty())) {
-        context_.messages().Say(
-            "Too few elements in 'source=' argument and 'pad=' "
-            "argument is not present or has null size"_err_en_US);
-      } else {
-        Constant<T> result{!source->empty() || !pad
-                ? source->Reshape(std::move(shape.value()))
-                : pad->Reshape(std::move(shape.value()))};
-        ConstantSubscripts subscripts{result.lbounds()};
-        auto copied{result.CopyFrom(*source,
-            std::min(static_cast<uint64_t>(source->size()), resultElements),
-            subscripts, dimOrderPtr)};
-        if (copied < resultElements) {
-          CHECK(pad);
-          copied += result.CopyFrom(
-              *pad, resultElements - copied, subscripts, dimOrderPtr);
-        }
-        CHECK(copied == resultElements);
-        return Expr<T>{std::move(result)};
-      }
+      CHECK(copied == resultElements);
+      return Expr<T>{std::move(result)};
     }
   }
   // Invalid, prevent re-folding
@@ -959,19 +927,14 @@ template <typename T> Expr<T> Folder<T>::SPREAD(FunctionRef<T> &&funcRef) {
     ConstantSubscripts shape{source->shape()};
     shape.insert(shape.begin() + *dim - 1, *ncopies);
     Constant<T> spread{source->Reshape(std::move(shape))};
-    std::optional<uint64_t> n{TotalElementCount(spread.shape())};
-    if (!n) {
-      context_.messages().Say("Too many elements in SPREAD result"_err_en_US);
-    } else {
-      std::vector<int> dimOrder;
-      for (int j{0}; j < sourceRank; ++j) {
-        dimOrder.push_back(j < *dim - 1 ? j : j + 1);
-      }
-      dimOrder.push_back(*dim - 1);
-      ConstantSubscripts at{spread.lbounds()}; // all 1
-      spread.CopyFrom(*source, *n, at, &dimOrder);
-      return Expr<T>{std::move(spread)};
+    std::vector<int> dimOrder;
+    for (int j{0}; j < sourceRank; ++j) {
+      dimOrder.push_back(j < *dim - 1 ? j : j + 1);
     }
+    dimOrder.push_back(*dim - 1);
+    ConstantSubscripts at{spread.lbounds()}; // all 1
+    spread.CopyFrom(*source, TotalElementCount(spread.shape()), at, &dimOrder);
+    return Expr<T>{std::move(spread)};
   }
   // Invalid, prevent re-folding
   return MakeInvalidIntrinsic(std::move(funcRef));
@@ -1125,17 +1088,14 @@ Expr<T> RewriteSpecificMINorMAX(
   intrinsic.characteristics.value().functionResult.value().SetType(*resultType);
   auto insertConversion{[&](const auto &x) -> Expr<T> {
     using TR = ResultType<decltype(x)>;
-    FunctionRef<TR> maxRef{
-        ProcedureDesignator{funcRef.proc()}, ActualArguments{args}};
+    FunctionRef<TR> maxRef{std::move(funcRef.proc()), std::move(args)};
     return Fold(context, ConvertToType<T>(AsCategoryExpr(std::move(maxRef))));
   }};
   if (auto *sx{UnwrapExpr<Expr<SomeReal>>(*resultTypeArg)}) {
     return common::visit(insertConversion, sx->u);
-  } else if (auto *sx{UnwrapExpr<Expr<SomeInteger>>(*resultTypeArg)}) {
-    return common::visit(insertConversion, sx->u);
-  } else {
-    return Expr<T>{std::move(funcRef)}; // error recovery
   }
+  auto &sx{DEREF(UnwrapExpr<Expr<SomeInteger>>(*resultTypeArg))};
+  return common::visit(insertConversion, sx.u);
 }
 
 // FoldIntrinsicFunction()
@@ -1155,24 +1115,17 @@ Expr<Type<TypeCategory::Logical, KIND>> FoldIntrinsicFunction(
 template <typename T>
 Expr<T> FoldOperation(FoldingContext &context, FunctionRef<T> &&funcRef) {
   ActualArguments &args{funcRef.arguments()};
-  const auto *intrinsic{std::get_if<SpecificIntrinsic>(&funcRef.proc().u)};
-  if (!intrinsic || intrinsic->name != "kind") {
-    // Don't fold the argument to KIND(); it might be a TypeParamInquiry
-    // with a forced result type that doesn't match the parameter.
-    for (std::optional<ActualArgument> &arg : args) {
-      if (auto *expr{UnwrapExpr<Expr<SomeType>>(arg)}) {
-        *expr = Fold(context, std::move(*expr));
-      }
+  for (std::optional<ActualArgument> &arg : args) {
+    if (auto *expr{UnwrapExpr<Expr<SomeType>>(arg)}) {
+      *expr = Fold(context, std::move(*expr));
     }
   }
-  if (intrinsic) {
+  if (auto *intrinsic{std::get_if<SpecificIntrinsic>(&funcRef.proc().u)}) {
     const std::string name{intrinsic->name};
     if (name == "cshift") {
       return Folder<T>{context}.CSHIFT(std::move(funcRef));
     } else if (name == "eoshift") {
       return Folder<T>{context}.EOSHIFT(std::move(funcRef));
-    } else if (name == "merge") {
-      return Folder<T>{context}.MERGE(std::move(funcRef));
     } else if (name == "pack") {
       return Folder<T>{context}.PACK(std::move(funcRef));
     } else if (name == "reshape") {
@@ -1192,6 +1145,17 @@ Expr<T> FoldOperation(FoldingContext &context, FunctionRef<T> &&funcRef) {
     }
   }
   return Expr<T>{std::move(funcRef)};
+}
+
+template <typename T>
+Expr<T> FoldMerge(FoldingContext &context, FunctionRef<T> &&funcRef) {
+  return FoldElementalIntrinsic<T, T, T, LogicalResult>(context,
+      std::move(funcRef),
+      ScalarFunc<T, T, T, LogicalResult>(
+          [](const Scalar<T> &ifTrue, const Scalar<T> &ifFalse,
+              const Scalar<LogicalResult> &predicate) -> Scalar<T> {
+            return predicate.IsTrue() ? ifTrue : ifFalse;
+          }));
 }
 
 Expr<ImpliedDoIndex::Result> FoldOperation(FoldingContext &, ImpliedDoIndex &&);
@@ -1385,7 +1349,6 @@ std::optional<Expr<T>> FromArrayConstructor(
 template <typename RESULT, typename OPERAND>
 std::optional<Expr<RESULT>> MapOperation(FoldingContext &context,
     std::function<Expr<RESULT>(Expr<OPERAND> &&)> &&f, const Shape &shape,
-    [[maybe_unused]] std::optional<Expr<SubscriptInteger>> &&length,
     Expr<OPERAND> &&values) {
   ArrayConstructor<RESULT> result{values};
   if constexpr (common::HasMember<OPERAND, AllIntrinsicCategoryTypes>) {
@@ -1404,11 +1367,6 @@ std::optional<Expr<RESULT>> MapOperation(FoldingContext &context,
     for (auto &acValue : aConst) {
       auto &scalar{std::get<Expr<OPERAND>>(acValue.u)};
       result.Push(Fold(context, f(std::move(scalar))));
-    }
-  }
-  if constexpr (RESULT::category == TypeCategory::Character) {
-    if (length) {
-      result.set_LEN(std::move(*length));
     }
   }
   return FromArrayConstructor(context, std::move(result), shape);
@@ -1548,9 +1506,9 @@ auto MapOperation(FoldingContext &context,
   return FromArrayConstructor(context, std::move(result), shape);
 }
 
-template <typename DERIVED, typename RESULT, typename... OPD>
+template <typename DERIVED, typename RESULT, typename LEFT, typename RIGHT>
 std::optional<Expr<SubscriptInteger>> ComputeResultLength(
-    Operation<DERIVED, RESULT, OPD...> &operation) {
+    Operation<DERIVED, RESULT, LEFT, RIGHT> &operation) {
   if constexpr (RESULT::category == TypeCategory::Character) {
     return Expr<RESULT>{operation.derived()}.LEN();
   }
@@ -1571,8 +1529,7 @@ auto ApplyElementwise(FoldingContext &context,
   if (expr.Rank() > 0) {
     if (std::optional<Shape> shape{GetShape(context, expr)}) {
       if (auto values{AsFlatArrayConstructor(expr)}) {
-        return MapOperation(context, std::move(f), *shape,
-            ComputeResultLength(operation), std::move(*values));
+        return MapOperation(context, std::move(f), *shape, std::move(*values));
       }
     }
   }
@@ -1928,7 +1885,7 @@ Expr<T> FoldOperation(FoldingContext &context, Multiply<T> &&x) {
       x.left() = Expr<T>{std::move(*c)};
     }
     if (auto c{GetScalarConstantValue<T>(x.left())}) {
-      if (c->IsZero() && x.right().Rank() == 0) {
+      if (c->IsZero()) {
         return std::move(x.left());
       } else if (c->CompareSigned(Scalar<T>{1}) == Ordering::Equal) {
         if (IsVariable(x.right())) {
@@ -1970,7 +1927,7 @@ Expr<T> FoldOperation(FoldingContext &context, Divide<T> &&x) {
       // NaN, and Inf respectively.
       bool isCanonicalNaNOrInf{false};
       if constexpr (T::category == TypeCategory::Real) {
-        if (folded->second.IsZero() && context.moduleFileName().has_value()) {
+        if (folded->second.IsZero() && context.inModuleFile()) {
           using IntType = typename T::Scalar::Word;
           auto intNumerator{folded->first.template ToInteger<IntType>()};
           isCanonicalNaNOrInf = intNumerator.flags == RealFlags{} &&

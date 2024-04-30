@@ -44,8 +44,10 @@ struct UnifyLoopExitsLegacyPass : public FunctionPass {
   }
 
   void getAnalysisUsage(AnalysisUsage &AU) const override {
+    AU.addRequiredID(LowerSwitchID);
     AU.addRequired<LoopInfoWrapperPass>();
     AU.addRequired<DominatorTreeWrapperPass>();
+    AU.addPreservedID(LowerSwitchID);
     AU.addPreserved<LoopInfoWrapperPass>();
     AU.addPreserved<DominatorTreeWrapperPass>();
   }
@@ -63,6 +65,7 @@ FunctionPass *llvm::createUnifyLoopExitsPass() {
 INITIALIZE_PASS_BEGIN(UnifyLoopExitsLegacyPass, "unify-loop-exits",
                       "Fixup each natural loop to have a single exit block",
                       false /* Only looks at CFG */, false /* Analysis Pass */)
+INITIALIZE_PASS_DEPENDENCY(LowerSwitchLegacyPass)
 INITIALIZE_PASS_DEPENDENCY(DominatorTreeWrapperPass)
 INITIALIZE_PASS_DEPENDENCY(LoopInfoWrapperPass)
 INITIALIZE_PASS_END(UnifyLoopExitsLegacyPass, "unify-loop-exits",
@@ -119,7 +122,7 @@ static void restoreSSA(const DominatorTree &DT, const Loop *L,
     LLVM_DEBUG(dbgs() << "externally used: " << Def->getName() << "\n");
     auto NewPhi =
         PHINode::Create(Def->getType(), Incoming.size(),
-                        Def->getName() + ".moved", LoopExitBlock->begin());
+                        Def->getName() + ".moved", &LoopExitBlock->front());
     for (auto *In : Incoming) {
       LLVM_DEBUG(dbgs() << "predecessor " << In->getName() << ": ");
       if (Def->getParent() == In || DT.dominates(Def, In)) {
@@ -230,8 +233,6 @@ bool UnifyLoopExitsLegacyPass::runOnFunction(Function &F) {
                     << "\n");
   auto &LI = getAnalysis<LoopInfoWrapperPass>().getLoopInfo();
   auto &DT = getAnalysis<DominatorTreeWrapperPass>().getDomTree();
-
-  assert(hasOnlySimpleTerminator(F) && "Unsupported block terminator.");
 
   return runImpl(LI, DT);
 }

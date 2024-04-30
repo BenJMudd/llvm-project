@@ -46,7 +46,7 @@
 
 #include "lldb/Core/Debugger.h"
 #include "lldb/Core/PluginManager.h"
-#include "lldb/Host/StreamFile.h"
+#include "lldb/Core/StreamFile.h"
 #include "lldb/Utility/LLDBLog.h"
 #include "lldb/Utility/Log.h"
 #include "lldb/Utility/State.h"
@@ -119,17 +119,17 @@ enum {
 #include "InterpreterPropertiesEnum.inc"
 };
 
-llvm::StringRef CommandInterpreter::GetStaticBroadcasterClass() {
-  static constexpr llvm::StringLiteral class_name("lldb.commandInterpreter");
+ConstString &CommandInterpreter::GetStaticBroadcasterClass() {
+  static ConstString class_name("lldb.commandInterpreter");
   return class_name;
 }
 
 CommandInterpreter::CommandInterpreter(Debugger &debugger,
                                        bool synchronous_execution)
     : Broadcaster(debugger.GetBroadcasterManager(),
-                  CommandInterpreter::GetStaticBroadcasterClass().str()),
-      Properties(
-          OptionValuePropertiesSP(new OptionValueProperties("interpreter"))),
+                  CommandInterpreter::GetStaticBroadcasterClass().AsCString()),
+      Properties(OptionValuePropertiesSP(
+          new OptionValueProperties(ConstString("interpreter")))),
       IOHandlerDelegate(IOHandlerDelegate::Completion::LLDBCommand),
       m_debugger(debugger), m_synchronous_execution(true),
       m_skip_lldbinit_files(false), m_skip_app_init_files(false),
@@ -507,11 +507,6 @@ void CommandInterpreter::Initialize() {
   cmd_obj_sp = GetCommandSPExact("session history");
   if (cmd_obj_sp) {
     AddAlias("history", cmd_obj_sp);
-  }
-
-  cmd_obj_sp = GetCommandSPExact("help");
-  if (cmd_obj_sp) {
-    AddAlias("h", cmd_obj_sp);
   }
 }
 
@@ -1160,11 +1155,7 @@ Status CommandInterpreter::AddUserCommand(llvm::StringRef name,
 
   if (UserCommandExists(name)) {
     if (!can_replace) {
-      result.SetErrorStringWithFormatv(
-          "user command \"{0}\" already exists and force replace was not set "
-          "by --overwrite or 'settings set interpreter.require-overwrite "
-          "false'",
-          name);
+      result.SetErrorString("user command exists and force replace not set");
       return result;
     }
     if (cmd_sp->IsMultiwordObject()) {
@@ -1236,11 +1227,36 @@ CommandObject *
 CommandInterpreter::GetCommandObject(llvm::StringRef cmd_str,
                                      StringList *matches,
                                      StringList *descriptions) const {
-  // Try to find a match among commands and aliases. Allowing inexact matches,
-  // but perferring exact matches.
-  return GetCommandSP(cmd_str, /*include_aliases=*/true, /*exact=*/false,
-                             matches, descriptions)
-                    .get();
+  CommandObject *command_obj =
+      GetCommandSP(cmd_str, false, true, matches, descriptions).get();
+
+  // If we didn't find an exact match to the command string in the commands,
+  // look in the aliases.
+
+  if (command_obj)
+    return command_obj;
+
+  command_obj = GetCommandSP(cmd_str, true, true, matches, descriptions).get();
+
+  if (command_obj)
+    return command_obj;
+
+  // If there wasn't an exact match then look for an inexact one in just the
+  // commands
+  command_obj = GetCommandSP(cmd_str, false, false, nullptr).get();
+
+  // Finally, if there wasn't an inexact match among the commands, look for an
+  // inexact match in both the commands and aliases.
+
+  if (command_obj) {
+    if (matches)
+      matches->AppendString(command_obj->GetCommandName());
+    if (descriptions)
+      descriptions->AppendString(command_obj->GetHelp());
+    return command_obj;
+  }
+
+  return GetCommandSP(cmd_str, true, false, matches, descriptions).get();
 }
 
 CommandObject *CommandInterpreter::GetUserCommandObject(
@@ -1777,7 +1793,7 @@ CommandInterpreter::PreprocessToken(std::string &expr_str) {
 
       StreamString value_strm;
       const bool show_type = false;
-      scalar.GetValue(value_strm, show_type);
+      scalar.GetValue(&value_strm, show_type);
       size_t value_string_size = value_strm.GetSize();
       if (value_string_size) {
         expr_str = value_strm.GetData();
@@ -3055,8 +3071,8 @@ void CommandInterpreter::PrintCommandOutput(IOHandler &io_handler,
   }
 
   std::lock_guard<std::recursive_mutex> guard(io_handler.GetOutputMutex());
-  if (had_output &&
-      INTERRUPT_REQUESTED(GetDebugger(), "Interrupted dumping command output"))
+  if (had_output && INTERRUPT_REQUESTED(GetDebugger(), 
+                                        "Interrupted dumping command output"))
     stream->Printf("\n... Interrupted.\n");
   stream->Flush();
 }
@@ -3546,11 +3562,4 @@ CommandInterpreter::ResolveCommandImpl(std::string &command_line,
     command_line = std::string(revised_command_line.GetString());
 
   return cmd_obj;
-}
-
-llvm::json::Value CommandInterpreter::GetStatistics() {
-  llvm::json::Object stats;
-  for (const auto &command_usage : m_command_usages)
-    stats.try_emplace(command_usage.getKey(), command_usage.getValue());
-  return stats;
 }

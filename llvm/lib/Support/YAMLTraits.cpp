@@ -75,6 +75,13 @@ Input::~Input() = default;
 
 std::error_code Input::error() { return EC; }
 
+// Pin the vtables to this file.
+void Input::HNode::anchor() {}
+void Input::EmptyHNode::anchor() {}
+void Input::ScalarHNode::anchor() {}
+void Input::MapHNode::anchor() {}
+void Input::SequenceHNode::anchor() {}
+
 bool Input::outputting() const {
   return false;
 }
@@ -92,9 +99,8 @@ bool Input::setCurrentDocument() {
       ++DocIterator;
       return setCurrentDocument();
     }
-    releaseHNodeBuffers();
     TopNode = createHNodes(N);
-    CurrentNode = TopNode;
+    CurrentNode = TopNode.get();
     return true;
   }
   return false;
@@ -156,8 +162,6 @@ bool Input::preflightKey(const char *Key, bool Required, bool, bool &UseDefault,
   if (!CurrentNode) {
     if (Required)
       EC = make_error_code(errc::invalid_argument);
-    else
-      UseDefault = true;
     return false;
   }
 
@@ -170,7 +174,7 @@ bool Input::preflightKey(const char *Key, bool Required, bool, bool &UseDefault,
     return false;
   }
   MN->ValidKeys.push_back(Key);
-  HNode *Value = MN->Mapping[Key].first;
+  HNode *Value = MN->Mapping[Key].first.get();
   if (!Value) {
     if (Required)
       setError(CurrentNode, Twine("missing required key '") + Key + "'");
@@ -233,7 +237,7 @@ bool Input::preflightElement(unsigned Index, void *&SaveInfo) {
     return false;
   if (SequenceHNode *SQ = dyn_cast<SequenceHNode>(CurrentNode)) {
     SaveInfo = CurrentNode;
-    CurrentNode = SQ->Entries[Index];
+    CurrentNode = SQ->Entries[Index].get();
     return true;
   }
   return false;
@@ -250,7 +254,7 @@ bool Input::preflightFlowElement(unsigned index, void *&SaveInfo) {
     return false;
   if (SequenceHNode *SQ = dyn_cast<SequenceHNode>(CurrentNode)) {
     SaveInfo = CurrentNode;
-    CurrentNode = SQ->Entries[index];
+    CurrentNode = SQ->Entries[index].get();
     return true;
   }
   return false;
@@ -309,7 +313,7 @@ bool Input::bitSetMatch(const char *Str, bool) {
   if (SequenceHNode *SQ = dyn_cast<SequenceHNode>(CurrentNode)) {
     unsigned Index = 0;
     for (auto &N : SQ->Entries) {
-      if (ScalarHNode *SN = dyn_cast<ScalarHNode>(N)) {
+      if (ScalarHNode *SN = dyn_cast<ScalarHNode>(N.get())) {
         if (SN->value().equals(Str)) {
           BitValuesUsed[Index] = true;
           return true;
@@ -332,7 +336,7 @@ void Input::endBitSetScalar() {
     assert(BitValuesUsed.size() == SQ->Entries.size());
     for (unsigned i = 0; i < SQ->Entries.size(); ++i) {
       if (!BitValuesUsed[i]) {
-        setError(SQ->Entries[i], "unknown bit value");
+        setError(SQ->Entries[i].get(), "unknown bit value");
         return;
       }
     }
@@ -391,14 +395,7 @@ void Input::reportWarning(const SMRange &range, const Twine &message) {
   Strm->printError(range, message, SourceMgr::DK_Warning);
 }
 
-void Input::releaseHNodeBuffers() {
-  EmptyHNodeAllocator.DestroyAll();
-  ScalarHNodeAllocator.DestroyAll();
-  SequenceHNodeAllocator.DestroyAll();
-  MapHNodeAllocator.DestroyAll();
-}
-
-Input::HNode *Input::createHNodes(Node *N) {
+std::unique_ptr<Input::HNode> Input::createHNodes(Node *N) {
   SmallString<128> StringStorage;
   switch (N->getType()) {
   case Node::NK_Scalar: {
@@ -408,27 +405,27 @@ Input::HNode *Input::createHNodes(Node *N) {
       // Copy string to permanent storage
       KeyStr = StringStorage.str().copy(StringAllocator);
     }
-    return new (ScalarHNodeAllocator.Allocate()) ScalarHNode(N, KeyStr);
+    return std::make_unique<ScalarHNode>(N, KeyStr);
   }
   case Node::NK_BlockScalar: {
     BlockScalarNode *BSN = dyn_cast<BlockScalarNode>(N);
     StringRef ValueCopy = BSN->getValue().copy(StringAllocator);
-    return new (ScalarHNodeAllocator.Allocate()) ScalarHNode(N, ValueCopy);
+    return std::make_unique<ScalarHNode>(N, ValueCopy);
   }
   case Node::NK_Sequence: {
     SequenceNode *SQ = dyn_cast<SequenceNode>(N);
-    auto SQHNode = new (SequenceHNodeAllocator.Allocate()) SequenceHNode(N);
+    auto SQHNode = std::make_unique<SequenceHNode>(N);
     for (Node &SN : *SQ) {
       auto Entry = createHNodes(&SN);
       if (EC)
         break;
-      SQHNode->Entries.push_back(Entry);
+      SQHNode->Entries.push_back(std::move(Entry));
     }
-    return SQHNode;
+    return std::move(SQHNode);
   }
   case Node::NK_Mapping: {
     MappingNode *Map = dyn_cast<MappingNode>(N);
-    auto mapHNode = new (MapHNodeAllocator.Allocate()) MapHNode(N);
+    auto mapHNode = std::make_unique<MapHNode>(N);
     for (KeyValueNode &KVN : *Map) {
       Node *KeyNode = KVN.getKey();
       ScalarNode *Key = dyn_cast_or_null<ScalarNode>(KeyNode);
@@ -460,7 +457,7 @@ Input::HNode *Input::createHNodes(Node *N) {
     return std::move(mapHNode);
   }
   case Node::NK_Null:
-    return new (EmptyHNodeAllocator.Allocate()) EmptyHNode(N);
+    return std::make_unique<EmptyHNode>(N);
   default:
     setError(N, "unknown node kind");
     return nullptr;
@@ -718,8 +715,40 @@ void Output::scalarString(StringRef &S, QuotingType MustQuote) {
     outputUpToEndOfLine("''");
     return;
   }
-  output(S, MustQuote);
-  outputUpToEndOfLine("");
+  if (MustQuote == QuotingType::None) {
+    // Only quote if we must.
+    outputUpToEndOfLine(S);
+    return;
+  }
+
+  const char *const Quote = MustQuote == QuotingType::Single ? "'" : "\"";
+  output(Quote); // Starting quote.
+
+  // When using double-quoted strings (and only in that case), non-printable characters may be
+  // present, and will be escaped using a variety of unicode-scalar and special short-form
+  // escapes. This is handled in yaml::escape.
+  if (MustQuote == QuotingType::Double) {
+    output(yaml::escape(S, /* EscapePrintable= */ false));
+    outputUpToEndOfLine(Quote);
+    return;
+  }
+
+  unsigned i = 0;
+  unsigned j = 0;
+  unsigned End = S.size();
+  const char *Base = S.data();
+
+  // When using single-quoted strings, any single quote ' must be doubled to be escaped.
+  while (j < End) {
+    if (S[j] == '\'') {                    // Escape quotes.
+      output(StringRef(&Base[i], j - i));  // "flush".
+      output(StringLiteral("''"));         // Print it as ''
+      i = j + 1;
+    }
+    ++j;
+  }
+  output(StringRef(&Base[i], j - i));
+  outputUpToEndOfLine(Quote); // Ending quote.
 }
 
 void Output::blockScalarString(StringRef &S) {
@@ -767,46 +796,6 @@ bool Output::canElideEmptySequence() {
 void Output::output(StringRef s) {
   Column += s.size();
   Out << s;
-}
-
-void Output::output(StringRef S, QuotingType MustQuote) {
-  if (MustQuote == QuotingType::None) {
-    // Only quote if we must.
-    output(S);
-    return;
-  }
-
-  StringLiteral Quote = MustQuote == QuotingType::Single ? StringLiteral("'")
-                                                         : StringLiteral("\"");
-  output(Quote); // Starting quote.
-
-  // When using double-quoted strings (and only in that case), non-printable
-  // characters may be present, and will be escaped using a variety of
-  // unicode-scalar and special short-form escapes. This is handled in
-  // yaml::escape.
-  if (MustQuote == QuotingType::Double) {
-    output(yaml::escape(S, /* EscapePrintable= */ false));
-    output(Quote);
-    return;
-  }
-
-  unsigned i = 0;
-  unsigned j = 0;
-  unsigned End = S.size();
-  const char *Base = S.data();
-
-  // When using single-quoted strings, any single quote ' must be doubled to be
-  // escaped.
-  while (j < End) {
-    if (S[j] == '\'') {                   // Escape quotes.
-      output(StringRef(&Base[i], j - i)); // "flush".
-      output(StringLiteral("''"));        // Print it as ''
-      i = j + 1;
-    }
-    ++j;
-  }
-  output(StringRef(&Base[i], j - i));
-  output(Quote); // Ending quote.
 }
 
 void Output::outputUpToEndOfLine(StringRef s) {
@@ -861,7 +850,7 @@ void Output::newLineCheck(bool EmptySequence) {
 }
 
 void Output::paddedKey(StringRef key) {
-  output(key, needsQuotes(key, false));
+  output(key);
   output(":");
   const char *spaces = "                ";
   if (key.size() < strlen(spaces))
@@ -880,7 +869,7 @@ void Output::flowKey(StringRef Key) {
     Column = ColumnAtMapFlowStart;
     output("  ");
   }
-  output(Key, needsQuotes(Key, false));
+  output(Key);
   output(": ");
 }
 

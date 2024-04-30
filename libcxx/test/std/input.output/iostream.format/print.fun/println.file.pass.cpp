@@ -11,9 +11,6 @@
 
 // XFAIL: availability-fp_to_chars-missing
 
-// The error exception has no system error string.
-// XFAIL: LIBCXX-ANDROID-FIXME
-
 // <print>
 
 // template<class... Args>
@@ -97,8 +94,11 @@ static void test_read_only() {
   TEST_VALIDATE_EXCEPTION(
       std::system_error,
       [&]([[maybe_unused]] const std::system_error& e) {
-        [[maybe_unused]] std::string_view what{
-            "failed to write formatted output: " TEST_IF_AIX("Broken pipe", "Operation not permitted")};
+#ifdef _AIX
+        [[maybe_unused]] std::string_view what{"failed to write formatted output: Broken pipe"};
+#else
+        [[maybe_unused]] std::string_view what{"failed to write formatted output: Operation not permitted"};
+#endif
         TEST_LIBCPP_REQUIRE(
             e.what() == what,
             TEST_WRITE_CONCATENATED("\nExpected exception ", what, "\nActual exception   ", e.what(), '\n'));
@@ -129,29 +129,6 @@ static void test_new_line() {
   }
 }
 
-static void test_println_blank_line() {
-  // Text does newline translation.
-  {
-    FILE* file = fopen(filename.c_str(), "w");
-    assert(file);
-
-    std::println(file);
-#ifndef _WIN32
-    assert(std::ftell(file) == 1);
-#else
-    assert(std::ftell(file) == 2);
-#endif
-  }
-  // Binary no newline translation.
-  {
-    FILE* file = fopen(filename.c_str(), "wb");
-    assert(file);
-
-    std::println(file);
-    assert(std::ftell(file) == 1);
-  }
-}
-
 int main(int, char**) {
   print_tests(test_file, test_exception);
 
@@ -160,7 +137,6 @@ int main(int, char**) {
 #endif
   test_read_only();
   test_new_line();
-  test_println_blank_line();
 
   return 0;
 }

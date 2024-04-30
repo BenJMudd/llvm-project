@@ -1,4 +1,4 @@
-//===- DeclOpenMP.h - Classes for representing OpenMP directives -*- C++ -*-==//
+//===- DeclOpenMP.h - Classes for representing OpenMP directives -*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -59,7 +59,7 @@ protected:
   }
 
   template <typename T, typename... Params>
-  static T *createEmptyDirective(const ASTContext &C, GlobalDeclID ID,
+  static T *createEmptyDirective(const ASTContext &C, unsigned ID,
                                  unsigned NumClauses, unsigned NumChildren,
                                  Params &&... P) {
     auto *Inst = new (C, ID, size(NumClauses, NumChildren))
@@ -133,7 +133,7 @@ public:
                                       SourceLocation L,
                                       ArrayRef<Expr *> VL);
   static OMPThreadPrivateDecl *CreateDeserialized(ASTContext &C,
-                                                  GlobalDeclID ID, unsigned N);
+                                                  unsigned ID, unsigned N);
 
   typedef MutableArrayRef<Expr *>::iterator varlist_iterator;
   typedef ArrayRef<const Expr *>::iterator varlist_const_iterator;
@@ -158,12 +158,6 @@ public:
   static bool classofKind(Kind K) { return K == OMPThreadPrivate; }
 };
 
-enum class OMPDeclareReductionInitKind {
-  Call,   // Initialized by function call.
-  Direct, // omp_priv(<expr>)
-  Copy    // omp_priv = <expr>
-};
-
 /// This represents '#pragma omp declare reduction ...' directive.
 /// For example, in the following, declared reduction 'foo' for types 'int' and
 /// 'float':
@@ -177,7 +171,14 @@ enum class OMPDeclareReductionInitKind {
 class OMPDeclareReductionDecl final : public ValueDecl, public DeclContext {
   // This class stores some data in DeclContext::OMPDeclareReductionDeclBits
   // to save some space. Use the provided accessors to access it.
+public:
+  enum InitKind {
+    CallInit,   // Initialized by function call.
+    DirectInit, // omp_priv(<expr>)
+    CopyInit    // omp_priv = <expr>
+  };
 
+private:
   friend class ASTDeclReader;
   /// Combiner for declare reduction construct.
   Expr *Combiner = nullptr;
@@ -214,7 +215,7 @@ public:
          QualType T, OMPDeclareReductionDecl *PrevDeclInScope);
   /// Create deserialized declare reduction node.
   static OMPDeclareReductionDecl *CreateDeserialized(ASTContext &C,
-                                                     GlobalDeclID ID);
+                                                     unsigned ID);
 
   /// Get combiner expression of the declare reduction construct.
   Expr *getCombiner() { return Combiner; }
@@ -238,9 +239,8 @@ public:
   Expr *getInitializer() { return Initializer; }
   const Expr *getInitializer() const { return Initializer; }
   /// Get initializer kind.
-  OMPDeclareReductionInitKind getInitializerKind() const {
-    return static_cast<OMPDeclareReductionInitKind>(
-        OMPDeclareReductionDeclBits.InitializerKind);
+  InitKind getInitializerKind() const {
+    return static_cast<InitKind>(OMPDeclareReductionDeclBits.InitializerKind);
   }
   /// Get Orig variable of the initializer.
   Expr *getInitOrig() { return Orig; }
@@ -249,9 +249,9 @@ public:
   Expr *getInitPriv() { return Priv; }
   const Expr *getInitPriv() const { return Priv; }
   /// Set initializer expression for the declare reduction construct.
-  void setInitializer(Expr *E, OMPDeclareReductionInitKind IK) {
+  void setInitializer(Expr *E, InitKind IK) {
     Initializer = E;
-    OMPDeclareReductionDeclBits.InitializerKind = llvm::to_underlying(IK);
+    OMPDeclareReductionDeclBits.InitializerKind = IK;
   }
   /// Set initializer Orig and Priv vars.
   void setInitializerData(Expr *OrigE, Expr *PrivE) {
@@ -318,8 +318,8 @@ public:
                                       ArrayRef<OMPClause *> Clauses,
                                       OMPDeclareMapperDecl *PrevDeclInScope);
   /// Creates deserialized declare mapper node.
-  static OMPDeclareMapperDecl *CreateDeserialized(ASTContext &C,
-                                                  GlobalDeclID ID, unsigned N);
+  static OMPDeclareMapperDecl *CreateDeserialized(ASTContext &C, unsigned ID,
+                                                  unsigned N);
 
   using clauselist_iterator = MutableArrayRef<OMPClause *>::iterator;
   using clauselist_const_iterator = ArrayRef<const OMPClause *>::iterator;
@@ -397,8 +397,7 @@ public:
                                      IdentifierInfo *Id, QualType T,
                                      SourceLocation StartLoc);
 
-  static OMPCapturedExprDecl *CreateDeserialized(ASTContext &C,
-                                                 GlobalDeclID ID);
+  static OMPCapturedExprDecl *CreateDeserialized(ASTContext &C, unsigned ID);
 
   SourceRange getSourceRange() const override LLVM_READONLY;
 
@@ -428,7 +427,7 @@ public:
   static OMPRequiresDecl *Create(ASTContext &C, DeclContext *DC,
                                  SourceLocation L, ArrayRef<OMPClause *> CL);
   /// Create deserialized requires node.
-  static OMPRequiresDecl *CreateDeserialized(ASTContext &C, GlobalDeclID ID,
+  static OMPRequiresDecl *CreateDeserialized(ASTContext &C, unsigned ID,
                                              unsigned N);
 
   using clauselist_iterator = MutableArrayRef<OMPClause *>::iterator;
@@ -496,7 +495,7 @@ public:
   static OMPAllocateDecl *Create(ASTContext &C, DeclContext *DC,
                                  SourceLocation L, ArrayRef<Expr *> VL,
                                  ArrayRef<OMPClause *> CL);
-  static OMPAllocateDecl *CreateDeserialized(ASTContext &C, GlobalDeclID ID,
+  static OMPAllocateDecl *CreateDeserialized(ASTContext &C, unsigned ID,
                                              unsigned NVars, unsigned NClauses);
 
   typedef MutableArrayRef<Expr *>::iterator varlist_iterator;

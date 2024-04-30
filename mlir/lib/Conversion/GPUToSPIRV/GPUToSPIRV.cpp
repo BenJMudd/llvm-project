@@ -16,12 +16,10 @@
 #include "mlir/Dialect/SPIRV/IR/SPIRVDialect.h"
 #include "mlir/Dialect/SPIRV/IR/SPIRVEnums.h"
 #include "mlir/Dialect/SPIRV/IR/SPIRVOps.h"
-#include "mlir/Dialect/SPIRV/IR/SPIRVTypes.h"
 #include "mlir/Dialect/SPIRV/IR/TargetAndABI.h"
 #include "mlir/Dialect/SPIRV/Transforms/SPIRVConversion.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Matchers.h"
-#include "mlir/Support/LogicalResult.h"
 #include "mlir/Transforms/DialectConversion.h"
 #include <optional>
 
@@ -224,7 +222,7 @@ LogicalResult WorkGroupSizeConversion::matchAndRewrite(
 
 // Legalizes a GPU function as an entry SPIR-V function.
 static spirv::FuncOp
-lowerAsEntryFunction(gpu::GPUFuncOp funcOp, const TypeConverter &typeConverter,
+lowerAsEntryFunction(gpu::GPUFuncOp funcOp, TypeConverter &typeConverter,
                      ConversionPatternRewriter &rewriter,
                      spirv::EntryPointABIAttr entryPointInfo,
                      ArrayRef<spirv::InterfaceVarABIAttr> argABIInfo) {
@@ -487,72 +485,46 @@ static std::optional<Value> createGroupReduceOp(OpBuilder &builder,
                                                 Location loc, Value arg,
                                                 gpu::AllReduceOperation opType,
                                                 bool isGroup, bool isUniform) {
-  enum class ElemType { Float, Boolean, Integer };
   using FuncT = Value (*)(OpBuilder &, Location, Value, bool, bool);
   struct OpHandler {
-    gpu::AllReduceOperation kind;
-    ElemType elemType;
-    FuncT func;
+    gpu::AllReduceOperation type;
+    FuncT intFunc;
+    FuncT floatFunc;
   };
 
   Type type = arg.getType();
-  ElemType elementType;
+  using MembptrT = FuncT OpHandler::*;
+  MembptrT handlerPtr;
   if (isa<FloatType>(type)) {
-    elementType = ElemType::Float;
-  } else if (auto intTy = dyn_cast<IntegerType>(type)) {
-    elementType = (intTy.getIntOrFloatBitWidth() == 1) ? ElemType::Boolean
-                                                       : ElemType::Integer;
+    handlerPtr = &OpHandler::floatFunc;
+  } else if (isa<IntegerType>(type)) {
+    handlerPtr = &OpHandler::intFunc;
   } else {
     return std::nullopt;
   }
 
-  // TODO(https://github.com/llvm/llvm-project/issues/73459): The SPIR-V spec
-  // does not specify how -0.0 / +0.0 and NaN values are handled in *FMin/*FMax
-  // reduction ops. We should account possible precision requirements in this
-  // conversion.
-
   using ReduceType = gpu::AllReduceOperation;
+  namespace spv = spirv;
   const OpHandler handlers[] = {
-      {ReduceType::ADD, ElemType::Integer,
-       &createGroupReduceOpImpl<spirv::GroupIAddOp,
-                                spirv::GroupNonUniformIAddOp>},
-      {ReduceType::ADD, ElemType::Float,
-       &createGroupReduceOpImpl<spirv::GroupFAddOp,
-                                spirv::GroupNonUniformFAddOp>},
-      {ReduceType::MUL, ElemType::Integer,
-       &createGroupReduceOpImpl<spirv::GroupIMulKHROp,
-                                spirv::GroupNonUniformIMulOp>},
-      {ReduceType::MUL, ElemType::Float,
-       &createGroupReduceOpImpl<spirv::GroupFMulKHROp,
-                                spirv::GroupNonUniformFMulOp>},
-      {ReduceType::MINUI, ElemType::Integer,
-       &createGroupReduceOpImpl<spirv::GroupUMinOp,
-                                spirv::GroupNonUniformUMinOp>},
-      {ReduceType::MINSI, ElemType::Integer,
-       &createGroupReduceOpImpl<spirv::GroupSMinOp,
-                                spirv::GroupNonUniformSMinOp>},
-      {ReduceType::MINNUMF, ElemType::Float,
-       &createGroupReduceOpImpl<spirv::GroupFMinOp,
-                                spirv::GroupNonUniformFMinOp>},
-      {ReduceType::MAXUI, ElemType::Integer,
-       &createGroupReduceOpImpl<spirv::GroupUMaxOp,
-                                spirv::GroupNonUniformUMaxOp>},
-      {ReduceType::MAXSI, ElemType::Integer,
-       &createGroupReduceOpImpl<spirv::GroupSMaxOp,
-                                spirv::GroupNonUniformSMaxOp>},
-      {ReduceType::MAXNUMF, ElemType::Float,
-       &createGroupReduceOpImpl<spirv::GroupFMaxOp,
-                                spirv::GroupNonUniformFMaxOp>},
-      {ReduceType::MINIMUMF, ElemType::Float,
-       &createGroupReduceOpImpl<spirv::GroupFMinOp,
-                                spirv::GroupNonUniformFMinOp>},
-      {ReduceType::MAXIMUMF, ElemType::Float,
-       &createGroupReduceOpImpl<spirv::GroupFMaxOp,
-                                spirv::GroupNonUniformFMaxOp>}};
+      {ReduceType::ADD,
+       &createGroupReduceOpImpl<spv::GroupIAddOp, spv::GroupNonUniformIAddOp>,
+       &createGroupReduceOpImpl<spv::GroupFAddOp, spv::GroupNonUniformFAddOp>},
+      {ReduceType::MUL,
+       &createGroupReduceOpImpl<spv::GroupIMulKHROp,
+                                spv::GroupNonUniformIMulOp>,
+       &createGroupReduceOpImpl<spv::GroupFMulKHROp,
+                                spv::GroupNonUniformFMulOp>},
+      {ReduceType::MIN,
+       &createGroupReduceOpImpl<spv::GroupSMinOp, spv::GroupNonUniformSMinOp>,
+       &createGroupReduceOpImpl<spv::GroupFMinOp, spv::GroupNonUniformFMinOp>},
+      {ReduceType::MAX,
+       &createGroupReduceOpImpl<spv::GroupSMaxOp, spv::GroupNonUniformSMaxOp>,
+       &createGroupReduceOpImpl<spv::GroupFMaxOp, spv::GroupNonUniformFMaxOp>},
+  };
 
-  for (const OpHandler &handler : handlers)
-    if (handler.kind == opType && elementType == handler.elemType)
-      return handler.func(builder, loc, arg, isGroup, isUniform);
+  for (auto &handler : handlers)
+    if (handler.type == opType)
+      return (handler.*handlerPtr)(builder, loc, arg, isGroup, isUniform);
 
   return std::nullopt;
 }
@@ -593,12 +565,10 @@ public:
   LogicalResult
   matchAndRewrite(gpu::SubgroupReduceOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    if (!isa<spirv::ScalarType>(adaptor.getValue().getType()))
-      return rewriter.notifyMatchFailure(op, "reduction type is not a scalar");
-
-    auto result = createGroupReduceOp(rewriter, op.getLoc(), adaptor.getValue(),
-                                      adaptor.getOp(),
-                                      /*isGroup=*/false, adaptor.getUniform());
+    auto opType = op.getOp();
+    auto result =
+        createGroupReduceOp(rewriter, op.getLoc(), adaptor.getValue(), opType,
+                            /*isGroup*/ false, op.getUniform());
     if (!result)
       return failure();
 

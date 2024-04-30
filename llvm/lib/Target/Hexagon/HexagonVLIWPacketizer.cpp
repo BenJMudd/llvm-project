@@ -1180,7 +1180,7 @@ void HexagonPacketizerList::unpacketizeSoloInstrs(MachineFunction &MF) {
       bool InsertBeforeBundle;
       if (MI.isInlineAsm())
         InsertBeforeBundle = !hasWriteToReadDep(MI, *BundleIt, HRI);
-      else if (MI.isDebugInstr())
+      else if (MI.isDebugValue())
         InsertBeforeBundle = true;
       else
         continue;

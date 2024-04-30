@@ -60,6 +60,7 @@
 #include "Thumb2InstrInfo.h"
 #include "llvm/ADT/SetOperations.h"
 #include "llvm/ADT/SetVector.h"
+#include "llvm/ADT/SmallSet.h"
 #include "llvm/CodeGen/LivePhysRegs.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
@@ -91,11 +92,11 @@ static bool isVectorPredicated(MachineInstr *MI) {
 }
 
 static bool isVectorPredicate(MachineInstr *MI) {
-  return MI->findRegisterDefOperandIdx(ARM::VPR, /*TRI=*/nullptr) != -1;
+  return MI->findRegisterDefOperandIdx(ARM::VPR) != -1;
 }
 
 static bool hasVPRUse(MachineInstr &MI) {
-  return MI.findRegisterUseOperandIdx(ARM::VPR, /*TRI=*/nullptr) != -1;
+  return MI.findRegisterUseOperandIdx(ARM::VPR) != -1;
 }
 
 static bool isDomainMVE(MachineInstr *MI) {
@@ -564,8 +565,7 @@ static bool TryRemove(MachineInstr *MI, ReachingDefAnalysis &RDA,
     SmallPtrSet<MachineInstr *, 2> ModifiedITs;
     SmallPtrSet<MachineInstr *, 2> RemoveITs;
     for (auto *Dead : Killed) {
-      if (MachineOperand *MO =
-              Dead->findRegisterUseOperand(ARM::ITSTATE, /*TRI=*/nullptr)) {
+      if (MachineOperand *MO = Dead->findRegisterUseOperand(ARM::ITSTATE)) {
         MachineInstr *IT = RDA.getMIOperand(Dead, *MO);
         RemoveITs.insert(IT);
         auto &CurrentBlock = ITBlocks[IT];
@@ -1807,7 +1807,12 @@ void ARMLowOverheadLoops::Expand(LowOverheadLoop &LoLoop) {
   PostOrderLoopTraversal DFS(LoLoop.ML, *MLI);
   DFS.ProcessLoop();
   const SmallVectorImpl<MachineBasicBlock*> &PostOrder = DFS.getOrder();
-  fullyRecomputeLiveIns(PostOrder);
+  for (auto *MBB : PostOrder) {
+    recomputeLiveIns(*MBB);
+    // FIXME: For some reason, the live-in print order is non-deterministic for
+    // our tests and I can't out why... So just sort them.
+    MBB->sortUniqueLiveIns();
+  }
 
   for (auto *MBB : reverse(PostOrder))
     recomputeLivenessFlags(*MBB);

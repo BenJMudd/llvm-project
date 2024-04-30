@@ -86,7 +86,7 @@ static Operation::operand_range getUpperBoundOperands(AffineForOp forOp) {
 // materialize a corresponding constant using builder.
 static Value getOrCreateStep(AffineForOp forOp, OpBuilder &builder) {
   return builder.create<arith::ConstantIndexOp>(forOp.getLoc(),
-                                                forOp.getStepAsInt());
+                                                forOp.getStep());
 }
 
 // Get a Value for the loop lower bound.  If the value requires computation,
@@ -195,8 +195,7 @@ AffineLoopToGpuConverter::collectBounds(AffineForOp forOp, unsigned numLoops) {
                                                 upperBound, lowerBound);
     Value step = getOrCreateStep(currentLoop, builder);
     if (getConstantIntValue(step) != static_cast<int64_t>(1))
-      range =
-          builder.create<arith::CeilDivSIOp>(currentLoop.getLoc(), range, step);
+      range = builder.create<arith::DivSIOp>(currentLoop.getLoc(), range, step);
     dims.push_back(range);
 
     lbs.push_back(lowerBound);
@@ -319,7 +318,7 @@ static Value deriveStaticUpperBound(Value upperBound,
 
   if (auto minOp = upperBound.getDefiningOp<AffineMinOp>()) {
     for (const AffineExpr &result : minOp.getMap().getResults()) {
-      if (auto constExpr = dyn_cast<AffineConstantExpr>(result)) {
+      if (auto constExpr = result.dyn_cast<AffineConstantExpr>()) {
         return rewriter.create<arith::ConstantIndexOp>(minOp.getLoc(),
                                                        constExpr.getValue());
       }
@@ -456,8 +455,7 @@ static LogicalResult processParallelLoop(
               rewriter.getAffineSymbolExpr(1));
       newIndex = rewriter.create<AffineApplyOp>(
           loc, annotation.getMap().compose(lowerAndStep),
-          ValueRange{operand, ensureLaunchIndependent(step),
-                     ensureLaunchIndependent(lowerBound)});
+          ValueRange{operand, step, lowerBound});
       // If there was also a bound, insert that, too.
       // TODO: Check that we do not assign bounds twice.
       if (annotation.getBound()) {

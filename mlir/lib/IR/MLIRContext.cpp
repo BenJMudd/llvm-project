@@ -170,11 +170,11 @@ public:
   /// It can't be nullptr when multi-threading is enabled. Otherwise if
   /// multi-threading is disabled, and the threadpool wasn't externally provided
   /// using `setThreadPool`, this will be nullptr.
-  llvm::ThreadPoolInterface *threadPool = nullptr;
+  llvm::ThreadPool *threadPool = nullptr;
 
   /// In case where the thread pool is owned by the context, this ensures
   /// destruction with the context.
-  std::unique_ptr<llvm::ThreadPoolInterface> ownedThreadPool;
+  std::unique_ptr<llvm::ThreadPool> ownedThreadPool;
 
   /// An allocator used for AbstractAttribute and AbstractType objects.
   llvm::BumpPtrAllocator abstractDialectSymbolAllocator;
@@ -183,8 +183,7 @@ public:
   llvm::StringMap<std::unique_ptr<OperationName::Impl>> operations;
 
   /// A vector of operation info specifically for registered operations.
-  llvm::DenseMap<TypeID, RegisteredOperationName> registeredOperations;
-  llvm::StringMap<RegisteredOperationName> registeredOperationsByName;
+  llvm::StringMap<RegisteredOperationName> registeredOperations;
 
   /// This is a sorted container of registered operations for a deterministic
   /// and efficient `getRegisteredOperations` implementation.
@@ -213,13 +212,6 @@ public:
   DenseMap<TypeID, AbstractType *> registeredTypes;
   StorageUniquer typeUniquer;
 
-  /// This is a mapping from type name to the abstract type describing it.
-  /// It is used by `AbstractType::lookup` to get an `AbstractType` from a name.
-  /// As this map needs to be populated before `StringAttr` is loaded, we
-  /// cannot use `StringAttr` as the key. The context does not take ownership
-  /// of the key, so the `StringRef` must outlive the context.
-  llvm::DenseMap<StringRef, AbstractType *> nameToType;
-
   /// Cached Type Instances.
   Float8E5M2Type f8E5M2Ty;
   Float8E4M3FNType f8E4M3FNTy;
@@ -244,14 +236,6 @@ public:
   DenseMap<TypeID, AbstractAttribute *> registeredAttributes;
   StorageUniquer attributeUniquer;
 
-  /// This is a mapping from attribute name to the abstract attribute describing
-  /// it. It is used by `AbstractType::lookup` to get an `AbstractType` from a
-  /// name.
-  /// As this map needs to be populated before `StringAttr` is loaded, we
-  /// cannot use `StringAttr` as the key. The context does not take ownership
-  /// of the key, so the `StringRef` must outlive the context.
-  llvm::DenseMap<StringRef, AbstractAttribute *> nameToAttribute;
-
   /// Cached Attribute Instances.
   BoolAttr falseAttr, trueAttr;
   UnitAttr unitAttr;
@@ -275,7 +259,7 @@ public:
   MLIRContextImpl(bool threadingIsEnabled)
       : threadingIsEnabled(threadingIsEnabled) {
     if (threadingIsEnabled) {
-      ownedThreadPool = std::make_unique<llvm::DefaultThreadPool>();
+      ownedThreadPool = std::make_unique<llvm::ThreadPool>();
       threadPool = ownedThreadPool.get();
     }
   }
@@ -622,12 +606,12 @@ void MLIRContext::disableMultithreading(bool disable) {
   } else if (!impl->threadPool) {
     // The thread pool isn't externally provided.
     assert(!impl->ownedThreadPool);
-    impl->ownedThreadPool = std::make_unique<llvm::DefaultThreadPool>();
+    impl->ownedThreadPool = std::make_unique<llvm::ThreadPool>();
     impl->threadPool = impl->ownedThreadPool.get();
   }
 }
 
-void MLIRContext::setThreadPool(llvm::ThreadPoolInterface &pool) {
+void MLIRContext::setThreadPool(llvm::ThreadPool &pool) {
   assert(!isMultithreadingEnabled() &&
          "expected multi-threading to be disabled when setting a ThreadPool");
   impl->threadPool = &pool;
@@ -639,13 +623,13 @@ unsigned MLIRContext::getNumThreads() {
   if (isMultithreadingEnabled()) {
     assert(impl->threadPool &&
            "multi-threading is enabled but threadpool not set");
-    return impl->threadPool->getMaxConcurrency();
+    return impl->threadPool->getThreadCount();
   }
   // No multithreading or active thread pool. Return 1 thread.
   return 1;
 }
 
-llvm::ThreadPoolInterface &MLIRContext::getThreadPool() {
+llvm::ThreadPool &MLIRContext::getThreadPool() {
   assert(isMultithreadingEnabled() &&
          "expected multi-threading to be enabled within the context");
   assert(impl->threadPool &&
@@ -713,9 +697,6 @@ void Dialect::addType(TypeID typeID, AbstractType &&typeInfo) {
           AbstractType(std::move(typeInfo));
   if (!impl.registeredTypes.insert({typeID, newInfo}).second)
     llvm::report_fatal_error("Dialect Type already registered.");
-  if (!impl.nameToType.insert({newInfo->getName(), newInfo}).second)
-    llvm::report_fatal_error("Dialect Type with name " + newInfo->getName() +
-                             " is already registered.");
 }
 
 void Dialect::addAttribute(TypeID typeID, AbstractAttribute &&attrInfo) {
@@ -728,9 +709,6 @@ void Dialect::addAttribute(TypeID typeID, AbstractAttribute &&attrInfo) {
           AbstractAttribute(std::move(attrInfo));
   if (!impl.registeredAttributes.insert({typeID, newInfo}).second)
     llvm::report_fatal_error("Dialect Attribute already registered.");
-  if (!impl.nameToAttribute.insert({newInfo->getName(), newInfo}).second)
-    llvm::report_fatal_error("Dialect Attribute with name " +
-                             newInfo->getName() + " is already registered.");
 }
 
 //===----------------------------------------------------------------------===//
@@ -753,16 +731,6 @@ AbstractAttribute *AbstractAttribute::lookupMutable(TypeID typeID,
   return impl.registeredAttributes.lookup(typeID);
 }
 
-std::optional<std::reference_wrapper<const AbstractAttribute>>
-AbstractAttribute::lookup(StringRef name, MLIRContext *context) {
-  MLIRContextImpl &impl = context->getImpl();
-  const AbstractAttribute *type = impl.nameToAttribute.lookup(name);
-
-  if (!type)
-    return std::nullopt;
-  return {*type};
-}
-
 //===----------------------------------------------------------------------===//
 // OperationName
 //===----------------------------------------------------------------------===//
@@ -781,8 +749,8 @@ OperationName::OperationName(StringRef name, MLIRContext *context) {
     // Check the registered info map first. In the overwhelmingly common case,
     // the entry will be in here and it also removes the need to acquire any
     // locks.
-    auto registeredIt = ctxImpl.registeredOperationsByName.find(name);
-    if (LLVM_LIKELY(registeredIt != ctxImpl.registeredOperationsByName.end())) {
+    auto registeredIt = ctxImpl.registeredOperations.find(name);
+    if (LLVM_LIKELY(registeredIt != ctxImpl.registeredOperations.end())) {
       impl = registeredIt->second.impl;
       return;
     }
@@ -866,7 +834,7 @@ void OperationName::UnregisteredOpModel::populateInherentAttrs(
     Operation *op, NamedAttrList &attrs) {}
 LogicalResult OperationName::UnregisteredOpModel::verifyInherentAttrs(
     OperationName opName, NamedAttrList &attributes,
-    function_ref<InFlightDiagnostic()> emitError) {
+    function_ref<InFlightDiagnostic()> getDiag) {
   return success();
 }
 int OperationName::UnregisteredOpModel::getOpPropertyByteSize() {
@@ -884,7 +852,7 @@ void OperationName::UnregisteredOpModel::populateDefaultProperties(
     OperationName opName, OpaqueProperties properties) {}
 LogicalResult OperationName::UnregisteredOpModel::setPropertiesFromAttr(
     OperationName opName, OpaqueProperties properties, Attribute attr,
-    function_ref<InFlightDiagnostic()> emitError) {
+    InFlightDiagnostic *diag) {
   *properties.as<Attribute *>() = attr;
   return success();
 }
@@ -896,10 +864,6 @@ void OperationName::UnregisteredOpModel::copyProperties(OpaqueProperties lhs,
                                                         OpaqueProperties rhs) {
   *lhs.as<Attribute *>() = *rhs.as<Attribute *>();
 }
-bool OperationName::UnregisteredOpModel::compareProperties(
-    OpaqueProperties lhs, OpaqueProperties rhs) {
-  return *lhs.as<Attribute *>() == *rhs.as<Attribute *>();
-}
 llvm::hash_code
 OperationName::UnregisteredOpModel::hashProperties(OpaqueProperties prop) {
   return llvm::hash_combine(*prop.as<Attribute *>());
@@ -910,19 +874,10 @@ OperationName::UnregisteredOpModel::hashProperties(OpaqueProperties prop) {
 //===----------------------------------------------------------------------===//
 
 std::optional<RegisteredOperationName>
-RegisteredOperationName::lookup(TypeID typeID, MLIRContext *ctx) {
-  auto &impl = ctx->getImpl();
-  auto it = impl.registeredOperations.find(typeID);
-  if (it != impl.registeredOperations.end())
-    return it->second;
-  return std::nullopt;
-}
-
-std::optional<RegisteredOperationName>
 RegisteredOperationName::lookup(StringRef name, MLIRContext *ctx) {
   auto &impl = ctx->getImpl();
-  auto it = impl.registeredOperationsByName.find(name);
-  if (it != impl.registeredOperationsByName.end())
+  auto it = impl.registeredOperations.find(name);
+  if (it != impl.registeredOperations.end())
     return it->getValue();
   return std::nullopt;
 }
@@ -955,16 +910,11 @@ void RegisteredOperationName::insert(
 
   // Update the registered info for this operation.
   auto emplaced = ctxImpl.registeredOperations.try_emplace(
-      impl->getTypeID(), RegisteredOperationName(impl));
-  assert(emplaced.second && "operation name registration must be successful");
-  auto emplacedByName = ctxImpl.registeredOperationsByName.try_emplace(
       name, RegisteredOperationName(impl));
-  (void)emplacedByName;
-  assert(emplacedByName.second &&
-         "operation name registration must be successful");
+  assert(emplaced.second && "operation name registration must be successful");
 
   // Add emplaced operation name to the sorted operations container.
-  RegisteredOperationName &value = emplaced.first->second;
+  RegisteredOperationName &value = emplaced.first->getValue();
   ctxImpl.sortedRegisteredOperations.insert(
       llvm::upper_bound(ctxImpl.sortedRegisteredOperations, value,
                         [](auto &lhs, auto &rhs) {
@@ -989,16 +939,6 @@ const AbstractType &AbstractType::lookup(TypeID typeID, MLIRContext *context) {
 AbstractType *AbstractType::lookupMutable(TypeID typeID, MLIRContext *context) {
   auto &impl = context->getImpl();
   return impl.registeredTypes.lookup(typeID);
-}
-
-std::optional<std::reference_wrapper<const AbstractType>>
-AbstractType::lookup(StringRef name, MLIRContext *context) {
-  MLIRContextImpl &impl = context->getImpl();
-  const AbstractType *type = impl.nameToType.lookup(name);
-
-  if (!type)
-    return std::nullopt;
-  return {*type};
 }
 
 //===----------------------------------------------------------------------===//

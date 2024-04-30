@@ -16,6 +16,7 @@
 #define LLVM_CLANG_LIB_FORMAT_TOKENANNOTATOR_H
 
 #include "UnwrappedLineParser.h"
+#include "clang/Format/Format.h"
 
 namespace clang {
 namespace format {
@@ -90,13 +91,6 @@ public:
     }
   }
 
-  size_t size() const {
-    size_t Size = 1;
-    for (const auto *Child : Children)
-      Size += Child->size();
-    return Size;
-  }
-
   ~AnnotatedLine() {
     for (AnnotatedLine *Child : Children)
       delete Child;
@@ -150,16 +144,6 @@ public:
            startsWith(tok::kw_export, tok::kw_namespace);
   }
 
-  FormatToken *getFirstNonComment() const {
-    assert(First);
-    return First->is(tok::comment) ? First->getNextNonComment() : First;
-  }
-
-  FormatToken *getLastNonComment() const {
-    assert(Last);
-    return Last->is(tok::comment) ? Last->getPreviousNonComment() : Last;
-  }
-
   FormatToken *First;
   FormatToken *Last;
 
@@ -211,7 +195,7 @@ private:
 class TokenAnnotator {
 public:
   TokenAnnotator(const FormatStyle &Style, const AdditionalKeywords &Keywords)
-      : Style(Style), IsCpp(Style.isCpp()), Keywords(Keywords) {}
+      : Style(Style), Keywords(Keywords) {}
 
   /// Adapts the indent levels of comment lines to the indent of the
   /// subsequent line.
@@ -258,8 +242,6 @@ private:
       const FormatToken &PointerOrReference) const;
 
   const FormatStyle &Style;
-
-  bool IsCpp;
 
   const AdditionalKeywords &Keywords;
 

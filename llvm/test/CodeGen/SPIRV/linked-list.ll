@@ -1,7 +1,4 @@
-; RUN: llc -O0 -mtriple=spirv32-unknown-unknown %s -o - | FileCheck %s
-
-; TODO(#60133): Requires updates following opaque pointer migration.
-; XFAIL: *
+; RUN: llc -O0 -opaque-pointers=0 -mtriple=spirv32-unknown-unknown %s -o - | FileCheck %s
 
 %struct.Node = type { %struct.Node.0 addrspace(1)* }
 ; CHECK: %[[#]] = OpTypeOpaque "struct.Node.0"

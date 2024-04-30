@@ -33,7 +33,6 @@
 #include "llvm/Analysis/GlobalsModRef.h"
 #include "llvm/Analysis/InstructionPrecedenceTracking.h"
 #include "llvm/Analysis/InstructionSimplify.h"
-#include "llvm/Analysis/Loads.h"
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/MemoryBuiltins.h"
 #include "llvm/Analysis/MemoryDependenceAnalysis.h"
@@ -593,7 +592,7 @@ uint32_t GVNPass::ValueTable::lookupOrAddCall(CallInst *C) {
 
 /// Returns true if a value number exists for the specified value.
 bool GVNPass::ValueTable::exists(Value *V) const {
-  return valueNumbering.contains(V);
+  return valueNumbering.count(V) != 0;
 }
 
 /// lookup_or_add - Returns the value number for the specified value, assigning
@@ -726,69 +725,6 @@ void GVNPass::ValueTable::verifyRemoved(const Value *V) const {
 }
 
 //===----------------------------------------------------------------------===//
-//                     LeaderMap External Functions
-//===----------------------------------------------------------------------===//
-
-/// Push a new Value to the LeaderTable onto the list for its value number.
-void GVNPass::LeaderMap::insert(uint32_t N, Value *V, const BasicBlock *BB) {
-  LeaderListNode &Curr = NumToLeaders[N];
-  if (!Curr.Entry.Val) {
-    Curr.Entry.Val = V;
-    Curr.Entry.BB = BB;
-    return;
-  }
-
-  LeaderListNode *Node = TableAllocator.Allocate<LeaderListNode>();
-  Node->Entry.Val = V;
-  Node->Entry.BB = BB;
-  Node->Next = Curr.Next;
-  Curr.Next = Node;
-}
-
-/// Scan the list of values corresponding to a given
-/// value number, and remove the given instruction if encountered.
-void GVNPass::LeaderMap::erase(uint32_t N, Instruction *I,
-                               const BasicBlock *BB) {
-  LeaderListNode *Prev = nullptr;
-  LeaderListNode *Curr = &NumToLeaders[N];
-
-  while (Curr && (Curr->Entry.Val != I || Curr->Entry.BB != BB)) {
-    Prev = Curr;
-    Curr = Curr->Next;
-  }
-
-  if (!Curr)
-    return;
-
-  if (Prev) {
-    Prev->Next = Curr->Next;
-  } else {
-    if (!Curr->Next) {
-      Curr->Entry.Val = nullptr;
-      Curr->Entry.BB = nullptr;
-    } else {
-      LeaderListNode *Next = Curr->Next;
-      Curr->Entry.Val = Next->Entry.Val;
-      Curr->Entry.BB = Next->Entry.BB;
-      Curr->Next = Next->Next;
-    }
-  }
-}
-
-void GVNPass::LeaderMap::verifyRemoved(const Value *V) const {
-  // Walk through the value number scope to make sure the instruction isn't
-  // ferreted away in it.
-  for (const auto &I : NumToLeaders) {
-    (void)I;
-    assert(I.second.Entry.Val != V && "Inst still in value numbering scope!");
-    assert(
-        std::none_of(leader_iterator(&I.second), leader_iterator(nullptr),
-                     [=](const LeaderTableEntry &E) { return E.Val == V; }) &&
-        "Inst still in value numbering scope!");
-  }
-}
-
-//===----------------------------------------------------------------------===//
 //                                GVN Pass
 //===----------------------------------------------------------------------===//
 
@@ -824,7 +760,7 @@ PreservedAnalyses GVNPass::run(Function &F, FunctionAnalysisManager &AM) {
   auto &AA = AM.getResult<AAManager>(F);
   auto *MemDep =
       isMemDepEnabled() ? &AM.getResult<MemoryDependenceAnalysis>(F) : nullptr;
-  auto &LI = AM.getResult<LoopAnalysis>(F);
+  auto *LI = AM.getCachedResult<LoopAnalysis>(F);
   auto *MSSA = AM.getCachedResult<MemorySSAAnalysis>(F);
   auto &ORE = AM.getResult<OptimizationRemarkEmitterAnalysis>(F);
   bool Changed = runImpl(F, AC, DT, TLI, AA, MemDep, LI, &ORE,
@@ -836,7 +772,8 @@ PreservedAnalyses GVNPass::run(Function &F, FunctionAnalysisManager &AM) {
   PA.preserve<TargetLibraryAnalysis>();
   if (MSSA)
     PA.preserve<MemorySSAAnalysis>();
-  PA.preserve<LoopAnalysis>();
+  if (LI)
+    PA.preserve<LoopAnalysis>();
   return PA;
 }
 
@@ -1120,8 +1057,7 @@ Value *AvailableValue::MaterializeAdjustedValue(LoadInst *Load,
     // Introduce a new value select for a load from an eligible pointer select.
     SelectInst *Sel = getSelectValue();
     assert(V1 && V2 && "both value operands of the select must be present");
-    Res =
-        SelectInst::Create(Sel->getCondition(), V1, V2, "", Sel->getIterator());
+    Res = SelectInst::Create(Sel->getCondition(), V1, V2, "", Sel);
   } else {
     llvm_unreachable("Should not materialize value from dead block");
   }
@@ -1216,11 +1152,13 @@ static Value *findDominatingValue(const MemoryLocation &Loc, Type *LoadTy,
   BasicBlock *FromBB = From->getParent();
   BatchAAResults BatchAA(*AA);
   for (BasicBlock *BB = FromBB; BB; BB = BB->getSinglePredecessor())
-    for (auto *Inst = BB == FromBB ? From : BB->getTerminator();
-         Inst != nullptr; Inst = Inst->getPrevNonDebugInstruction()) {
+    for (auto I = BB == FromBB ? From->getReverseIterator() : BB->rbegin(),
+              E = BB->rend();
+         I != E; ++I) {
       // Stop the search if limit is reached.
       if (++NumVisitedInsts > MaxNumVisitedInsts)
         return nullptr;
+      Instruction *Inst = &*I;
       if (isModSet(BatchAA.getModRefInfo(Inst, Loc)))
         return nullptr;
       if (auto *LI = dyn_cast<LoadInst>(Inst))
@@ -1435,7 +1373,7 @@ LoadInst *GVNPass::findLoadToHoistIntoPred(BasicBlock *Pred, BasicBlock *LoadBB,
                                            LoadInst *Load) {
   // For simplicity we handle a Pred has 2 successors only.
   auto *Term = Pred->getTerminator();
-  if (Term->getNumSuccessors() != 2 || Term->isSpecialTerminator())
+  if (Term->getNumSuccessors() != 2 || Term->isExceptionalTerminator())
     return nullptr;
   auto *SuccBB = Term->getSuccessor(0);
   if (SuccBB == LoadBB)
@@ -1477,14 +1415,22 @@ void GVNPass::eliminatePartiallyRedundantLoad(
     BasicBlock *UnavailableBlock = AvailableLoad.first;
     Value *LoadPtr = AvailableLoad.second;
 
-    auto *NewLoad = new LoadInst(
-        Load->getType(), LoadPtr, Load->getName() + ".pre", Load->isVolatile(),
-        Load->getAlign(), Load->getOrdering(), Load->getSyncScopeID(),
-        UnavailableBlock->getTerminator()->getIterator());
+    auto *NewLoad =
+        new LoadInst(Load->getType(), LoadPtr, Load->getName() + ".pre",
+                     Load->isVolatile(), Load->getAlign(), Load->getOrdering(),
+                     Load->getSyncScopeID(), UnavailableBlock->getTerminator());
     NewLoad->setDebugLoc(Load->getDebugLoc());
     if (MSSAU) {
+      auto *MSSA = MSSAU->getMemorySSA();
+      // Get the defining access of the original load or use the load if it is a
+      // MemoryDef (e.g. because it is volatile). The inserted loads are
+      // guaranteed to load from the same definition.
+      auto *LoadAcc = MSSA->getMemoryAccess(Load);
+      auto *DefiningAcc =
+          isa<MemoryDef>(LoadAcc) ? LoadAcc : LoadAcc->getDefiningAccess();
       auto *NewAccess = MSSAU->createMemoryAccessInBB(
-          NewLoad, nullptr, NewLoad->getParent(), MemorySSA::BeforeTerminator);
+          NewLoad, DefiningAcc, NewLoad->getParent(),
+          MemorySSA::BeforeTerminator);
       if (auto *NewDef = dyn_cast<MemoryDef>(NewAccess))
         MSSAU->insertDef(NewDef, /*RenameUses=*/true);
       else
@@ -1503,7 +1449,8 @@ void GVNPass::eliminatePartiallyRedundantLoad(
     if (auto *RangeMD = Load->getMetadata(LLVMContext::MD_range))
       NewLoad->setMetadata(LLVMContext::MD_range, RangeMD);
     if (auto *AccessMD = Load->getMetadata(LLVMContext::MD_access_group))
-      if (LI->getLoopFor(Load->getParent()) == LI->getLoopFor(UnavailableBlock))
+      if (LI &&
+          LI->getLoopFor(Load->getParent()) == LI->getLoopFor(UnavailableBlock))
         NewLoad->setMetadata(LLVMContext::MD_access_group, AccessMD);
 
     // We do not propagate the old load's debug location, because the new
@@ -1530,7 +1477,7 @@ void GVNPass::eliminatePartiallyRedundantLoad(
         OldLoad->replaceAllUsesWith(NewLoad);
         replaceValuesPerBlockEntry(ValuesPerBlock, OldLoad, NewLoad);
         if (uint32_t ValNo = VN.lookup(OldLoad, false))
-          LeaderTable.erase(ValNo, OldLoad, OldLoad->getParent());
+          removeFromLeaderTable(ValNo, OldLoad, OldLoad->getParent());
         VN.erase(OldLoad);
         removeInstruction(OldLoad);
       }
@@ -1540,7 +1487,6 @@ void GVNPass::eliminatePartiallyRedundantLoad(
   // Perform PHI construction.
   Value *V = ConstructSSAForLoadSet(Load, ValuesPerBlock, *this);
   // ConstructSSAForLoadSet is responsible for combining metadata.
-  ICF->removeUsersOf(Load);
   Load->replaceAllUsesWith(V);
   if (isa<PHINode>(V))
     V->takeName(Load);
@@ -1811,6 +1757,9 @@ bool GVNPass::PerformLoadPRE(LoadInst *Load, AvailValInBlkVect &ValuesPerBlock,
 bool GVNPass::performLoopLoadPRE(LoadInst *Load,
                                  AvailValInBlkVect &ValuesPerBlock,
                                  UnavailBlkVect &UnavailableBlocks) {
+  if (!LI)
+    return false;
+
   const Loop *L = LI->getLoopFor(Load->getParent());
   // TODO: Generalize to other loop blocks that dominate the latch.
   if (!L || L->getHeader() != Load->getParent())
@@ -1957,7 +1906,6 @@ bool GVNPass::processNonLocalLoad(LoadInst *Load) {
     // Perform PHI construction.
     Value *V = ConstructSSAForLoadSet(Load, ValuesPerBlock, *this);
     // ConstructSSAForLoadSet is responsible for combining metadata.
-    ICF->removeUsersOf(Load);
     Load->replaceAllUsesWith(V);
 
     if (isa<PHINode>(V))
@@ -1979,7 +1927,7 @@ bool GVNPass::processNonLocalLoad(LoadInst *Load) {
   // Step 4: Eliminate partial redundancy.
   if (!isPREEnabled() || !isLoadPREEnabled())
     return Changed;
-  if (!isLoadInLoopPREEnabled() && LI->getLoopFor(Load->getParent()))
+  if (!isLoadInLoopPREEnabled() && LI && LI->getLoopFor(Load->getParent()))
     return Changed;
 
   if (performLoopLoadPRE(Load, ValuesPerBlock, UnavailableBlocks) ||
@@ -2055,13 +2003,12 @@ bool GVNPass::processAssumeIntrinsic(AssumeInst *IntrinsicI) {
   if (ConstantInt *Cond = dyn_cast<ConstantInt>(V)) {
     if (Cond->isZero()) {
       Type *Int8Ty = Type::getInt8Ty(V->getContext());
-      Type *PtrTy = PointerType::get(V->getContext(), 0);
       // Insert a new store to null instruction before the load to indicate that
       // this code is not reachable.  FIXME: We could insert unreachable
       // instruction directly because we can modify the CFG.
-      auto *NewS =
-          new StoreInst(PoisonValue::get(Int8Ty), Constant::getNullValue(PtrTy),
-                        IntrinsicI->getIterator());
+      auto *NewS = new StoreInst(PoisonValue::get(Int8Ty),
+                                 Constant::getNullValue(Int8Ty->getPointerTo()),
+                                 IntrinsicI);
       if (MSSAU) {
         const MemoryUseOrDef *FirstNonDom = nullptr;
         const auto *AL =
@@ -2081,12 +2028,14 @@ bool GVNPass::processAssumeIntrinsic(AssumeInst *IntrinsicI) {
           }
         }
 
+        // This added store is to null, so it will never executed and we can
+        // just use the LiveOnEntry def as defining access.
         auto *NewDef =
             FirstNonDom ? MSSAU->createMemoryAccessBefore(
-                              NewS, nullptr,
+                              NewS, MSSAU->getMemorySSA()->getLiveOnEntryDef(),
                               const_cast<MemoryUseOrDef *>(FirstNonDom))
                         : MSSAU->createMemoryAccessInBB(
-                              NewS, nullptr,
+                              NewS, MSSAU->getMemorySSA()->getLiveOnEntryDef(),
                               NewS->getParent(), MemorySSA::BeforeTerminator);
 
         MSSAU->insertDef(cast<MemoryDef>(NewDef), /*RenameUses=*/false);
@@ -2233,7 +2182,6 @@ bool GVNPass::processLoad(LoadInst *L) {
   Value *AvailableValue = AV->MaterializeAdjustedValue(L, L, *this);
 
   // MaterializeAdjustedValue is responsible for combining metadata.
-  ICF->removeUsersOf(L);
   L->replaceAllUsesWith(AvailableValue);
   markInstructionForDeletion(L);
   if (MSSAU)
@@ -2267,9 +2215,10 @@ GVNPass::ValueTable::assignExpNewValueNum(Expression &Exp) {
 /// defined in \p BB.
 bool GVNPass::ValueTable::areAllValsInBB(uint32_t Num, const BasicBlock *BB,
                                          GVNPass &Gvn) {
-  return all_of(
-      Gvn.LeaderTable.getLeaders(Num),
-      [=](const LeaderMap::LeaderTableEntry &L) { return L.BB == BB; });
+  LeaderTableEntry *Vals = &Gvn.LeaderTable[Num];
+  while (Vals && Vals->BB == BB)
+    Vals = Vals->Next;
+  return !Vals;
 }
 
 /// Wrap phiTranslateImpl to provide caching functionality.
@@ -2291,11 +2240,12 @@ bool GVNPass::ValueTable::areCallValsEqual(uint32_t Num, uint32_t NewNum,
                                            const BasicBlock *PhiBlock,
                                            GVNPass &Gvn) {
   CallInst *Call = nullptr;
-  auto Leaders = Gvn.LeaderTable.getLeaders(Num);
-  for (const auto &Entry : Leaders) {
-    Call = dyn_cast<CallInst>(Entry.Val);
+  LeaderTableEntry *Vals = &Gvn.LeaderTable[Num];
+  while (Vals) {
+    Call = dyn_cast<CallInst>(Vals->Val);
     if (Call && Call->getParent() == PhiBlock)
       break;
+    Vals = Vals->Next;
   }
 
   if (AA->doesNotAccessMemory(Call))
@@ -2388,17 +2338,23 @@ void GVNPass::ValueTable::eraseTranslateCacheEntry(
 // question.  This is fast because dominator tree queries consist of only
 // a few comparisons of DFS numbers.
 Value *GVNPass::findLeader(const BasicBlock *BB, uint32_t num) {
-  auto Leaders = LeaderTable.getLeaders(num);
-  if (Leaders.empty())
-    return nullptr;
+  LeaderTableEntry Vals = LeaderTable[num];
+  if (!Vals.Val) return nullptr;
 
   Value *Val = nullptr;
-  for (const auto &Entry : Leaders) {
-    if (DT->dominates(Entry.BB, BB)) {
-      Val = Entry.Val;
-      if (isa<Constant>(Val))
-        return Val;
+  if (DT->dominates(Vals.BB, BB)) {
+    Val = Vals.Val;
+    if (isa<Constant>(Val)) return Val;
+  }
+
+  LeaderTableEntry* Next = Vals.Next;
+  while (Next) {
+    if (DT->dominates(Next->BB, BB)) {
+      if (isa<Constant>(Next->Val)) return Next->Val;
+      if (!Val) Val = Next->Val;
     }
+
+    Next = Next->Next;
   }
 
   return Val;
@@ -2475,10 +2431,6 @@ bool GVNPass::propagateEquality(Value *LHS, Value *RHS,
     if (isa<Constant>(LHS) || (isa<Argument>(LHS) && !isa<Constant>(RHS)))
       std::swap(LHS, RHS);
     assert((isa<Argument>(LHS) || isa<Instruction>(LHS)) && "Unexpected value!");
-    const DataLayout &DL =
-        isa<Argument>(LHS)
-            ? cast<Argument>(LHS)->getParent()->getParent()->getDataLayout()
-            : cast<Instruction>(LHS)->getModule()->getDataLayout();
 
     // If there is no obvious reason to prefer the left-hand side over the
     // right-hand side, ensure the longest lived term is on the right-hand side,
@@ -2505,32 +2457,23 @@ bool GVNPass::propagateEquality(Value *LHS, Value *RHS,
     // using the leader table is about compiling faster, not optimizing better).
     // The leader table only tracks basic blocks, not edges. Only add to if we
     // have the simple case where the edge dominates the end.
-    if (RootDominatesEnd && !isa<Instruction>(RHS) &&
-        canReplacePointersIfEqual(LHS, RHS, DL))
-      LeaderTable.insert(LVN, RHS, Root.getEnd());
+    if (RootDominatesEnd && !isa<Instruction>(RHS))
+      addToLeaderTable(LVN, RHS, Root.getEnd());
 
     // Replace all occurrences of 'LHS' with 'RHS' everywhere in the scope.  As
     // LHS always has at least one use that is not dominated by Root, this will
     // never do anything if LHS has only one use.
     if (!LHS->hasOneUse()) {
-      // Create a callback that captures the DL.
-      auto canReplacePointersCallBack = [&DL](const Use &U, const Value *To) {
-        return canReplacePointersInUseIfEqual(U, To, DL);
-      };
       unsigned NumReplacements =
           DominatesByEdge
-              ? replaceDominatedUsesWithIf(LHS, RHS, *DT, Root,
-                                           canReplacePointersCallBack)
-              : replaceDominatedUsesWithIf(LHS, RHS, *DT, Root.getStart(),
-                                           canReplacePointersCallBack);
+              ? replaceDominatedUsesWith(LHS, RHS, *DT, Root)
+              : replaceDominatedUsesWith(LHS, RHS, *DT, Root.getStart());
 
-      if (NumReplacements > 0) {
-        Changed = true;
-        NumGVNEqProp += NumReplacements;
-        // Cached information for anything that uses LHS will be invalid.
-        if (MD)
-          MD->invalidateCachedPointerInfo(LHS);
-      }
+      Changed |= NumReplacements > 0;
+      NumGVNEqProp += NumReplacements;
+      // Cached information for anything that uses LHS will be invalid.
+      if (MD)
+        MD->invalidateCachedPointerInfo(LHS);
     }
 
     // Now try to deduce additional equalities from this one. For example, if
@@ -2601,7 +2544,7 @@ bool GVNPass::propagateEquality(Value *LHS, Value *RHS,
       // The leader table only tracks basic blocks, not edges. Only add to if we
       // have the simple case where the edge dominates the end.
       if (RootDominatesEnd)
-        LeaderTable.insert(Num, NotVal, Root.getEnd());
+        addToLeaderTable(Num, NotVal, Root.getEnd());
 
       continue;
     }
@@ -2651,7 +2594,7 @@ bool GVNPass::processInstruction(Instruction *I) {
       return true;
 
     unsigned Num = VN.lookupOrAdd(Load);
-    LeaderTable.insert(Num, Load, Load->getParent());
+    addToLeaderTable(Num, Load, Load->getParent());
     return false;
   }
 
@@ -2693,8 +2636,8 @@ bool GVNPass::processInstruction(Instruction *I) {
 
     // Remember how many outgoing edges there are to every successor.
     SmallDenseMap<BasicBlock *, unsigned, 16> SwitchEdges;
-    for (BasicBlock *Succ : successors(Parent))
-      ++SwitchEdges[Succ];
+    for (unsigned i = 0, n = SI->getNumSuccessors(); i != n; ++i)
+      ++SwitchEdges[SI->getSuccessor(i)];
 
     for (SwitchInst::CaseIt i = SI->case_begin(), e = SI->case_end();
          i != e; ++i) {
@@ -2719,7 +2662,7 @@ bool GVNPass::processInstruction(Instruction *I) {
   // Allocations are always uniquely numbered, so we can save time and memory
   // by fast failing them.
   if (isa<AllocaInst>(I) || I->isTerminator() || isa<PHINode>(I)) {
-    LeaderTable.insert(Num, I, I->getParent());
+    addToLeaderTable(Num, I, I->getParent());
     return false;
   }
 
@@ -2727,7 +2670,7 @@ bool GVNPass::processInstruction(Instruction *I) {
   // need to do a lookup to see if the number already exists
   // somewhere in the domtree: it can't!
   if (Num >= NextNum) {
-    LeaderTable.insert(Num, I, I->getParent());
+    addToLeaderTable(Num, I, I->getParent());
     return false;
   }
 
@@ -2736,7 +2679,7 @@ bool GVNPass::processInstruction(Instruction *I) {
   Value *Repl = findLeader(I->getParent(), Num);
   if (!Repl) {
     // Failure, just remember this instance for future use.
-    LeaderTable.insert(Num, I, I->getParent());
+    addToLeaderTable(Num, I, I->getParent());
     return false;
   }
 
@@ -2757,7 +2700,7 @@ bool GVNPass::processInstruction(Instruction *I) {
 /// runOnFunction - This is the main transformation entry point for a function.
 bool GVNPass::runImpl(Function &F, AssumptionCache &RunAC, DominatorTree &RunDT,
                       const TargetLibraryInfo &RunTLI, AAResults &RunAA,
-                      MemoryDependenceResults *RunMD, LoopInfo &LI,
+                      MemoryDependenceResults *RunMD, LoopInfo *LI,
                       OptimizationRemarkEmitter *RunORE, MemorySSA *MSSA) {
   AC = &RunAC;
   DT = &RunDT;
@@ -2767,7 +2710,7 @@ bool GVNPass::runImpl(Function &F, AssumptionCache &RunAC, DominatorTree &RunDT,
   MD = RunMD;
   ImplicitControlFlowTracking ImplicitCFT;
   ICF = &ImplicitCFT;
-  this->LI = &LI;
+  this->LI = LI;
   VN.setMemDep(MD);
   ORE = RunORE;
   InvalidBlockRPONumbers = true;
@@ -2777,17 +2720,16 @@ bool GVNPass::runImpl(Function &F, AssumptionCache &RunAC, DominatorTree &RunDT,
   bool Changed = false;
   bool ShouldContinue = true;
 
-  DomTreeUpdater DTU(DT, DomTreeUpdater::UpdateStrategy::Lazy);
+  DomTreeUpdater DTU(DT, DomTreeUpdater::UpdateStrategy::Eager);
   // Merge unconditional branches, allowing PRE to catch more
   // optimization opportunities.
   for (BasicBlock &BB : llvm::make_early_inc_range(F)) {
-    bool removedBlock = MergeBlockIntoPredecessor(&BB, &DTU, &LI, MSSAU, MD);
+    bool removedBlock = MergeBlockIntoPredecessor(&BB, &DTU, LI, MSSAU, MD);
     if (removedBlock)
       ++NumGVNBlocks;
 
     Changed |= removedBlock;
   }
-  DTU.flush();
 
   unsigned Iteration = 0;
   while (ShouldContinue) {
@@ -2931,7 +2873,7 @@ bool GVNPass::performScalarPREInsertion(Instruction *Instr, BasicBlock *Pred,
   VN.add(Instr, Num);
 
   // Update the availability map to include the new instruction.
-  LeaderTable.insert(Num, Instr, Pred);
+  addToLeaderTable(Num, Instr, Pred);
   return true;
 }
 
@@ -3065,9 +3007,9 @@ bool GVNPass::performScalarPRE(Instruction *CurInst) {
   ++NumGVNPRE;
 
   // Create a PHI to make the value available in this block.
-  PHINode *Phi = PHINode::Create(CurInst->getType(), predMap.size(),
-                                 CurInst->getName() + ".pre-phi");
-  Phi->insertBefore(CurrentBlock->begin());
+  PHINode *Phi =
+      PHINode::Create(CurInst->getType(), predMap.size(),
+                      CurInst->getName() + ".pre-phi", &CurrentBlock->front());
   for (unsigned i = 0, e = predMap.size(); i != e; ++i) {
     if (Value *V = predMap[i].first) {
       // If we use an existing value in this phi, we have to patch the original
@@ -3082,13 +3024,13 @@ bool GVNPass::performScalarPRE(Instruction *CurInst) {
   // After creating a new PHI for ValNo, the phi translate result for ValNo will
   // be changed, so erase the related stale entries in phi translate cache.
   VN.eraseTranslateCacheEntry(ValNo, *CurrentBlock);
-  LeaderTable.insert(ValNo, Phi, CurrentBlock);
+  addToLeaderTable(ValNo, Phi, CurrentBlock);
   Phi->setDebugLoc(CurInst->getDebugLoc());
   CurInst->replaceAllUsesWith(Phi);
   if (MD && Phi->getType()->isPtrOrPtrVectorTy())
     MD->invalidateCachedPointerInfo(Phi);
   VN.erase(CurInst);
-  LeaderTable.erase(ValNo, CurInst, CurrentBlock);
+  removeFromLeaderTable(ValNo, CurInst, CurrentBlock);
 
   LLVM_DEBUG(dbgs() << "GVN PRE removed: " << *CurInst << '\n');
   removeInstruction(CurInst);
@@ -3182,6 +3124,7 @@ void GVNPass::cleanupGlobalSets() {
   VN.clear();
   LeaderTable.clear();
   BlockRPONumber.clear();
+  TableAllocator.Reset();
   ICF->clear();
   InvalidBlockRPONumbers = true;
 }
@@ -3201,7 +3144,18 @@ void GVNPass::removeInstruction(Instruction *I) {
 /// internal data structures.
 void GVNPass::verifyRemoved(const Instruction *Inst) const {
   VN.verifyRemoved(Inst);
-  LeaderTable.verifyRemoved(Inst);
+
+  // Walk through the value number scope to make sure the instruction isn't
+  // ferreted away in it.
+  for (const auto &I : LeaderTable) {
+    const LeaderTableEntry *Node = &I.second;
+    assert(Node->Val != Inst && "Inst still in value numbering scope!");
+
+    while (Node->Next) {
+      Node = Node->Next;
+      assert(Node->Val != Inst && "Inst still in value numbering scope!");
+    }
+  }
 }
 
 /// BB is declared dead, which implied other blocks become dead as well. This
@@ -3328,7 +3282,7 @@ void GVNPass::assignValNumForDeadCode() {
   for (BasicBlock *BB : DeadBlocks) {
     for (Instruction &Inst : *BB) {
       unsigned ValNum = VN.lookupOrAdd(&Inst);
-      LeaderTable.insert(ValNum, &Inst, BB);
+      addToLeaderTable(ValNum, &Inst, BB);
     }
   }
 }
@@ -3346,6 +3300,8 @@ public:
     if (skipFunction(F))
       return false;
 
+    auto *LIWP = getAnalysisIfAvailable<LoopInfoWrapperPass>();
+
     auto *MSSAWP = getAnalysisIfAvailable<MemorySSAWrapperPass>();
     return Impl.runImpl(
         F, getAnalysis<AssumptionCacheTracker>().getAssumptionCache(F),
@@ -3355,7 +3311,7 @@ public:
         Impl.isMemDepEnabled()
             ? &getAnalysis<MemoryDependenceWrapperPass>().getMemDep()
             : nullptr,
-        getAnalysis<LoopInfoWrapperPass>().getLoopInfo(),
+        LIWP ? &LIWP->getLoopInfo() : nullptr,
         &getAnalysis<OptimizationRemarkEmitterWrapperPass>().getORE(),
         MSSAWP ? &MSSAWP->getMSSA() : nullptr);
   }

@@ -98,7 +98,7 @@ class DXILPrepareModule : public ModulePass {
     PointerType *PtrTy = cast<PointerType>(Operand->getType());
     return Builder.Insert(
         CastInst::Create(Instruction::BitCast, Operand,
-                         Builder.getPtrTy(PtrTy->getAddressSpace())));
+                         Builder.getInt8PtrTy(PtrTy->getAddressSpace())));
   }
 
 public:
@@ -154,7 +154,7 @@ public:
           if (auto GEP = dyn_cast<GetElementPtrInst>(&I)) {
             if (Value *NoOpBitcast = maybeGenerateBitcast(
                     Builder, PointerTypes, I, GEP->getPointerOperand(),
-                    GEP->getSourceElementType()))
+                    GEP->getResultElementType()))
               GEP->setOperand(0, NoOpBitcast);
             continue;
           }

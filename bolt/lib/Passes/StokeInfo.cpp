@@ -50,17 +50,11 @@ void StokeInfo::checkInstr(const BinaryFunction &BF, StokeFuncInfo &FuncInfo) {
     if (BB->empty())
       continue;
 
-    // Skip function with exception handling.
-    if (BB->throw_size() || BB->lp_size()) {
-      FuncInfo.Omitted = true;
-      return;
-    }
-
     for (const MCInst &It : *BB) {
       if (MIB->isPseudo(It))
         continue;
       // skip function with exception handling yet
-      if (MIB->isInvoke(It)) {
+      if (MIB->isEHLabel(It) || MIB->isInvoke(It)) {
         FuncInfo.Omitted = true;
         return;
       }
@@ -81,7 +75,7 @@ void StokeInfo::checkInstr(const BinaryFunction &BF, StokeFuncInfo &FuncInfo) {
       if (IsPush)
         FuncInfo.StackOut = true;
 
-      if (MIB->mayStore(It) && !IsPush && !IsRipAddr)
+      if (MIB->isStore(It) && !IsPush && !IsRipAddr)
         FuncInfo.HeapOut = true;
 
       if (IsRipAddr)
@@ -97,8 +91,7 @@ bool StokeInfo::checkFunction(BinaryFunction &BF, DataflowInfoManager &DInfo,
 
   if (!BF.isSimple() || BF.isMultiEntry() || BF.empty())
     return false;
-  BF.getBinaryContext().outs()
-      << " STOKE-INFO: analyzing function " << Name << "\n";
+  outs() << " STOKE-INFO: analyzing function " << Name << "\n";
 
   FuncInfo.FuncName = Name;
   FuncInfo.Offset = BF.getFileOffset();
@@ -141,19 +134,19 @@ bool StokeInfo::checkFunction(BinaryFunction &BF, DataflowInfoManager &DInfo,
   LiveOutBV &= DefaultLiveOutMask;
   getRegNameFromBitVec(BF.getBinaryContext(), LiveOutBV, &FuncInfo.LiveOut);
 
-  BF.getBinaryContext().outs() << " STOKE-INFO: end function \n";
+  outs() << " STOKE-INFO: end function \n";
   return true;
 }
 
-Error StokeInfo::runOnFunctions(BinaryContext &BC) {
-  BC.outs() << "STOKE-INFO: begin of stoke pass\n";
+void StokeInfo::runOnFunctions(BinaryContext &BC) {
+  outs() << "STOKE-INFO: begin of stoke pass\n";
 
   std::ofstream Outfile;
   if (!opts::StokeOutputDataFilename.empty()) {
     Outfile.open(opts::StokeOutputDataFilename);
   } else {
-    BC.errs() << "STOKE-INFO: output file is required\n";
-    return Error::success();
+    errs() << "STOKE-INFO: output file is required\n";
+    return;
   }
 
   // check some context meta data
@@ -186,8 +179,7 @@ Error StokeInfo::runOnFunctions(BinaryContext &BC) {
       FuncInfo.printData(Outfile);
   }
 
-  BC.outs() << "STOKE-INFO: end of stoke pass\n";
-  return Error::success();
+  outs() << "STOKE-INFO: end of stoke pass\n";
 }
 
 } // namespace bolt

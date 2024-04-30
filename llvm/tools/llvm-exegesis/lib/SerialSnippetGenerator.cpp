@@ -38,8 +38,6 @@ static std::vector<const Instruction *>
 computeAliasingInstructions(const LLVMState &State, const Instruction *Instr,
                             size_t MaxAliasingInstructions,
                             const BitVector &ForbiddenRegisters) {
-  const auto &ET = State.getExegesisTarget();
-  const auto AvailableFeatures = State.getSubtargetInfo().getFeatureBits();
   // Randomly iterate the set of instructions.
   std::vector<unsigned> Opcodes;
   Opcodes.resize(State.getInstrInfo().getNumOpcodes());
@@ -48,8 +46,6 @@ computeAliasingInstructions(const LLVMState &State, const Instruction *Instr,
 
   std::vector<const Instruction *> AliasingInstructions;
   for (const unsigned OtherOpcode : Opcodes) {
-    if (!ET.isOpcodeAvailable(OtherOpcode, AvailableFeatures))
-      continue;
     if (OtherOpcode == Instr->Description.getOpcode())
       continue;
     const Instruction &OtherInstr = State.getIC().getInstr(OtherOpcode);
@@ -62,7 +58,7 @@ computeAliasingInstructions(const LLVMState &State, const Instruction *Instr,
     }
     if (OtherInstr.hasMemoryOperands())
       continue;
-    if (!ET.allowAsBackToBack(OtherInstr))
+    if (!State.getExegesisTarget().allowAsBackToBack(OtherInstr))
       continue;
     if (Instr->hasAliasingRegistersThrough(OtherInstr, ForbiddenRegisters))
       AliasingInstructions.push_back(&OtherInstr);

@@ -17,7 +17,6 @@
 #include "lldb/Core/ValueObjectDynamicValue.h"
 #include "lldb/Core/ValueObjectMemory.h"
 #include "lldb/Core/ValueObjectSyntheticFilter.h"
-#include "lldb/Core/ValueObjectVTable.h"
 #include "lldb/DataFormatters/DataVisualization.h"
 #include "lldb/DataFormatters/DumpValueObjectOptions.h"
 #include "lldb/DataFormatters/FormatManager.h"
@@ -219,8 +218,10 @@ bool ValueObject::UpdateFormatsIfNeeded() {
     SetValueFormat(DataVisualization::GetFormat(*this, eNoDynamicValues));
     SetSummaryFormat(
         DataVisualization::GetSummaryFormat(*this, GetDynamicValueType()));
+#if LLDB_ENABLE_PYTHON
     SetSyntheticChildren(
         DataVisualization::GetSyntheticChildren(*this, GetDynamicValueType()));
+#endif
   }
 
   return any_change;
@@ -335,7 +336,7 @@ bool ValueObject::ResolveValue(Scalar &scalar) {
   {
     ExecutionContext exe_ctx(GetExecutionContextRef());
     Value tmp_value(m_value);
-    scalar = tmp_value.ResolveValue(&exe_ctx, GetModule().get());
+    scalar = tmp_value.ResolveValue(&exe_ctx);
     if (scalar.IsValid()) {
       const uint32_t bitfield_bit_size = GetBitfieldBitSize();
       if (bitfield_bit_size)
@@ -372,12 +373,12 @@ bool ValueObject::IsLogicalTrue(Status &error) {
   return ret;
 }
 
-ValueObjectSP ValueObject::GetChildAtIndex(uint32_t idx, bool can_create) {
+ValueObjectSP ValueObject::GetChildAtIndex(size_t idx, bool can_create) {
   ValueObjectSP child_sp;
   // We may need to update our value if we are dynamic
   if (IsPossibleDynamicType())
     UpdateValueIfNeeded(false);
-  if (idx < GetNumChildrenIgnoringErrors()) {
+  if (idx < GetNumChildren()) {
     // Check if we have already made the child value object?
     if (can_create && !m_children.HasChildAtIndex(idx)) {
       // No we haven't created the child at this index, so lets have our
@@ -393,6 +394,39 @@ ValueObjectSP ValueObject::GetChildAtIndex(uint32_t idx, bool can_create) {
 }
 
 lldb::ValueObjectSP
+ValueObject::GetChildAtIndexPath(llvm::ArrayRef<size_t> idxs,
+                                 size_t *index_of_error) {
+  if (idxs.size() == 0)
+    return GetSP();
+  ValueObjectSP root(GetSP());
+  for (size_t idx : idxs) {
+    root = root->GetChildAtIndex(idx);
+    if (!root) {
+      if (index_of_error)
+        *index_of_error = idx;
+      return root;
+    }
+  }
+  return root;
+}
+
+lldb::ValueObjectSP ValueObject::GetChildAtIndexPath(
+  llvm::ArrayRef<std::pair<size_t, bool>> idxs, size_t *index_of_error) {
+  if (idxs.size() == 0)
+    return GetSP();
+  ValueObjectSP root(GetSP());
+  for (std::pair<size_t, bool> idx : idxs) {
+    root = root->GetChildAtIndex(idx.first, idx.second);
+    if (!root) {
+      if (index_of_error)
+        *index_of_error = idx.first;
+      return root;
+    }
+  }
+  return root;
+}
+
+lldb::ValueObjectSP
 ValueObject::GetChildAtNamePath(llvm::ArrayRef<llvm::StringRef> names) {
   if (names.size() == 0)
     return GetSP();
@@ -400,6 +434,23 @@ ValueObject::GetChildAtNamePath(llvm::ArrayRef<llvm::StringRef> names) {
   for (llvm::StringRef name : names) {
     root = root->GetChildMemberWithName(name);
     if (!root) {
+      return root;
+    }
+  }
+  return root;
+}
+
+lldb::ValueObjectSP ValueObject::GetChildAtNamePath(
+    llvm::ArrayRef<std::pair<ConstString, bool>> names,
+    ConstString *name_of_error) {
+  if (names.size() == 0)
+    return GetSP();
+  ValueObjectSP root(GetSP());
+  for (std::pair<ConstString, bool> name : names) {
+    root = root->GetChildMemberWithName(name.first, name.second);
+    if (!root) {
+      if (name_of_error)
+        *name_of_error = name.first;
       return root;
     }
   }
@@ -440,7 +491,7 @@ ValueObjectSP ValueObject::GetChildMemberWithName(llvm::StringRef name,
   return child_sp;
 }
 
-llvm::Expected<uint32_t> ValueObject::GetNumChildren(uint32_t max) {
+size_t ValueObject::GetNumChildren(uint32_t max) {
   UpdateValueIfNeeded();
 
   if (max < UINT32_MAX) {
@@ -452,22 +503,9 @@ llvm::Expected<uint32_t> ValueObject::GetNumChildren(uint32_t max) {
   }
 
   if (!m_flags.m_children_count_valid) {
-    auto num_children_or_err = CalculateNumChildren();
-    if (num_children_or_err)
-      SetNumChildren(*num_children_or_err);
-    else
-      return num_children_or_err;
+    SetNumChildren(CalculateNumChildren());
   }
   return m_children.GetChildrenCount();
-}
-
-uint32_t ValueObject::GetNumChildrenIgnoringErrors(uint32_t max) {
-  auto value_or_err = GetNumChildren(max);
-  if (value_or_err)
-    return *value_or_err;
-  LLDB_LOG_ERRORV(GetLog(LLDBLog::DataFormatters), value_or_err.takeError(),
-                  "{0}");
-  return 0;
 }
 
 bool ValueObject::MightHaveChildren() {
@@ -477,13 +515,13 @@ bool ValueObject::MightHaveChildren() {
     if (type_info & (eTypeHasChildren | eTypeIsPointer | eTypeIsReference))
       has_children = true;
   } else {
-    has_children = GetNumChildrenIgnoringErrors() > 0;
+    has_children = GetNumChildren() > 0;
   }
   return has_children;
 }
 
 // Should only be called by ValueObject::GetNumChildren()
-void ValueObject::SetNumChildren(uint32_t num_children) {
+void ValueObject::SetNumChildren(size_t num_children) {
   m_flags.m_children_count_valid = true;
   m_children.SetChildrenCount(num_children);
 }
@@ -826,7 +864,8 @@ static bool CopyStringDataToBufferSP(const StreamString &source,
 
 std::pair<size_t, bool>
 ValueObject::ReadPointedString(lldb::WritableDataBufferSP &buffer_sp,
-                               Status &error, bool honor_array) {
+                               Status &error, uint32_t max_length,
+                               bool honor_array, Format item_format) {
   bool was_capped = false;
   StreamString s;
   ExecutionContext exe_ctx(GetExecutionContextRef());
@@ -839,7 +878,8 @@ ValueObject::ReadPointedString(lldb::WritableDataBufferSP &buffer_sp,
     return {0, was_capped};
   }
 
-  const auto max_length = target->GetMaximumSizeOfStringSummary();
+  if (max_length == 0)
+    max_length = target->GetMaximumSizeOfStringSummary();
 
   size_t bytes_read = 0;
   size_t total_bytes_read = 0;
@@ -1130,7 +1170,7 @@ bool ValueObject::DumpPrintableRepresentation(
     Stream &s, ValueObjectRepresentationStyle val_obj_display,
     Format custom_format, PrintableRepresentationSpecialCases special,
     bool do_dump_error) {
-
+    
   // If the ValueObject has an error, we might end up dumping the type, which
   // is useful, but if we don't even have a type, then don't examine the object
   // further as that's not meaningful, only the error is.
@@ -1160,10 +1200,9 @@ bool ValueObject::DumpPrintableRepresentation(
       {
         Status error;
         lldb::WritableDataBufferSP buffer_sp;
-        std::pair<size_t, bool> read_string =
-            ReadPointedString(buffer_sp, error,
-                              (custom_format == eFormatVectorOfChar) ||
-                                  (custom_format == eFormatCharArray));
+        std::pair<size_t, bool> read_string = ReadPointedString(
+            buffer_sp, error, 0, (custom_format == eFormatVectorOfChar) ||
+                                     (custom_format == eFormatCharArray));
         lldb_private::formatters::StringPrinter::
             ReadBufferAndDumpToStreamOptions options(*this);
         options.SetData(DataExtractor(
@@ -1189,7 +1228,7 @@ bool ValueObject::DumpPrintableRepresentation(
       if (flags.Test(eTypeIsArray)) {
         if ((custom_format == eFormatBytes) ||
             (custom_format == eFormatBytesWithASCII)) {
-          const size_t count = GetNumChildrenIgnoringErrors();
+          const size_t count = GetNumChildren();
 
           s << '[';
           for (size_t low = 0; low < count; low++) {
@@ -1228,7 +1267,7 @@ bool ValueObject::DumpPrintableRepresentation(
                                                      // format should be printed
                                                      // directly
         {
-          const size_t count = GetNumChildrenIgnoringErrors();
+          const size_t count = GetNumChildren();
 
           Format format = FormatManager::GetSingleItemFormat(custom_format);
 
@@ -1307,7 +1346,7 @@ bool ValueObject::DumpPrintableRepresentation(
       break;
 
     case eValueObjectRepresentationStyleChildrenCount:
-      strm.Printf("%" PRIu64 "", (uint64_t)GetNumChildrenIgnoringErrors());
+      strm.Printf("%" PRIu64 "", (uint64_t)GetNumChildren());
       str = strm.GetString();
       break;
 
@@ -1325,8 +1364,6 @@ bool ValueObject::DumpPrintableRepresentation(
       break;
     }
 
-    // If the requested display style produced no output, try falling back to
-    // alternative presentations.
     if (str.empty()) {
       if (val_obj_display == eValueObjectRepresentationStyleValue)
         str = GetSummaryAsCString();
@@ -2086,7 +2123,7 @@ ValueObjectSP ValueObject::GetValueForExpressionPath_Impl(
         *final_result = ValueObject::eExpressionPathEndResultTypeInvalid;
         return ValueObjectSP();
       }
-      if (!temp_expression.starts_with(">")) {
+      if (!temp_expression.startswith(">")) {
         *reason_to_stop =
             ValueObject::eExpressionPathScanEndReasonUnexpectedSymbol;
         *final_result = ValueObject::eExpressionPathEndResultTypeInvalid;
@@ -2111,10 +2148,11 @@ ValueObjectSP ValueObject::GetValueForExpressionPath_Impl(
       temp_expression = temp_expression.drop_front(); // skip . or >
 
       size_t next_sep_pos = temp_expression.find_first_of("-.[", 1);
+      ConstString child_name;
       if (next_sep_pos == llvm::StringRef::npos) // if no other separator just
                                                  // expand this last layer
       {
-        llvm::StringRef child_name = temp_expression;
+        child_name.SetString(temp_expression);
         ValueObjectSP child_valobj_sp =
             root->GetChildMemberWithName(child_name);
 
@@ -2182,7 +2220,8 @@ ValueObjectSP ValueObject::GetValueForExpressionPath_Impl(
       } else // other layers do expand
       {
         llvm::StringRef next_separator = temp_expression.substr(next_sep_pos);
-        llvm::StringRef child_name = temp_expression.slice(0, next_sep_pos);
+
+        child_name.SetString(temp_expression.slice(0, next_sep_pos));
 
         ValueObjectSP child_valobj_sp =
             root->GetChildMemberWithName(child_name);
@@ -2333,9 +2372,7 @@ ValueObjectSP ValueObject::GetValueForExpressionPath_Impl(
             child_valobj_sp = root->GetSyntheticArrayMember(index, true);
           if (!child_valobj_sp)
             if (root->HasSyntheticValue() &&
-                llvm::expectedToStdOptional(
-                    root->GetSyntheticValue()->GetNumChildren())
-                        .value_or(0) > index)
+                root->GetSyntheticValue()->GetNumChildren() > index)
               child_valobj_sp =
                   root->GetSyntheticValue()->GetChildAtIndex(index);
           if (child_valobj_sp) {
@@ -2542,7 +2579,7 @@ ValueObjectSP ValueObject::GetValueForExpressionPath_Impl(
 void ValueObject::Dump(Stream &s) { Dump(s, DumpValueObjectOptions(*this)); }
 
 void ValueObject::Dump(Stream &s, const DumpValueObjectOptions &options) {
-  ValueObjectPrinter printer(*this, &s, options);
+  ValueObjectPrinter printer(this, &s, options);
   printer.PrintValueObject();
 }
 
@@ -2577,30 +2614,34 @@ ValueObjectSP ValueObject::CreateConstantValue(ConstString name) {
 
 ValueObjectSP ValueObject::GetQualifiedRepresentationIfAvailable(
     lldb::DynamicValueType dynValue, bool synthValue) {
-  ValueObjectSP result_sp;
+  ValueObjectSP result_sp(GetSP());
+
   switch (dynValue) {
   case lldb::eDynamicCanRunTarget:
   case lldb::eDynamicDontRunTarget: {
-    if (!IsDynamic())
-      result_sp = GetDynamicValue(dynValue);
+    if (!result_sp->IsDynamic()) {
+      if (result_sp->GetDynamicValue(dynValue))
+        result_sp = result_sp->GetDynamicValue(dynValue);
+    }
   } break;
   case lldb::eNoDynamicValues: {
-    if (IsDynamic())
-      result_sp = GetStaticValue();
+    if (result_sp->IsDynamic()) {
+      if (result_sp->GetStaticValue())
+        result_sp = result_sp->GetStaticValue();
+    }
   } break;
   }
-  if (!result_sp)
-    result_sp = GetSP();
-  assert(result_sp);
 
-  bool is_synthetic = result_sp->IsSynthetic();
-  if (synthValue && !is_synthetic) {
-    if (auto synth_sp = result_sp->GetSyntheticValue())
-      return synth_sp;
-  }
-  if (!synthValue && is_synthetic) {
-    if (auto non_synth_sp = result_sp->GetNonSyntheticValue())
-      return non_synth_sp;
+  if (synthValue) {
+    if (!result_sp->IsSynthetic()) {
+      if (result_sp->GetSyntheticValue())
+        result_sp = result_sp->GetSyntheticValue();
+    }
+  } else {
+    if (result_sp->IsSynthetic()) {
+      if (result_sp->GetNonSyntheticValue())
+        result_sp = result_sp->GetNonSyntheticValue();
+    }
   }
 
   return result_sp;
@@ -2744,30 +2785,18 @@ ValueObjectSP ValueObject::DoCast(const CompilerType &compiler_type) {
 
 ValueObjectSP ValueObject::Cast(const CompilerType &compiler_type) {
   // Only allow casts if the original type is equal or larger than the cast
-  // type, unless we know this is a load address.  Getting the size wrong for
-  // a host side storage could leak lldb memory, so we absolutely want to 
-  // prevent that.  We may not always get the right value, for instance if we
-  // have an expression result value that's copied into a storage location in
-  // the target may not have copied enough memory.  I'm not trying to fix that
-  // here, I'm just making Cast from a smaller to a larger possible in all the
-  // cases where that doesn't risk making a Value out of random lldb memory.
-  // You have to check the ValueObject's Value for the address types, since
-  // ValueObjects that use live addresses will tell you they fetch data from the
-  // live address, but once they are made, they actually don't.
-  // FIXME: Can we make ValueObject's with a live address fetch "more data" from
-  // the live address if it is still valid?
-
+  // type.  We don't know how to fetch more data for all the ConstResult types, 
+  // so we can't guarantee this will work:
   Status error;
   CompilerType my_type = GetCompilerType();
 
-  ExecutionContextScope *exe_scope
+  ExecutionContextScope *exe_scope 
       = ExecutionContext(GetExecutionContextRef())
           .GetBestExecutionContextScope();
-  if (compiler_type.GetByteSize(exe_scope)
-      <= GetCompilerType().GetByteSize(exe_scope) 
-      || m_value.GetValueType() == Value::ValueType::LoadAddress)
+  if (compiler_type.GetByteSize(exe_scope) 
+      <= GetCompilerType().GetByteSize(exe_scope)) {
         return DoCast(compiler_type);
-
+  }
   error.SetErrorString("Can only cast to a type that is equal to or smaller "
                        "than the orignal type.");
 
@@ -3146,8 +3175,4 @@ ValueObjectSP ValueObject::Persist() {
   persistent_var_sp->m_flags |= ExpressionVariable::EVIsProgramReference;
 
   return persistent_var_sp->GetValueObject();
-}
-
-lldb::ValueObjectSP ValueObject::GetVTable() {
-  return ValueObjectVTable::Create(*this);
 }

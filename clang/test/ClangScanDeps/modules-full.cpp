@@ -33,7 +33,6 @@
 // CHECK-NEXT:       "command-line": [
 // CHECK-NEXT:         "-cc1"
 // CHECK:              "-emit-module"
-// CHECK:              "-fno-modules-prune-non-affecting-module-map-files"
 // CHECK:              "-fmodule-file={{.*}}[[PREFIX]]/module-cache{{(_clangcl)?}}/[[HASH_H2_DINCLUDE]]/header2-{{[A-Z0-9]+}}.pcm"
 // CHECK-NOT:          "-fimplicit-module-maps"
 // CHECK:              "-fmodule-name=header1"
@@ -52,7 +51,6 @@
 // CHECK-NEXT:       "command-line": [
 // CHECK-NEXT:         "-cc1",
 // CHECK:              "-emit-module",
-// CHECK:              "-fno-modules-prune-non-affecting-module-map-files"
 // CHECK-NOT:          "-fimplicit-module-maps",
 // CHECK:              "-fmodule-name=header1",
 // CHECK:              "-fno-implicit-modules",
@@ -70,7 +68,6 @@
 // CHECK-NEXT:       "command-line": [
 // CHECK-NEXT:         "-cc1",
 // CHECK:              "-emit-module",
-// CHECK:              "-fno-modules-prune-non-affecting-module-map-files"
 // CHECK:              "-fmodule-name=header2",
 // CHECK-NOT:          "-fimplicit-module-maps",
 // CHECK:              "-fno-implicit-modules",

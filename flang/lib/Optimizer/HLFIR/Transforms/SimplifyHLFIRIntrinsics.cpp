@@ -50,9 +50,7 @@ public:
     auto genKernel = [&array](mlir::Location loc, fir::FirOpBuilder &builder,
                               mlir::ValueRange inputIndices) -> hlfir::Entity {
       assert(inputIndices.size() == 2 && "checked in TransposeOp::validate");
-      const std::initializer_list<mlir::Value> initList = {inputIndices[1],
-                                                           inputIndices[0]};
-      mlir::ValueRange transposedIndices(initList);
+      mlir::ValueRange transposedIndices{{inputIndices[1], inputIndices[0]}};
       hlfir::Entity element =
           hlfir::getElementAt(loc, builder, array, transposedIndices);
       hlfir::Entity val = hlfir::loadTrivialScalar(loc, builder, element);
@@ -60,8 +58,7 @@ public:
     };
     hlfir::ElementalOp elementalOp = hlfir::genElementalOp(
         loc, builder, elementType, resultShape, typeParams, genKernel,
-        /*isUnordered=*/true, /*polymorphicMold=*/nullptr,
-        transpose.getResult().getType());
+        /*isUnordered=*/true, transpose.getResult().getType());
 
     // it wouldn't be safe to replace block arguments with a different
     // hlfir.expr type. Types can differ due to differing amounts of shape
@@ -103,8 +100,7 @@ public:
     // by hlfir.elemental)
     target.addDynamicallyLegalOp<hlfir::TransposeOp>(
         [](hlfir::TransposeOp transpose) {
-          return mlir::cast<hlfir::ExprType>(transpose.getType())
-              .isPolymorphic();
+          return transpose.getType().cast<hlfir::ExprType>().isPolymorphic();
         });
     target.markUnknownOpDynamicallyLegal(
         [](mlir::Operation *) { return true; });

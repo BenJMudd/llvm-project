@@ -280,7 +280,7 @@ inline ArrayRef<char> getStubBlockContent(LinkGraph &G) {
 }
 
 /// Creates a new pointer block in the given section and returns an
-/// Anonymous symbol pointing to it.
+/// Anonymous symobl pointing to it.
 ///
 /// If InitialTarget is given then an Pointer64 relocation will be added to the
 /// block pointing at InitialTarget.

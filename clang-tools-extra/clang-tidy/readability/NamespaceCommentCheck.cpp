@@ -23,12 +23,11 @@ namespace clang::tidy::readability {
 NamespaceCommentCheck::NamespaceCommentCheck(StringRef Name,
                                              ClangTidyContext *Context)
     : ClangTidyCheck(Name, Context),
-      NamespaceCommentPattern(
-          "^/[/*] *(end (of )?)? *(anonymous|unnamed)? *"
-          "namespace( +(((inline )|([a-zA-Z0-9_:]))+))?\\.? *(\\*/)?$",
-          llvm::Regex::IgnoreCase),
-      ShortNamespaceLines(Options.get("ShortNamespaceLines", 1U)),
-      SpacesBeforeComments(Options.get("SpacesBeforeComments", 1U)) {}
+      NamespaceCommentPattern("^/[/*] *(end (of )?)? *(anonymous|unnamed)? *"
+                              "namespace( +([a-zA-Z0-9_:]+))?\\.? *(\\*/)?$",
+                              llvm::Regex::IgnoreCase),
+      ShortNamespaceLines(Options.get("ShortNamespaceLines", 1u)),
+      SpacesBeforeComments(Options.get("SpacesBeforeComments", 1u)) {}
 
 void NamespaceCommentCheck::storeOptions(ClangTidyOptions::OptionMap &Opts) {
   Options.store(Opts, "ShortNamespaceLines", ShortNamespaceLines);
@@ -68,10 +67,8 @@ getNamespaceNameAsWritten(SourceLocation &Loc, const SourceManager &Sources,
     } else if (Nesting == 0) {
       if (T->is(tok::raw_identifier)) {
         StringRef ID = T->getRawIdentifier();
-        if (ID != "namespace")
+        if (ID != "namespace" && ID != "inline")
           Result.append(std::string(ID));
-        if (ID == "inline")
-          Result.append(" ");
       } else if (T->is(tok::coloncolon)) {
         Result.append("::");
       } else { // Any other kind of token is unexpected here.
@@ -160,7 +157,7 @@ void NamespaceCommentCheck::check(const MatchFinder::MatchResult &Result) {
       }
 
       // Otherwise we need to fix the comment.
-      NeedLineBreak = Comment.starts_with("/*");
+      NeedLineBreak = Comment.startswith("/*");
       OldCommentRange =
           SourceRange(AfterRBrace, Loc.getLocWithOffset(Tok.getLength()));
       Message =
@@ -168,7 +165,7 @@ void NamespaceCommentCheck::check(const MatchFinder::MatchResult &Result) {
                "%0 ends with a comment that refers to a wrong namespace '") +
            NamespaceNameInComment + "'")
               .str();
-    } else if (Comment.starts_with("//")) {
+    } else if (Comment.startswith("//")) {
       // Assume that this is an unrecognized form of a namespace closing line
       // comment. Replace it.
       NeedLineBreak = false;

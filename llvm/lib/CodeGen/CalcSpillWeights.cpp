@@ -8,7 +8,6 @@
 
 #include "llvm/CodeGen/CalcSpillWeights.h"
 #include "llvm/ADT/SmallPtrSet.h"
-#include "llvm/ADT/SmallSet.h"
 #include "llvm/CodeGen/LiveInterval.h"
 #include "llvm/CodeGen/LiveIntervals.h"
 #include "llvm/CodeGen/MachineFunction.h"
@@ -98,7 +97,7 @@ bool VirtRegAuxInfo::isRematerializable(const LiveInterval &LI,
     // Trace copies introduced by live range splitting.  The inline
     // spiller can rematerialize through these copies, so the spill
     // weight must reflect this.
-    while (TII.isFullCopyInstr(*MI)) {
+    while (MI->isFullCopy()) {
       // The copy destination must match the interval register.
       if (MI->getOperand(0).getReg() != Reg)
         return false;
@@ -146,23 +145,14 @@ void VirtRegAuxInfo::calculateSpillWeightAndHint(LiveInterval &LI) {
   LI.setWeight(Weight);
 }
 
-static bool canMemFoldInlineAsm(LiveInterval &LI,
-                                const MachineRegisterInfo &MRI) {
-  for (const MachineOperand &MO : MRI.reg_operands(LI.reg())) {
-    const MachineInstr *MI = MO.getParent();
-    if (MI->isInlineAsm() && MI->mayFoldInlineAsmRegOp(MI->getOperandNo(&MO)))
-      return true;
-  }
-
-  return false;
-}
-
 float VirtRegAuxInfo::weightCalcHelper(LiveInterval &LI, SlotIndex *Start,
                                        SlotIndex *End) {
   MachineRegisterInfo &MRI = MF.getRegInfo();
   const TargetRegisterInfo &TRI = *MF.getSubtarget().getRegisterInfo();
   const TargetInstrInfo &TII = *MF.getSubtarget().getInstrInfo();
   MachineBasicBlock *MBB = nullptr;
+  MachineLoop *Loop = nullptr;
+  bool IsExiting = false;
   float TotalWeight = 0;
   unsigned NumInstr = 0; // Number of instructions using LI
   SmallPtrSet<MachineInstr *, 8> Visited;
@@ -219,7 +209,6 @@ float VirtRegAuxInfo::weightCalcHelper(LiveInterval &LI, SlotIndex *Start,
     }
   };
 
-  bool IsExiting = false;
   std::set<CopyHint> CopyHints;
   DenseMap<unsigned, float> Hint;
   for (MachineRegisterInfo::reg_instr_nodbg_iterator
@@ -235,24 +224,14 @@ float VirtRegAuxInfo::weightCalcHelper(LiveInterval &LI, SlotIndex *Start,
       continue;
 
     NumInstr++;
-    bool identityCopy = false;
-    auto DestSrc = TII.isCopyInstr(*MI);
-    if (DestSrc) {
-      const MachineOperand *DestRegOp = DestSrc->Destination;
-      const MachineOperand *SrcRegOp = DestSrc->Source;
-      identityCopy = DestRegOp->getReg() == SrcRegOp->getReg() &&
-                     DestRegOp->getSubReg() == SrcRegOp->getSubReg();
-    }
-
-    if (identityCopy || MI->isImplicitDef())
+    if (MI->isIdentityCopy() || MI->isImplicitDef())
       continue;
     if (!Visited.insert(MI).second)
       continue;
 
     // For terminators that produce values, ask the backend if the register is
     // not spillable.
-    if (TII.isUnspillableTerminator(MI) &&
-        MI->definesRegister(LI.reg(), /*TRI=*/nullptr)) {
+    if (TII.isUnspillableTerminator(MI) && MI->definesRegister(LI.reg())) {
       LI.markNotSpillable();
       return -1.0f;
     }
@@ -262,7 +241,7 @@ float VirtRegAuxInfo::weightCalcHelper(LiveInterval &LI, SlotIndex *Start,
       // Get loop info for mi.
       if (MI->getParent() != MBB) {
         MBB = MI->getParent();
-        const MachineLoop *Loop = Loops.getLoopFor(MBB);
+        Loop = Loops.getLoopFor(MBB);
         IsExiting = Loop ? Loop->isLoopExiting(MBB) : false;
       }
 
@@ -279,7 +258,7 @@ float VirtRegAuxInfo::weightCalcHelper(LiveInterval &LI, SlotIndex *Start,
     }
 
     // Get allocation hints from copies.
-    if (!TII.isCopyInstr(*MI))
+    if (!MI->isCopy())
       continue;
     Register HintReg = copyHint(MI, LI.reg(), TRI, MRI);
     if (!HintReg)
@@ -326,7 +305,7 @@ float VirtRegAuxInfo::weightCalcHelper(LiveInterval &LI, SlotIndex *Start,
   // into instruction itself makes perfect sense.
   if (ShouldUpdateLI && LI.isZeroLength(LIS.getSlotIndexes()) &&
       !LI.isLiveAtIndexes(LIS.getRegMaskSlots()) &&
-      !isLiveAtStatepointVarArg(LI) && !canMemFoldInlineAsm(LI, MRI)) {
+      !isLiveAtStatepointVarArg(LI)) {
     LI.markNotSpillable();
     return -1.0;
   }

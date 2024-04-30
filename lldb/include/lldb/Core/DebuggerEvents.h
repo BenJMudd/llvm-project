@@ -7,7 +7,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "lldb/Core/ModuleSpec.h"
-#include "lldb/Core/Progress.h"
 #include "lldb/Utility/Event.h"
 #include "lldb/Utility/StructuredData.h"
 
@@ -21,10 +20,9 @@ class Stream;
 
 class ProgressEventData : public EventData {
 public:
-  ProgressEventData(uint64_t progress_id, std::string title,
-                    std::string details, uint64_t completed, uint64_t total,
-                    bool debugger_specific)
-      : m_title(std::move(title)), m_details(std::move(details)),
+  ProgressEventData(uint64_t progress_id, std::string title, std::string update,
+                    uint64_t completed, uint64_t total, bool debugger_specific)
+      : m_title(std::move(title)), m_details(std::move(update)),
         m_id(progress_id), m_completed(completed), m_total(total),
         m_debugger_specific(debugger_specific) {}
 
@@ -40,7 +38,7 @@ public:
   GetAsStructuredData(const Event *event_ptr);
 
   uint64_t GetID() const { return m_id; }
-  bool IsFinite() const { return m_total != Progress::kNonDeterministicTotal; }
+  bool IsFinite() const { return m_total != UINT64_MAX; }
   uint64_t GetCompleted() const { return m_completed; }
   uint64_t GetTotal() const { return m_total; }
   std::string GetMessage() const {

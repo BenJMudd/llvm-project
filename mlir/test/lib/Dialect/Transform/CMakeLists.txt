@@ -19,9 +19,7 @@ add_mlir_library(MLIRTestTransformDialect
   MLIRIR
   MLIRPass
   MLIRPDLDialect
-  MLIRTransformDebugExtension
   MLIRTransformDialect
   MLIRTransformDialectTransforms
-  MLIRTransformLoopExtension
   MLIRTransformPDLExtension
 )

@@ -12,7 +12,6 @@ function(_add_capi_test_executable name)
   llvm_update_compile_flags(${name})
   if(MLIR_BUILD_MLIR_C_DYLIB)
     target_link_libraries(${name} PRIVATE
-      LLVMCore
       MLIR-C)
   else()
     target_link_libraries(${name} PRIVATE
@@ -85,22 +84,4 @@ _add_capi_test_executable(mlir-capi-transform-test
     MLIRCAPIIR
     MLIRCAPIRegisterEverything
     MLIRCAPITransformDialect
-)
-
-_add_capi_test_executable(mlir-capi-transform-interpreter-test
-  transform_interpreter.c
-  LINK_LIBS PRIVATE
-    MLIRCAPIIR
-    MLIRCAPIRegisterEverything
-    MLIRCAPITransformDialect
-    MLIRCAPITransformDialectTransforms
-)
-
-_add_capi_test_executable(mlir-capi-translation-test
-  translation.c
-  LINK_LIBS PRIVATE
-    MLIRCAPIIR
-    MLIRCAPILLVM
-    MLIRCAPIRegisterEverything
-    MLIRCAPITarget
 )

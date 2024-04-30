@@ -40,7 +40,7 @@
 #endif
 
 #ifndef __APPLE__
-#include "lldb/Utility/AppleUuidCompatibility.h"
+#include "Utility/UuidCompatibility.h"
 #else
 #include <uuid/uuid.h>
 #endif
@@ -75,8 +75,7 @@ DynamicLoader *DynamicLoaderMacOSXDYLD::CreateInstance(Process *process,
       case llvm::Triple::IOS:
       case llvm::Triple::TvOS:
       case llvm::Triple::WatchOS:
-      case llvm::Triple::XROS:
-      case llvm::Triple::BridgeOS:
+      // NEED_BRIDGEOS_TRIPLE case llvm::Triple::BridgeOS:
         create = triple_ref.getVendor() == llvm::Triple::Apple;
         break;
       default:

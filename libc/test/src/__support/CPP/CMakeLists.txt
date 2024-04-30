@@ -1,28 +1,6 @@
 add_custom_target(libc-cpp-utils-tests)
 
 add_libc_test(
-  array_test
-  SUITE
-    libc-cpp-utils-tests
-  SRCS
-    array_test.cpp
-  DEPENDS
-    libc.src.__support.CPP.array
-  )
-
-add_libc_test(
-  bit_test
-  SUITE
-    libc-cpp-utils-tests
-  SRCS
-    bit_test.cpp
-  DEPENDS
-    libc.src.__support.big_int
-    libc.src.__support.CPP.bit
-    libc.src.__support.macros.properties.types
-)
-
-add_libc_test(
   bitset_test
   SUITE
     libc-cpp-utils-tests
@@ -59,9 +37,8 @@ add_libc_test(
   SRCS
     limits_test.cpp
   DEPENDS
-    libc.src.__support.big_int
     libc.src.__support.CPP.limits
-    libc.src.__support.macros.properties.types
+    libc.src.__support.uint
 )
 
 add_libc_test(
@@ -76,7 +53,7 @@ add_libc_test(
 
 
 # This test fails with invalid address space operations on sm_60
-if(NOT LIBC_TARGET_ARCHITECTURE_IS_NVPTX)
+if(NOT LIBC_GPU_TARGET_ARCHITECTURE_IS_NVPTX)
   add_libc_test(
     atomic_test
     SUITE
@@ -128,14 +105,4 @@ add_libc_test(
   DEPENDS
   libc.src.__support.CPP.string
   libc.src.__support.CPP.string_view
-)
-
-add_libc_test(
-  type_traits_test
-  SUITE
-    libc-cpp-utils-tests
-  SRCS
-  type_traits_test.cpp
-  DEPENDS
-  libc.src.__support.CPP.type_traits
 )

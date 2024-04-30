@@ -29,6 +29,7 @@
 #include "llvm/Support/MemoryBufferRef.h"
 #include "llvm/Support/ThreadPool.h"
 #include <fstream>
+#include <set>
 
 using namespace llvm;
 
@@ -219,10 +220,10 @@ void llvm::runDeltaPass(TestRunner &Test, ReductionFunc ExtractChunksFromModule,
   }
 
   std::atomic<bool> AnyReduced;
-  std::unique_ptr<ThreadPoolInterface> ChunkThreadPoolPtr;
+  std::unique_ptr<ThreadPool> ChunkThreadPoolPtr;
   if (NumJobs > 1)
     ChunkThreadPoolPtr =
-        std::make_unique<DefaultThreadPool>(hardware_concurrency(NumJobs));
+        std::make_unique<ThreadPool>(hardware_concurrency(NumJobs));
 
   bool FoundAtLeastOneNewUninterestingChunkWithCurrentGranularity;
   do {
@@ -251,7 +252,7 @@ void llvm::runDeltaPass(TestRunner &Test, ReductionFunc ExtractChunksFromModule,
         unsigned NumInitialTasks = std::min(WorkLeft, unsigned(NumJobs));
         unsigned NumChunksProcessed = 0;
 
-        ThreadPoolInterface &ChunkThreadPool = *ChunkThreadPoolPtr;
+        ThreadPool &ChunkThreadPool = *ChunkThreadPoolPtr;
         assert(TaskQueue.empty());
 
         AnyReduced = false;

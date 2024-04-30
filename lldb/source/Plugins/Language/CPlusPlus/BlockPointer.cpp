@@ -54,6 +54,18 @@ public:
     if (!clang_ast_context)
       return;
 
+    std::shared_ptr<ClangASTImporter> clang_ast_importer;
+    auto *state = target_sp->GetPersistentExpressionStateForLanguage(
+        lldb::eLanguageTypeC_plus_plus);
+    if (state) {
+      auto *persistent_vars = llvm::cast<ClangPersistentVariables>(state);
+      clang_ast_importer = persistent_vars->GetClangASTImporter();
+    }
+
+    if (!clang_ast_importer) {
+      return;
+    }
+
     const char *const isa_name("__isa");
     const CompilerType isa_type =
         clang_ast_context->GetBasicType(lldb::eBasicTypeObjCClass);
@@ -74,17 +86,17 @@ public:
 
   ~BlockPointerSyntheticFrontEnd() override = default;
 
-  llvm::Expected<uint32_t> CalculateNumChildren() override {
+  size_t CalculateNumChildren() override {
     const bool omit_empty_base_classes = false;
     return m_block_struct_type.GetNumChildren(omit_empty_base_classes, nullptr);
   }
 
-  lldb::ValueObjectSP GetChildAtIndex(uint32_t idx) override {
+  lldb::ValueObjectSP GetChildAtIndex(size_t idx) override {
     if (!m_block_struct_type.IsValid()) {
       return lldb::ValueObjectSP();
     }
 
-    if (idx >= CalculateNumChildrenIgnoringErrors()) {
+    if (idx >= CalculateNumChildren()) {
       return lldb::ValueObjectSP();
     }
 
@@ -136,9 +148,7 @@ public:
 
   // return true if this object is now safe to use forever without ever
   // updating again; the typical (and tested) answer here is 'false'
-  lldb::ChildCacheState Update() override {
-    return lldb::ChildCacheState::eRefetch;
-  }
+  bool Update() override { return false; }
 
   // maybe return false if the block pointer is, say, null
   bool MightHaveChildren() override { return true; }

@@ -171,7 +171,9 @@ public:
   ///
   /// Can provide false-negative in case the location was parsed after this
   /// instance had been constructed.
-  bool hasAlredyBeenParsed(SourceLocation Loc, FileID FID, FileEntryRef FE) {
+  bool hasAlredyBeenParsed(SourceLocation Loc, FileID FID,
+                           const FileEntry *FE) {
+    assert(FE);
     PPRegion region = getRegion(Loc, FID, FE);
     if (region.isInvalid())
       return false;
@@ -197,11 +199,12 @@ public:
   }
 
 private:
-  PPRegion getRegion(SourceLocation Loc, FileID FID, FileEntryRef FE) {
+  PPRegion getRegion(SourceLocation Loc, FileID FID, const FileEntry *FE) {
+    assert(FE);
     auto Bail = [this, FE]() {
       if (isParsedOnceInclude(FE)) {
-        const llvm::sys::fs::UniqueID &ID = FE.getUniqueID();
-        return PPRegion(ID, 0, FE.getModificationTime());
+        const llvm::sys::fs::UniqueID &ID = FE->getUniqueID();
+        return PPRegion(ID, 0, FE->getModificationTime());
       }
       return PPRegion();
     };
@@ -219,11 +222,11 @@ private:
     if (RegionFID != FID)
       return Bail();
 
-    const llvm::sys::fs::UniqueID &ID = FE.getUniqueID();
-    return PPRegion(ID, RegionOffset, FE.getModificationTime());
+    const llvm::sys::fs::UniqueID &ID = FE->getUniqueID();
+    return PPRegion(ID, RegionOffset, FE->getModificationTime());
   }
 
-  bool isParsedOnceInclude(FileEntryRef FE) {
+  bool isParsedOnceInclude(const FileEntry *FE) {
     return PP.getHeaderSearchInfo().isFileMultipleIncludeGuarded(FE) ||
            PP.getHeaderSearchInfo().hasFileBeenImported(FE);
   }
@@ -261,13 +264,12 @@ public:
                           StringRef FileName, bool IsAngled,
                           CharSourceRange FilenameRange,
                           OptionalFileEntryRef File, StringRef SearchPath,
-                          StringRef RelativePath, const Module *SuggestedModule,
-                          bool ModuleImported,
+                          StringRef RelativePath, const Module *Imported,
                           SrcMgr::CharacteristicKind FileType) override {
     bool isImport = (IncludeTok.is(tok::identifier) &&
             IncludeTok.getIdentifierInfo()->getPPKeywordID() == tok::pp_import);
     DataConsumer.ppIncludedFile(HashLoc, FileName, File, isImport, IsAngled,
-                                ModuleImported);
+                            Imported);
   }
 
   /// MacroDefined - This hook is called whenever a macro definition is seen.
@@ -394,11 +396,11 @@ public:
     // Don't skip bodies from main files; this may be revisited.
     if (SM.getMainFileID() == FID)
       return false;
-    OptionalFileEntryRef FE = SM.getFileEntryRefForID(FID);
+    const FileEntry *FE = SM.getFileEntryForID(FID);
     if (!FE)
       return false;
 
-    return ParsedLocsTracker->hasAlredyBeenParsed(Loc, FID, *FE);
+    return ParsedLocsTracker->hasAlredyBeenParsed(Loc, FID, FE);
   }
 
   TranslationUnitKind getTranslationUnitKind() override {
@@ -544,7 +546,7 @@ static CXErrorCode clang_indexSourceFile_Impl(
   // (often very broken) source code, where spell-checking can have a
   // significant negative impact on performance (particularly when 
   // precompiled headers are involved), we disable it.
-  CInvok->getLangOpts().SpellChecking = false;
+  CInvok->getLangOpts()->SpellChecking = false;
 
   if (index_options & CXIndexOpt_SuppressWarnings)
     CInvok->getDiagnosticOpts().IgnoreWarnings = true;
@@ -569,7 +571,7 @@ static CXErrorCode clang_indexSourceFile_Impl(
   // Enable the skip-parsed-bodies optimization only for C++; this may be
   // revisited.
   bool SkipBodies = (index_options & CXIndexOpt_SkipParsedBodiesInSession) &&
-      CInvok->getLangOpts().CPlusPlus;
+      CInvok->getLangOpts()->CPlusPlus;
   if (SkipBodies)
     CInvok->getFrontendOpts().SkipFunctionBodies = true;
 
@@ -606,7 +608,7 @@ static CXErrorCode clang_indexSourceFile_Impl(
     PPOpts.DetailedRecord = true;
   }
 
-  if (!requestedToGetTU && !CInvok->getLangOpts().Modules)
+  if (!requestedToGetTU && !CInvok->getLangOpts()->Modules)
     PPOpts.DetailedRecord = false;
 
   // Unless the user specified that they want the preamble on the first parse

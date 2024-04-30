@@ -20,12 +20,6 @@ func.func @_QQmain() {
 // PASSES-NEXT: 'func.func' Pipeline
 // PASSES-NEXT:   SimplifyHLFIRIntrinsics
 // PASSES-NEXT:   InlineElementals
-// PASSES-NEXT:   Canonicalizer
-// PASSES-NEXT:   CSE
-// PASSES-NEXT:    (S) 0 num-cse'd - Number of operations CSE'd
-// PASSES-NEXT:    (S) 0 num-dce'd - Number of operations DCE'd
-// PASSES-NEXT:   'func.func' Pipeline
-// PASSES-NEXT:    OptimizedBufferization
 // PASSES-NEXT:   LowerHLFIROrderedAssignments
 // PASSES-NEXT:   LowerHLFIRIntrinsics
 // PASSES-NEXT:   BufferizeHLFIR
@@ -34,15 +28,8 @@ func.func @_QQmain() {
 // PASSES-NEXT:   (S) 0 num-cse'd - Number of operations CSE'd
 // PASSES-NEXT:   (S) 0 num-dce'd - Number of operations DCE'd
 
-// PASSES-NEXT: Pipeline Collection : ['fir.global', 'func.func', 'omp.declare_reduction', 'omp.private']
-// PASSES-NEXT: 'fir.global' Pipeline
-// PASSES-NEXT:   CharacterConversion
 // PASSES-NEXT: 'func.func' Pipeline
 // PASSES-NEXT:   ArrayValueCopy
-// PASSES-NEXT:   CharacterConversion
-// PASSES-NEXT: 'omp.declare_reduction' Pipeline
-// PASSES-NEXT:   CharacterConversion
-// PASSES-NEXT: 'omp.private' Pipeline
 // PASSES-NEXT:   CharacterConversion
 
 // PASSES-NEXT: Canonicalizer
@@ -64,17 +51,6 @@ func.func @_QQmain() {
 
 // PASSES-NEXT: 'func.func' Pipeline
 // PASSES-NEXT:   PolymorphicOpConversion
-
-// PASSES-NEXT: AddAliasTags
-
-// PASSES-NEXT: Pipeline Collection : ['fir.global', 'func.func', 'omp.declare_reduction', 'omp.private']
-// PASSES-NEXT: 'fir.global' Pipeline
-// PASSES-NEXT:   CFGConversion
-// PASSES-NEXT: 'func.func' Pipeline
-// PASSES-NEXT:   CFGConversion
-// PASSES-NEXT: 'omp.declare_reduction' Pipeline
-// PASSES-NEXT:   CFGConversion
-// PASSES-NEXT: 'omp.private' Pipeline
 // PASSES-NEXT:   CFGConversion
 
 // PASSES-NEXT: SCFToControlFlow
@@ -85,15 +61,11 @@ func.func @_QQmain() {
 // PASSES-NEXT:   (S) 0 num-dce'd - Number of operations DCE'd
 // PASSES-NEXT: BoxedProcedurePass
 
-// PASSES-NEXT: Pipeline Collection : ['fir.global', 'func.func', 'omp.declare_reduction', 'omp.private']
-// PASSES-NEXT:  'fir.global' Pipeline
-// PASSES-NEXT:    AbstractResultOpt
+// PASSES-NEXT: Pipeline Collection : ['fir.global', 'func.func']
+// PASSES-NEXT:   'fir.global' Pipeline
+// PASSES-NEXT:    AbstractResultOnGlobalOpt
 // PASSES-NEXT:  'func.func' Pipeline
-// PASSES-NEXT:    AbstractResultOpt
-// PASSES-NEXT:  'omp.declare_reduction' Pipeline
-// PASSES-NEXT:    AbstractResultOpt
-// PASSES-NEXT:  'omp.private' Pipeline
-// PASSES-NEXT:    AbstractResultOpt
+// PASSES-NEXT:    AbstractResultOnFuncOpt
 
 // PASSES-NEXT: CodeGenRewrite
 // PASSES-NEXT:   (S) 0 num-dce'd - Number of operations eliminated

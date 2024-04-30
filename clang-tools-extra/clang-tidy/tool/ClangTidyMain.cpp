@@ -31,7 +31,9 @@
 using namespace clang::tooling;
 using namespace llvm;
 
-static cl::desc desc(StringRef description) { return {description.ltrim()}; }
+static cl::desc desc(StringRef description) {
+  return cl::desc(description.ltrim());
+}
 
 static cl::OptionCategory ClangTidyCategory("clang-tidy options");
 
@@ -261,17 +263,6 @@ static cl::opt<bool>
                                        cl::init(false), cl::Hidden,
                                        cl::cat(ClangTidyCategory));
 
-static cl::opt<bool> EnableModuleHeadersParsing("enable-module-headers-parsing",
-                                                desc(R"(
-Enables preprocessor-level module header parsing
-for C++20 and above, empowering specific checks
-to detect macro definitions within modules. This
-feature may cause performance and parsing issues
-and is therefore considered experimental.
-)"),
-                                                cl::init(false),
-                                                cl::cat(ClangTidyCategory));
-
 static cl::opt<std::string> ExportFixes("export-fixes", desc(R"(
 YAML file to store suggested fixes in. The
 stored fixes can be applied to the input source
@@ -454,27 +445,52 @@ static constexpr StringLiteral VerifyConfigWarningEnd = " [-verify-config]\n";
 
 static bool verifyChecks(const StringSet<> &AllChecks, StringRef CheckGlob,
                          StringRef Source) {
-  GlobList Globs(CheckGlob);
+  llvm::StringRef Cur, Rest;
   bool AnyInvalid = false;
-  for (const auto &Item : Globs.getItems()) {
-    if (Item.Text.starts_with("clang-diagnostic"))
+  for (std::tie(Cur, Rest) = CheckGlob.split(',');
+       !(Cur.empty() && Rest.empty()); std::tie(Cur, Rest) = Rest.split(',')) {
+    Cur = Cur.trim();
+    if (Cur.empty())
       continue;
-    if (llvm::none_of(AllChecks.keys(),
-                      [&Item](StringRef S) { return Item.Regex.match(S); })) {
-      AnyInvalid = true;
-      if (Item.Text.contains('*'))
-        llvm::WithColor::warning(llvm::errs(), Source)
-            << "check glob '" << Item.Text << "' doesn't match any known check"
-            << VerifyConfigWarningEnd;
-      else {
-        llvm::raw_ostream &Output =
-            llvm::WithColor::warning(llvm::errs(), Source)
-            << "unknown check '" << Item.Text << '\'';
-        llvm::StringRef Closest = closest(Item.Text, AllChecks);
-        if (!Closest.empty())
-          Output << "; did you mean '" << Closest << '\'';
-        Output << VerifyConfigWarningEnd;
+    Cur.consume_front("-");
+    if (Cur.startswith("clang-diagnostic"))
+      continue;
+    if (Cur.contains('*')) {
+      SmallString<128> RegexText("^");
+      StringRef MetaChars("()^$|*+?.[]\\{}");
+      for (char C : Cur) {
+        if (C == '*')
+          RegexText.push_back('.');
+        else if (MetaChars.contains(C))
+          RegexText.push_back('\\');
+        RegexText.push_back(C);
       }
+      RegexText.push_back('$');
+      llvm::Regex Glob(RegexText);
+      std::string Error;
+      if (!Glob.isValid(Error)) {
+        AnyInvalid = true;
+        llvm::WithColor::error(llvm::errs(), Source)
+            << "building check glob '" << Cur << "' " << Error << "'\n";
+        continue;
+      }
+      if (llvm::none_of(AllChecks.keys(),
+                        [&Glob](StringRef S) { return Glob.match(S); })) {
+        AnyInvalid = true;
+        llvm::WithColor::warning(llvm::errs(), Source)
+            << "check glob '" << Cur << "' doesn't match any known check"
+            << VerifyConfigWarningEnd;
+      }
+    } else {
+      if (AllChecks.contains(Cur))
+        continue;
+      AnyInvalid = true;
+      llvm::raw_ostream &Output = llvm::WithColor::warning(llvm::errs(), Source)
+                                  << "unknown check '" << Cur << '\'';
+      llvm::StringRef Closest = closest(Cur, AllChecks);
+      if (!Closest.empty())
+        Output << "; did you mean '" << Closest << '\'';
+      Output << VerifyConfigWarningEnd;
     }
   }
   return AnyInvalid;
@@ -500,31 +516,6 @@ static bool verifyFileExtensions(
   return AnyInvalid;
 }
 
-static SmallString<256> makeAbsolute(llvm::StringRef Input) {
-  if (Input.empty())
-    return {};
-  SmallString<256> AbsolutePath(Input);
-  if (std::error_code EC = llvm::sys::fs::make_absolute(AbsolutePath)) {
-    llvm::errs() << "Can't make absolute path from " << Input << ": "
-                 << EC.message() << "\n";
-  }
-  return AbsolutePath;
-}
-
-static llvm::IntrusiveRefCntPtr<vfs::OverlayFileSystem> createBaseFS() {
-  llvm::IntrusiveRefCntPtr<vfs::OverlayFileSystem> BaseFS(
-      new vfs::OverlayFileSystem(vfs::getRealFileSystem()));
-
-  if (!VfsOverlay.empty()) {
-    IntrusiveRefCntPtr<vfs::FileSystem> VfsFromFile =
-        getVfsFromFile(VfsOverlay, BaseFS);
-    if (!VfsFromFile)
-      return nullptr;
-    BaseFS->pushOverlay(std::move(VfsFromFile));
-  }
-  return BaseFS;
-}
-
 int clangTidyMain(int argc, const char **argv) {
   llvm::InitLLVM X(argc, argv);
 
@@ -540,16 +531,34 @@ int clangTidyMain(int argc, const char **argv) {
     return 1;
   }
 
-  llvm::IntrusiveRefCntPtr<vfs::OverlayFileSystem> BaseFS = createBaseFS();
-  if (!BaseFS)
-    return 1;
+  llvm::IntrusiveRefCntPtr<vfs::OverlayFileSystem> BaseFS(
+      new vfs::OverlayFileSystem(vfs::getRealFileSystem()));
+
+  if (!VfsOverlay.empty()) {
+    IntrusiveRefCntPtr<vfs::FileSystem> VfsFromFile =
+        getVfsFromFile(VfsOverlay, BaseFS);
+    if (!VfsFromFile)
+      return 1;
+    BaseFS->pushOverlay(std::move(VfsFromFile));
+  }
 
   auto OwningOptionsProvider = createOptionsProvider(BaseFS);
   auto *OptionsProvider = OwningOptionsProvider.get();
   if (!OptionsProvider)
     return 1;
 
-  SmallString<256> ProfilePrefix = makeAbsolute(StoreCheckProfile);
+  auto MakeAbsolute = [](const std::string &Input) -> SmallString<256> {
+    if (Input.empty())
+      return {};
+    SmallString<256> AbsolutePath(Input);
+    if (std::error_code EC = llvm::sys::fs::make_absolute(AbsolutePath)) {
+      llvm::errs() << "Can't make absolute path from " << Input << ": "
+                   << EC.message() << "\n";
+    }
+    return AbsolutePath;
+  };
+
+  SmallString<256> ProfilePrefix = MakeAbsolute(StoreCheckProfile);
 
   StringRef FileName("dummy");
   auto PathList = OptionsParser->getSourcePathList();
@@ -557,9 +566,9 @@ int clangTidyMain(int argc, const char **argv) {
     FileName = PathList.front();
   }
 
-  SmallString<256> FilePath = makeAbsolute(FileName);
-  ClangTidyOptions EffectiveOptions = OptionsProvider->getOptions(FilePath);
+  SmallString<256> FilePath = MakeAbsolute(std::string(FileName));
 
+  ClangTidyOptions EffectiveOptions = OptionsProvider->getOptions(FilePath);
   std::vector<std::string> EnabledChecks =
       getCheckNames(EffectiveOptions, AllowEnablingAnalyzerAlphaCheckers);
 
@@ -650,8 +659,7 @@ int clangTidyMain(int argc, const char **argv) {
   llvm::InitializeAllAsmParsers();
 
   ClangTidyContext Context(std::move(OwningOptionsProvider),
-                           AllowEnablingAnalyzerAlphaCheckers,
-                           EnableModuleHeadersParsing);
+                           AllowEnablingAnalyzerAlphaCheckers);
   std::vector<ClangTidyError> Errors =
       runClangTidy(Context, OptionsParser->getCompilations(), PathList, BaseFS,
                    FixNotes, EnableCheckProfile, ProfilePrefix);

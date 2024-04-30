@@ -13,6 +13,7 @@
 #ifndef LLVM_MC_MCSYMBOL_H
 #define LLVM_MC_MCSYMBOL_H
 
+#include "llvm/ADT/PointerIntPair.h"
 #include "llvm/ADT/StringMapEntry.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/MC/MCExpr.h"
@@ -61,7 +62,7 @@ protected:
     SymContentsTargetCommon, // Index stores the section index
   };
 
-  // Special sentinel value for the absolute pseudo fragment.
+  // Special sentinal value for the absolute pseudo fragment.
   static MCFragment *AbsolutePseudoFragment;
 
   /// If a symbol has a Fragment, the section is implied, so we only need

@@ -73,10 +73,10 @@ private:
 
   /// Tries to parse an integer parameter and removes the integer from the
   /// beginning of the string.
-  FailureOr<uint64_t> tryToParseInt(StringRef &token) const;
+  FailureOr<unsigned> tryToParseInt(StringRef &token) const;
 
   /// Tries to parse an integer parameter array.
-  FailureOr<SmallVector<uint64_t>> tryToParseIntList(StringRef token) const;
+  FailureOr<SmallVector<unsigned>> tryToParseIntList(StringRef token) const;
 
   /// Tries to parse the parameters of a type alignment entry.
   FailureOr<DenseIntElementsAttr> tryToParseAlignment(StringRef token) const;
@@ -97,8 +97,7 @@ private:
                                             StringRef token);
 
   /// Adds an alloca address space entry if there is none yet.
-  LogicalResult tryToEmplaceAddrSpaceEntry(StringRef token,
-                                           llvm::StringLiteral spaceKey);
+  LogicalResult tryToEmplaceAllocaAddrSpaceEntry(StringRef token);
 
   /// Adds a stack alignment entry if there is none yet.
   LogicalResult tryToEmplaceStackAlignmentEntry(StringRef token);

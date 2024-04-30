@@ -106,19 +106,8 @@ enum GPUKind : uint32_t {
   GK_GFX1150 = 94,
   GK_GFX1151 = 95,
 
-  GK_GFX1200 = 100,
-  GK_GFX1201 = 101,
-
   GK_AMDGCN_FIRST = GK_GFX600,
-  GK_AMDGCN_LAST = GK_GFX1201,
-
-  GK_GFX9_GENERIC = 192,
-  GK_GFX10_1_GENERIC = 193,
-  GK_GFX10_3_GENERIC = 194,
-  GK_GFX11_GENERIC = 195,
-
-  GK_AMDGCN_GENERIC_FIRST = GK_GFX9_GENERIC,
-  GK_AMDGCN_GENERIC_LAST = GK_GFX11_GENERIC,
+  GK_AMDGCN_LAST = GK_GFX1151,
 };
 
 /// Instruction set architecture version.
@@ -154,8 +143,6 @@ enum ArchFeatureKind : uint32_t {
   // WGP mode is supported.
   FEATURE_WGP = 1 << 9,
 };
-
-StringRef getArchFamilyNameAMDGCN(GPUKind AK);
 
 StringRef getArchNameAMDGCN(GPUKind AK);
 StringRef getArchNameR600(GPUKind AK);

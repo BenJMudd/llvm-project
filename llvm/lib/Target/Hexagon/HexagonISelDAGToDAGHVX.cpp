@@ -1337,7 +1337,8 @@ OpRef HvxSelector::packs(ShuffleMask SM, OpRef Va, OpRef Vb,
   // segments that are used in the output.
 
   unsigned Seg0 = ~0u, Seg1 = ~0u;
-  for (unsigned X : SegMap) {
+  for (int I = 0, E = SegMap.size(); I != E; ++I) {
+    unsigned X = SegMap[I];
     if (X == ~0u)
       continue;
     if (Seg0 == ~0u)
@@ -2002,10 +2003,10 @@ SmallVector<uint32_t, 8> HvxSelector::getPerfectCompletions(ShuffleMask SM,
     if ((unsigned)llvm::popcount(P) < Count) {
       // Reset all occurences of P, if there are more occurrences of P
       // than there are bits in P.
-      for (unsigned &Q : Worklist) {
+      for_each(Worklist, [P](unsigned &Q) {
         if (Q == P)
           Q = 0;
-      }
+      });
     }
   }
 
@@ -2036,7 +2037,8 @@ HvxSelector::completeToPerfect(ArrayRef<uint32_t> Completions, unsigned Width) {
 #ifndef NDEBUG
   // Check that we have generated a valid completion.
   uint32_t OrAll = 0;
-  for (uint32_t C : Comps) {
+  for (unsigned I = 0, E = Comps.size(); I != E; ++I) {
+    uint32_t C = Comps[I];
     assert(isPowerOf2_32(C));
     OrAll |= C;
   }
@@ -2339,7 +2341,7 @@ OpRef HvxSelector::perfect(ShuffleMask SM, OpRef Va, ResultStack &Results) {
   }
 
   auto Comps = getPerfectCompletions(SM, LogLen);
-  if (llvm::is_contained(Comps, 0))
+  if (llvm::any_of(Comps, [](uint32_t P) { return P == 0; }))
     return OpRef::fail();
 
   auto Pick = completeToPerfect(Comps, LogLen);
@@ -2573,7 +2575,8 @@ SDValue HvxSelector::getVectorConstant(ArrayRef<uint8_t> Data,
 void HvxSelector::selectExtractSubvector(SDNode *N) {
   SDValue Inp = N->getOperand(0);
   MVT ResTy = N->getValueType(0).getSimpleVT();
-  unsigned Idx = N->getConstantOperandVal(1);
+  auto IdxN = cast<ConstantSDNode>(N->getOperand(1));
+  unsigned Idx = IdxN->getZExtValue();
 
   [[maybe_unused]] MVT InpTy = Inp.getValueType().getSimpleVT();
   [[maybe_unused]] unsigned ResLen = ResTy.getVectorNumElements();
@@ -2894,7 +2897,7 @@ void HexagonDAGToDAGISel::SelectV65GatherPred(SDNode *N) {
   SDValue ImmOperand = CurDAG->getTargetConstant(0, dl, MVT::i32);
 
   unsigned Opcode;
-  unsigned IntNo = N->getConstantOperandVal(1);
+  unsigned IntNo = cast<ConstantSDNode>(N->getOperand(1))->getZExtValue();
   switch (IntNo) {
   default:
     llvm_unreachable("Unexpected HVX gather intrinsic.");
@@ -2933,7 +2936,7 @@ void HexagonDAGToDAGISel::SelectV65Gather(SDNode *N) {
   SDValue ImmOperand = CurDAG->getTargetConstant(0, dl, MVT::i32);
 
   unsigned Opcode;
-  unsigned IntNo = N->getConstantOperandVal(1);
+  unsigned IntNo = cast<ConstantSDNode>(N->getOperand(1))->getZExtValue();
   switch (IntNo) {
   default:
     llvm_unreachable("Unexpected HVX gather intrinsic.");
@@ -2962,7 +2965,7 @@ void HexagonDAGToDAGISel::SelectV65Gather(SDNode *N) {
 }
 
 void HexagonDAGToDAGISel::SelectHVXDualOutput(SDNode *N) {
-  unsigned IID = N->getConstantOperandVal(0);
+  unsigned IID = cast<ConstantSDNode>(N->getOperand(0))->getZExtValue();
   SDNode *Result;
   switch (IID) {
   case Intrinsic::hexagon_V6_vaddcarry: {

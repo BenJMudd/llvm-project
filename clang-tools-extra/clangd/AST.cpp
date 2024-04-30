@@ -193,7 +193,7 @@ std::string printQualifiedName(const NamedDecl &ND) {
   Policy.AnonymousTagLocations = false;
   ND.printQualifiedName(OS, Policy);
   OS.flush();
-  assert(!StringRef(QName).starts_with("::"));
+  assert(!StringRef(QName).startswith("::"));
   return QName;
 }
 
@@ -696,7 +696,7 @@ std::string getQualification(ASTContext &Context,
                              const NamedDecl *ND,
                              llvm::ArrayRef<std::string> VisibleNamespaces) {
   for (llvm::StringRef NS : VisibleNamespaces) {
-    assert(NS.ends_with("::"));
+    assert(NS.endswith("::"));
     (void)NS;
   }
   return getQualification(
@@ -757,7 +757,7 @@ const TemplateTypeParmType *getFunctionPackType(const FunctionDecl *Callee) {
 // Returns the template parameter pack type that this parameter was expanded
 // from (if in the Args... or Args&... or Args&&... form), if this is the case,
 // nullptr otherwise.
-const TemplateTypeParmType *getUnderlyingPackType(const ParmVarDecl *Param) {
+const TemplateTypeParmType *getUnderylingPackType(const ParmVarDecl *Param) {
   const auto *PlainType = Param->getType().getTypePtr();
   if (auto *RT = dyn_cast<ReferenceType>(PlainType))
     PlainType = RT->getPointeeTypeAsWritten().getTypePtr();
@@ -793,8 +793,8 @@ class ForwardingCallVisitor
     : public RecursiveASTVisitor<ForwardingCallVisitor> {
 public:
   ForwardingCallVisitor(ArrayRef<const ParmVarDecl *> Parameters)
-      : Parameters{Parameters},
-        PackType{getUnderlyingPackType(Parameters.front())} {}
+      : Parameters{Parameters}, PackType{getUnderylingPackType(
+                                    Parameters.front())} {}
 
   bool VisitCallExpr(CallExpr *E) {
     auto *Callee = getCalleeDeclOrUniqueOverload(E);
@@ -859,7 +859,7 @@ private:
     if (const auto *TTPT = getFunctionPackType(Callee)) {
       // In this case: Separate the parameters into head, pack and tail
       auto IsExpandedPack = [&](const ParmVarDecl *P) {
-        return getUnderlyingPackType(P) == TTPT;
+        return getUnderylingPackType(P) == TTPT;
       };
       ForwardingInfo FI;
       FI.Head = MatchingParams.take_until(IsExpandedPack);
@@ -964,7 +964,7 @@ resolveForwardingParameters(const FunctionDecl *D, unsigned MaxDepth) {
   if (const auto *TTPT = getFunctionPackType(D)) {
     // Split the parameters into head, pack and tail
     auto IsExpandedPack = [TTPT](const ParmVarDecl *P) {
-      return getUnderlyingPackType(P) == TTPT;
+      return getUnderylingPackType(P) == TTPT;
     };
     ArrayRef<const ParmVarDecl *> Head = Parameters.take_until(IsExpandedPack);
     ArrayRef<const ParmVarDecl *> Pack =
@@ -973,7 +973,7 @@ resolveForwardingParameters(const FunctionDecl *D, unsigned MaxDepth) {
         Parameters.drop_front(Head.size() + Pack.size());
     SmallVector<const ParmVarDecl *> Result(Parameters.size());
     // Fill in non-pack parameters
-    auto *HeadIt = std::copy(Head.begin(), Head.end(), Result.begin());
+    auto HeadIt = std::copy(Head.begin(), Head.end(), Result.begin());
     auto TailIt = std::copy(Tail.rbegin(), Tail.rend(), Result.rbegin());
     // Recurse on pack parameters
     size_t Depth = 0;
@@ -1016,7 +1016,7 @@ resolveForwardingParameters(const FunctionDecl *D, unsigned MaxDepth) {
 }
 
 bool isExpandedFromParameterPack(const ParmVarDecl *D) {
-  return getUnderlyingPackType(D) != nullptr;
+  return getUnderylingPackType(D) != nullptr;
 }
 
 } // namespace clangd

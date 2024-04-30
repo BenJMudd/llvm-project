@@ -14,16 +14,15 @@
 
 #include <sys/syscall.h> // For syscall numbers.
 
-namespace LIBC_NAMESPACE {
+namespace __llvm_libc {
 
 LLVM_LIBC_FUNCTION(ssize_t, write, (int fd, const void *buf, size_t count)) {
-  ssize_t ret =
-      LIBC_NAMESPACE::syscall_impl<ssize_t>(SYS_write, fd, buf, count);
+  long ret = __llvm_libc::syscall_impl(SYS_write, fd, buf, count);
   if (ret < 0) {
-    libc_errno = static_cast<int>(-ret);
+    libc_errno = -ret;
     return -1;
   }
   return ret;
 }
 
-} // namespace LIBC_NAMESPACE
+} // namespace __llvm_libc

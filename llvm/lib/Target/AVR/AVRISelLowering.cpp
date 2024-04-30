@@ -298,7 +298,8 @@ SDValue AVRTargetLowering::LowerShifts(SDValue Op, SelectionDAG &DAG) const {
     SDValue SrcHi =
         DAG.getNode(ISD::EXTRACT_ELEMENT, dl, MVT::i16, Op.getOperand(0),
                     DAG.getConstant(1, dl, MVT::i16));
-    uint64_t ShiftAmount = N->getConstantOperandVal(1);
+    uint64_t ShiftAmount =
+        cast<ConstantSDNode>(N->getOperand(1))->getZExtValue();
     if (ShiftAmount == 16) {
       // Special case these two operations because they appear to be used by the
       // generic codegen parts to lower 32-bit numbers.
@@ -366,7 +367,7 @@ SDValue AVRTargetLowering::LowerShifts(SDValue Op, SelectionDAG &DAG) const {
     }
   }
 
-  uint64_t ShiftAmount = N->getConstantOperandVal(1);
+  uint64_t ShiftAmount = cast<ConstantSDNode>(N->getOperand(1))->getZExtValue();
   SDValue Victim = N->getOperand(0);
 
   switch (Op.getOpcode()) {
@@ -660,7 +661,7 @@ SDValue AVRTargetLowering::getAVRCmp(SDValue LHS, SDValue RHS,
   SDValue Cmp;
 
   if (LHS.getSimpleValueType() == MVT::i16 && isa<ConstantSDNode>(RHS)) {
-    uint64_t Imm = RHS->getAsZExtVal();
+    uint64_t Imm = cast<ConstantSDNode>(RHS)->getZExtValue();
     // Generate a CPI/CPC pair if RHS is a 16-bit constant. Use the zero
     // register for the constant RHS if its lower or higher byte is zero.
     SDValue LHSlo = DAG.getNode(ISD::EXTRACT_ELEMENT, DL, MVT::i8, LHS,
@@ -680,7 +681,7 @@ SDValue AVRTargetLowering::getAVRCmp(SDValue LHS, SDValue RHS,
   } else if (RHS.getSimpleValueType() == MVT::i16 && isa<ConstantSDNode>(LHS)) {
     // Generate a CPI/CPC pair if LHS is a 16-bit constant. Use the zero
     // register for the constant LHS if its lower or higher byte is zero.
-    uint64_t Imm = LHS->getAsZExtVal();
+    uint64_t Imm = cast<ConstantSDNode>(LHS)->getZExtValue();
     SDValue LHSlo = (Imm & 0xff) == 0
                         ? DAG.getRegister(Subtarget.getZeroRegister(), MVT::i8)
                         : DAG.getNode(ISD::EXTRACT_ELEMENT, DL, MVT::i8, LHS,
@@ -975,7 +976,7 @@ SDValue AVRTargetLowering::LowerINLINEASM(SDValue Op, SelectionDAG &DAG) const {
       Ops.push_back(Operand);
     }
   }
-  InlineAsm::Flag Flags(InlineAsm::Kind::RegUse, 1);
+  unsigned Flags = InlineAsm::getFlagWord(InlineAsm::Kind_RegUse, 1);
   Ops.push_back(DAG.getTargetConstant(Flags, dl, MVT::i32));
   Ops.push_back(ZeroReg);
   if (Glue) {
@@ -1246,11 +1247,11 @@ static void analyzeArguments(TargetLowering::CallLoweringInfo *CLI,
   ArrayRef<MCPhysReg> RegList8;
   ArrayRef<MCPhysReg> RegList16;
   if (Tiny) {
-    RegList8 = ArrayRef(RegList8Tiny);
-    RegList16 = ArrayRef(RegList16Tiny);
+    RegList8 = ArrayRef(RegList8Tiny, std::size(RegList8Tiny));
+    RegList16 = ArrayRef(RegList16Tiny, std::size(RegList16Tiny));
   } else {
-    RegList8 = ArrayRef(RegList8AVR);
-    RegList16 = ArrayRef(RegList16AVR);
+    RegList8 = ArrayRef(RegList8AVR, std::size(RegList8AVR));
+    RegList16 = ArrayRef(RegList16AVR, std::size(RegList16AVR));
   }
 
   unsigned NumArgs = Args.size();
@@ -2439,11 +2440,6 @@ AVRTargetLowering::EmitInstrWithCustomInserter(MachineInstr &MI,
   MF->insert(I, trueMBB);
   MF->insert(I, falseMBB);
 
-  // Set the call frame size on entry to the new basic blocks.
-  unsigned CallFrameSize = TII.getCallFrameSizeAt(MI);
-  trueMBB->setCallFrameSize(CallFrameSize);
-  falseMBB->setCallFrameSize(CallFrameSize);
-
   // Transfer remaining instructions and all successors of the current
   // block to the block which will contain the Phi node for the
   // select.
@@ -2520,13 +2516,13 @@ AVRTargetLowering::getConstraintType(StringRef Constraint) const {
   return TargetLowering::getConstraintType(Constraint);
 }
 
-InlineAsm::ConstraintCode
+unsigned
 AVRTargetLowering::getInlineAsmMemConstraint(StringRef ConstraintCode) const {
   // Not sure if this is actually the right thing to do, but we got to do
   // *something* [agnat]
   switch (ConstraintCode[0]) {
   case 'Q':
-    return InlineAsm::ConstraintCode::Q;
+    return InlineAsm::Constraint_Q;
   }
   return TargetLowering::getInlineAsmMemConstraint(ConstraintCode);
 }
@@ -2721,7 +2717,7 @@ AVRTargetLowering::getRegForInlineAsmConstraint(const TargetRegisterInfo *TRI,
 }
 
 void AVRTargetLowering::LowerAsmOperandForConstraint(SDValue Op,
-                                                     StringRef Constraint,
+                                                     std::string &Constraint,
                                                      std::vector<SDValue> &Ops,
                                                      SelectionDAG &DAG) const {
   SDValue Result;
@@ -2729,7 +2725,7 @@ void AVRTargetLowering::LowerAsmOperandForConstraint(SDValue Op,
   EVT Ty = Op.getValueType();
 
   // Currently only support length 1 constraints.
-  if (Constraint.size() != 1) {
+  if (Constraint.length() != 1) {
     return;
   }
 

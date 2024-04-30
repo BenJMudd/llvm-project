@@ -10,7 +10,6 @@
 #include "tests/scudo_unit_test.h"
 
 #include "allocator_config.h"
-#include "allocator_config_wrapper.h"
 #include "secondary.h"
 
 #include <algorithm>
@@ -23,8 +22,7 @@
 #include <vector>
 
 template <typename Config> static scudo::Options getOptionsForConfig() {
-  if (!Config::getMaySupportMemoryTagging() ||
-      !scudo::archSupportsMemoryTagging() ||
+  if (!Config::MaySupportMemoryTagging || !scudo::archSupportsMemoryTagging() ||
       !scudo::systemSupportsMemoryTagging())
     return {};
   scudo::AtomicOptions AO;
@@ -33,9 +31,8 @@ template <typename Config> static scudo::Options getOptionsForConfig() {
 }
 
 template <typename Config> static void testSecondaryBasic(void) {
-  using SecondaryT = scudo::MapAllocator<scudo::SecondaryConfig<Config>>;
-  scudo::Options Options =
-      getOptionsForConfig<scudo::SecondaryConfig<Config>>();
+  using SecondaryT = scudo::MapAllocator<Config>;
+  scudo::Options Options = getOptionsForConfig<Config>();
 
   scudo::GlobalStats S;
   S.init();
@@ -87,10 +84,6 @@ template <typename Config> static void testSecondaryBasic(void) {
 
 struct NoCacheConfig {
   static const bool MaySupportMemoryTagging = false;
-  template <typename> using TSDRegistryT = void;
-  template <typename> using PrimaryT = void;
-  template <typename Config> using SecondaryT = scudo::MapAllocator<Config>;
-
   struct Secondary {
     template <typename Config>
     using CacheT = scudo::MapAllocatorNoCache<Config>;
@@ -99,10 +92,6 @@ struct NoCacheConfig {
 
 struct TestConfig {
   static const bool MaySupportMemoryTagging = false;
-  template <typename> using TSDRegistryT = void;
-  template <typename> using PrimaryT = void;
-  template <typename> using SecondaryT = void;
-
   struct Secondary {
     struct Cache {
       static const scudo::u32 EntriesArraySize = 128U;
@@ -125,7 +114,7 @@ TEST(ScudoSecondaryTest, SecondaryBasic) {
 
 struct MapAllocatorTest : public Test {
   using Config = scudo::DefaultConfig;
-  using LargeAllocator = scudo::MapAllocator<scudo::SecondaryConfig<Config>>;
+  using LargeAllocator = scudo::MapAllocator<Config>;
 
   void SetUp() override { Allocator->init(nullptr); }
 
@@ -133,8 +122,7 @@ struct MapAllocatorTest : public Test {
 
   std::unique_ptr<LargeAllocator> Allocator =
       std::make_unique<LargeAllocator>();
-  scudo::Options Options =
-      getOptionsForConfig<scudo::SecondaryConfig<Config>>();
+  scudo::Options Options = getOptionsForConfig<Config>();
 };
 
 // This exercises a variety of combinations of size and alignment for the

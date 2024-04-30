@@ -81,7 +81,7 @@ static void checkAndSetWeakAlias(COFFLinkerContext &ctx, InputFile *f,
       // of another symbol emitted near the weak symbol.
       // Just use the definition from the first object file that defined
       // this weak symbol.
-      if (ctx.config.allowDuplicateWeak)
+      if (ctx.config.mingw)
         return;
       ctx.symtab.reportDuplicate(source, f);
     }
@@ -236,8 +236,8 @@ SectionChunk *ObjFile::readSection(uint32_t sectionNumber,
   // CodeView needs linker support. We need to interpret debug info,
   // and then write it to a separate .pdb file.
 
-  // Ignore DWARF debug info unless requested to be included.
-  if (!ctx.config.includeDwarfChunks && name.starts_with(".debug_"))
+  // Ignore DWARF debug info unless /debug is given.
+  if (!ctx.config.debug && name.starts_with(".debug_"))
     return nullptr;
 
   if (sec->Characteristics & llvm::COFF::IMAGE_SCN_LNK_REMOVE)
@@ -709,7 +709,7 @@ void ObjFile::initializeFlags() {
 
   DebugSubsectionArray subsections;
 
-  BinaryStreamReader reader(data, llvm::endianness::little);
+  BinaryStreamReader reader(data, support::little);
   ExitOnError exitOnErr;
   exitOnErr(reader.readArray(subsections, data.size()));
 
@@ -775,7 +775,7 @@ void ObjFile::initializeDependencies() {
   // Get the first type record. It will indicate if this object uses a type
   // server (/Zi) or a PCH file (/Yu).
   CVTypeArray types;
-  BinaryStreamReader reader(data, llvm::endianness::little);
+  BinaryStreamReader reader(data, support::little);
   cantFail(reader.readArray(types, reader.getLength()));
   CVTypeArray::Iterator firstType = types.begin();
   if (firstType == types.end())
@@ -828,7 +828,7 @@ static std::string getPdbBaseName(ObjFile *file, StringRef tSPath) {
   // on Windows, so we can assume type server paths are Windows style.
   sys::path::append(path,
                     sys::path::filename(tSPath, sys::path::Style::windows));
-  return std::string(path);
+  return std::string(path.str());
 }
 
 // The casing of the PDB path stamped in the OBJ can differ from the actual path
@@ -944,20 +944,18 @@ ImportFile::ImportFile(COFFLinkerContext &ctx, MemoryBufferRef m)
     : InputFile(ctx, ImportKind, m), live(!ctx.config.doGC), thunkLive(live) {}
 
 void ImportFile::parse() {
-  const auto *hdr =
-      reinterpret_cast<const coff_import_header *>(mb.getBufferStart());
+  const char *buf = mb.getBufferStart();
+  const auto *hdr = reinterpret_cast<const coff_import_header *>(buf);
 
   // Check if the total size is valid.
-  if (mb.getBufferSize() < sizeof(*hdr) ||
-      mb.getBufferSize() != sizeof(*hdr) + hdr->SizeOfData)
+  if (mb.getBufferSize() != sizeof(*hdr) + hdr->SizeOfData)
     fatal("broken import library");
 
   // Read names and create an __imp_ symbol.
-  StringRef buf = mb.getBuffer().substr(sizeof(*hdr));
-  StringRef name = saver().save(buf.split('\0').first);
+  StringRef name = saver().save(StringRef(buf + sizeof(*hdr)));
   StringRef impName = saver().save("__imp_" + name);
-  buf = buf.substr(name.size() + 1);
-  dllName = buf.split('\0').first;
+  const char *nameStart = buf + sizeof(coff_import_header) + name.size() + 1;
+  dllName = std::string(StringRef(nameStart));
   StringRef extName;
   switch (hdr->getNameType()) {
   case IMPORT_ORDINAL:
@@ -972,9 +970,6 @@ void ImportFile::parse() {
   case IMPORT_NAME_UNDECORATE:
     extName = ltrim1(name, "?@_");
     extName = extName.substr(0, extName.find('@'));
-    break;
-  case IMPORT_NAME_EXPORTAS:
-    extName = buf.substr(dllName.size() + 1).split('\0').first;
     break;
   }
 
@@ -1045,21 +1040,6 @@ void BitcodeFile::parse() {
       fakeSC = &ctx.ltoDataSectionChunk.chunk;
     if (objSym.isUndefined()) {
       sym = ctx.symtab.addUndefined(symName, this, false);
-      if (objSym.isWeak())
-        sym->deferUndefined = true;
-      // If one LTO object file references (i.e. has an undefined reference to)
-      // a symbol with an __imp_ prefix, the LTO compilation itself sees it
-      // as unprefixed but with a dllimport attribute instead, and doesn't
-      // understand the relation to a concrete IR symbol with the __imp_ prefix.
-      //
-      // For such cases, mark the symbol as used in a regular object (i.e. the
-      // symbol must be retained) so that the linker can associate the
-      // references in the end. If the symbol is defined in an import library
-      // or in a regular object file, this has no effect, but if it is defined
-      // in another LTO object file, this makes sure it is kept, to fulfill
-      // the reference when linking the output of the LTO compilation.
-      if (symName.starts_with("__imp_"))
-        sym->isUsedInRegularObj = true;
     } else if (objSym.isCommon()) {
       sym = ctx.symtab.addCommon(this, symName, objSym.getCommonSize());
     } else if (objSym.isWeak() && objSym.isIndirect()) {
@@ -1086,7 +1066,7 @@ void BitcodeFile::parse() {
     if (objSym.isUsed())
       ctx.config.gcroot.push_back(sym);
   }
-  directives = saver.save(obj->getCOFFLinkerOpts());
+  directives = obj->getCOFFLinkerOpts();
 }
 
 void BitcodeFile::parseLazy() {
@@ -1102,7 +1082,6 @@ MachineTypes BitcodeFile::getMachineType() {
   case Triple::x86:
     return I386;
   case Triple::arm:
-  case Triple::thumb:
     return ARMNT;
   case Triple::aarch64:
     return ARM64;

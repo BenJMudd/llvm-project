@@ -80,22 +80,15 @@ protected:
     return Style;
   }
 
-  bool _verifyFormat(const char *File, int Line, llvm::StringRef Expected,
+  void _verifyFormat(const char *File, int Line, llvm::StringRef Expected,
                      llvm::StringRef Code,
                      const std::optional<FormatStyle> &Style = {},
                      const std::vector<tooling::Range> &Ranges = {}) {
     testing::ScopedTrace t(File, Line, ::testing::Message() << Code.str());
-    const auto ExpectedCode{Expected.str()};
-    auto FormattedCode{format(Code, Style, SC_ExpectComplete, Ranges)};
-    EXPECT_EQ(ExpectedCode, FormattedCode);
-    if (ExpectedCode != FormattedCode)
-      return false;
-    if (Expected != Code) {
-      FormattedCode = format(Expected, Style, SC_ExpectComplete, Ranges);
-      EXPECT_EQ(ExpectedCode, FormattedCode) << "Expected code is not stable";
-      if (ExpectedCode != FormattedCode)
-        return false;
-    }
+    EXPECT_EQ(Expected.str(),
+              format(Expected, Style, SC_ExpectComplete, Ranges))
+        << "Expected code is not stable";
+    EXPECT_EQ(Expected.str(), format(Code, Style, SC_ExpectComplete, Ranges));
     auto UsedStyle = Style ? Style.value() : getDefaultStyle();
     if (UsedStyle.Language == FormatStyle::LK_Cpp) {
       // Objective-C++ is a superset of C++, so everything checked for C++
@@ -103,20 +96,14 @@ protected:
       FormatStyle ObjCStyle = UsedStyle;
       ObjCStyle.Language = FormatStyle::LK_ObjC;
       // FIXME: Additional messUp is superfluous.
-      FormattedCode = format(Code, ObjCStyle, SC_ExpectComplete, Ranges);
-      EXPECT_EQ(ExpectedCode, FormattedCode);
-      if (ExpectedCode != FormattedCode)
-        return false;
+      EXPECT_EQ(Expected.str(),
+                format(Code, ObjCStyle, SC_ExpectComplete, Ranges));
     }
-    return true;
   }
 
   void _verifyFormat(const char *File, int Line, llvm::StringRef Code,
                      const std::optional<FormatStyle> &Style = {}) {
-    if (!_verifyFormat(File, Line, Code, Code, Style))
-      return;
-    if (const auto MessedUpCode{messUp(Code)}; MessedUpCode != Code)
-      _verifyFormat(File, Line, Code, MessedUpCode, Style);
+    _verifyFormat(File, Line, Code, test::messUp(Code), Style);
   }
 
   void _verifyIncompleteFormat(const char *File, int Line, llvm::StringRef Code,

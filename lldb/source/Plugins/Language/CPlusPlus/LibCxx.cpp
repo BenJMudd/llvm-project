@@ -63,7 +63,7 @@ lldb::ValueObjectSP
 lldb_private::formatters::GetSecondValueOfLibCXXCompressedPair(
     ValueObject &pair) {
   ValueObjectSP value;
-  if (pair.GetNumChildrenIgnoringErrors() > 1) {
+  if (pair.GetNumChildren() > 1) {
     ValueObjectSP second_child = pair.GetChildAtIndex(1);
     if (second_child) {
       value = second_child->GetChildMemberWithName("__value_");
@@ -106,13 +106,13 @@ bool lldb_private::formatters::LibcxxFunctionSummaryProvider(
   case CPPLanguageRuntime::LibCppStdFunctionCallableCase::Lambda:
     stream.Printf(
         " Lambda in File %s at Line %u",
-        callable_info.callable_line_entry.GetFile().GetFilename().GetCString(),
+        callable_info.callable_line_entry.file.GetFilename().GetCString(),
         callable_info.callable_line_entry.line);
     break;
   case CPPLanguageRuntime::LibCppStdFunctionCallableCase::CallableObject:
     stream.Printf(
         " Function in File %s at Line %u",
-        callable_info.callable_line_entry.GetFile().GetFilename().GetCString(),
+        callable_info.callable_line_entry.file.GetFilename().GetCString(),
         callable_info.callable_line_entry.line);
     break;
   case CPPLanguageRuntime::LibCppStdFunctionCallableCase::FreeOrMemberFunction:
@@ -231,22 +231,21 @@ lldb_private::formatters::LibCxxMapIteratorSyntheticFrontEnd::
     Update();
 }
 
-lldb::ChildCacheState
-lldb_private::formatters::LibCxxMapIteratorSyntheticFrontEnd::Update() {
+bool lldb_private::formatters::LibCxxMapIteratorSyntheticFrontEnd::Update() {
   m_pair_sp.reset();
   m_pair_ptr = nullptr;
 
   ValueObjectSP valobj_sp = m_backend.GetSP();
   if (!valobj_sp)
-    return lldb::ChildCacheState::eRefetch;
+    return false;
 
   TargetSP target_sp(valobj_sp->GetTargetSP());
 
   if (!target_sp)
-    return lldb::ChildCacheState::eRefetch;
+    return false;
 
   if (!valobj_sp)
-    return lldb::ChildCacheState::eRefetch;
+    return false;
 
   // this must be a ValueObject* because it is a child of the ValueObject we
   // are producing children for it if were a ValueObjectSP, we would end up
@@ -279,7 +278,7 @@ lldb_private::formatters::LibCxxMapIteratorSyntheticFrontEnd::Update() {
       auto __i_(valobj_sp->GetChildMemberWithName("__i_"));
       if (!__i_) {
         m_pair_ptr = nullptr;
-        return lldb::ChildCacheState::eRefetch;
+        return false;
       }
       CompilerType pair_type(
           __i_->GetCompilerType().GetTypeTemplateArgument(0));
@@ -291,7 +290,7 @@ lldb_private::formatters::LibCxxMapIteratorSyntheticFrontEnd::Update() {
           0, name, &bit_offset_ptr, &bitfield_bit_size_ptr, &is_bitfield_ptr);
       if (!pair_type) {
         m_pair_ptr = nullptr;
-        return lldb::ChildCacheState::eRefetch;
+        return false;
       }
 
       auto addr(m_pair_ptr->GetValueAsUnsigned(LLDB_INVALID_ADDRESS));
@@ -300,7 +299,7 @@ lldb_private::formatters::LibCxxMapIteratorSyntheticFrontEnd::Update() {
         auto ts = pair_type.GetTypeSystem();
         auto ast_ctx = ts.dyn_cast_or_null<TypeSystemClang>();
         if (!ast_ctx)
-          return lldb::ChildCacheState::eRefetch;
+          return false;
 
         // Mimick layout of std::__tree_iterator::__ptr_ and read it in
         // from process memory.
@@ -329,14 +328,14 @@ lldb_private::formatters::LibCxxMapIteratorSyntheticFrontEnd::Update() {
              {"payload", pair_type}});
         std::optional<uint64_t> size = tree_node_type.GetByteSize(nullptr);
         if (!size)
-          return lldb::ChildCacheState::eRefetch;
+          return false;
         WritableDataBufferSP buffer_sp(new DataBufferHeap(*size, 0));
         ProcessSP process_sp(target_sp->GetProcessSP());
         Status error;
         process_sp->ReadMemory(addr, buffer_sp->GetBytes(),
                                buffer_sp->GetByteSize(), error);
         if (error.Fail())
-          return lldb::ChildCacheState::eRefetch;
+          return false;
         DataExtractor extractor(buffer_sp, process_sp->GetByteOrder(),
                                 process_sp->GetAddressByteSize());
         auto pair_sp = CreateValueObjectFromData(
@@ -348,17 +347,17 @@ lldb_private::formatters::LibCxxMapIteratorSyntheticFrontEnd::Update() {
     }
   }
 
-  return lldb::ChildCacheState::eRefetch;
+  return false;
 }
 
-llvm::Expected<uint32_t> lldb_private::formatters::
-    LibCxxMapIteratorSyntheticFrontEnd::CalculateNumChildren() {
+size_t lldb_private::formatters::LibCxxMapIteratorSyntheticFrontEnd::
+    CalculateNumChildren() {
   return 2;
 }
 
 lldb::ValueObjectSP
 lldb_private::formatters::LibCxxMapIteratorSyntheticFrontEnd::GetChildAtIndex(
-    uint32_t idx) {
+    size_t idx) {
   if (m_pair_ptr)
     return m_pair_ptr->GetChildAtIndex(idx);
   if (m_pair_sp)
@@ -400,22 +399,22 @@ lldb_private::formatters::LibCxxUnorderedMapIteratorSyntheticFrontEnd::
     Update();
 }
 
-lldb::ChildCacheState lldb_private::formatters::
-    LibCxxUnorderedMapIteratorSyntheticFrontEnd::Update() {
+bool lldb_private::formatters::LibCxxUnorderedMapIteratorSyntheticFrontEnd::
+    Update() {
   m_pair_sp.reset();
   m_iter_ptr = nullptr;
 
   ValueObjectSP valobj_sp = m_backend.GetSP();
   if (!valobj_sp)
-    return lldb::ChildCacheState::eRefetch;
+    return false;
 
   TargetSP target_sp(valobj_sp->GetTargetSP());
 
   if (!target_sp)
-    return lldb::ChildCacheState::eRefetch;
+    return false;
 
   if (!valobj_sp)
-    return lldb::ChildCacheState::eRefetch;
+    return false;
 
   auto exprPathOptions = ValueObject::GetValueForExpressionPathOptions()
                              .DontCheckDotVsArrowSyntax()
@@ -438,7 +437,7 @@ lldb::ChildCacheState lldb_private::formatters::
     auto iter_child(valobj_sp->GetChildMemberWithName("__i_"));
     if (!iter_child) {
       m_iter_ptr = nullptr;
-      return lldb::ChildCacheState::eRefetch;
+      return false;
     }
 
     CompilerType node_type(iter_child->GetCompilerType()
@@ -456,19 +455,19 @@ lldb::ChildCacheState lldb_private::formatters::
         0, name, &bit_offset_ptr, &bitfield_bit_size_ptr, &is_bitfield_ptr);
     if (!pair_type) {
       m_iter_ptr = nullptr;
-      return lldb::ChildCacheState::eRefetch;
+      return false;
     }
 
     uint64_t addr = m_iter_ptr->GetValueAsUnsigned(LLDB_INVALID_ADDRESS);
     m_iter_ptr = nullptr;
 
     if (addr == 0 || addr == LLDB_INVALID_ADDRESS)
-      return lldb::ChildCacheState::eRefetch;
+      return false;
 
     auto ts = pair_type.GetTypeSystem();
     auto ast_ctx = ts.dyn_cast_or_null<TypeSystemClang>();
     if (!ast_ctx)
-      return lldb::ChildCacheState::eRefetch;
+      return false;
 
     // Mimick layout of std::__hash_iterator::__node_ and read it in
     // from process memory.
@@ -490,14 +489,14 @@ lldb::ChildCacheState lldb_private::formatters::
          {"__value_", pair_type}});
     std::optional<uint64_t> size = tree_node_type.GetByteSize(nullptr);
     if (!size)
-      return lldb::ChildCacheState::eRefetch;
+      return false;
     WritableDataBufferSP buffer_sp(new DataBufferHeap(*size, 0));
     ProcessSP process_sp(target_sp->GetProcessSP());
     Status error;
     process_sp->ReadMemory(addr, buffer_sp->GetBytes(),
                            buffer_sp->GetByteSize(), error);
     if (error.Fail())
-      return lldb::ChildCacheState::eRefetch;
+      return false;
     DataExtractor extractor(buffer_sp, process_sp->GetByteOrder(),
                             process_sp->GetAddressByteSize());
     auto pair_sp = CreateValueObjectFromData(
@@ -506,16 +505,16 @@ lldb::ChildCacheState lldb_private::formatters::
       m_pair_sp = pair_sp->GetChildAtIndex(2);
   }
 
-  return lldb::ChildCacheState::eRefetch;
+  return false;
 }
 
-llvm::Expected<uint32_t> lldb_private::formatters::
-    LibCxxUnorderedMapIteratorSyntheticFrontEnd::CalculateNumChildren() {
+size_t lldb_private::formatters::LibCxxUnorderedMapIteratorSyntheticFrontEnd::
+    CalculateNumChildren() {
   return 2;
 }
 
 lldb::ValueObjectSP lldb_private::formatters::
-    LibCxxUnorderedMapIteratorSyntheticFrontEnd::GetChildAtIndex(uint32_t idx) {
+    LibCxxUnorderedMapIteratorSyntheticFrontEnd::GetChildAtIndex(size_t idx) {
   if (m_pair_sp)
     return m_pair_sp->GetChildAtIndex(idx);
   return lldb::ValueObjectSP();
@@ -566,14 +565,14 @@ lldb_private::formatters::LibcxxSharedPtrSyntheticFrontEnd::
     Update();
 }
 
-llvm::Expected<uint32_t> lldb_private::formatters::
-    LibcxxSharedPtrSyntheticFrontEnd::CalculateNumChildren() {
+size_t lldb_private::formatters::LibcxxSharedPtrSyntheticFrontEnd::
+    CalculateNumChildren() {
   return (m_cntrl ? 1 : 0);
 }
 
 lldb::ValueObjectSP
 lldb_private::formatters::LibcxxSharedPtrSyntheticFrontEnd::GetChildAtIndex(
-    uint32_t idx) {
+    size_t idx) {
   if (!m_cntrl)
     return lldb::ValueObjectSP();
 
@@ -601,23 +600,22 @@ lldb_private::formatters::LibcxxSharedPtrSyntheticFrontEnd::GetChildAtIndex(
   return lldb::ValueObjectSP();
 }
 
-lldb::ChildCacheState
-lldb_private::formatters::LibcxxSharedPtrSyntheticFrontEnd::Update() {
+bool lldb_private::formatters::LibcxxSharedPtrSyntheticFrontEnd::Update() {
   m_cntrl = nullptr;
 
   ValueObjectSP valobj_sp = m_backend.GetSP();
   if (!valobj_sp)
-    return lldb::ChildCacheState::eRefetch;
+    return false;
 
   TargetSP target_sp(valobj_sp->GetTargetSP());
   if (!target_sp)
-    return lldb::ChildCacheState::eRefetch;
+    return false;
 
   lldb::ValueObjectSP cntrl_sp(valobj_sp->GetChildMemberWithName("__cntrl_"));
 
   m_cntrl = cntrl_sp.get(); // need to store the raw pointer to avoid a circular
                             // dependency
-  return lldb::ChildCacheState::eRefetch;
+  return false;
 }
 
 bool lldb_private::formatters::LibcxxSharedPtrSyntheticFrontEnd::
@@ -661,8 +659,8 @@ lldb_private::formatters::LibcxxUniquePtrSyntheticFrontEndCreator(
                     : nullptr);
 }
 
-llvm::Expected<uint32_t> lldb_private::formatters::
-    LibcxxUniquePtrSyntheticFrontEnd::CalculateNumChildren() {
+size_t lldb_private::formatters::LibcxxUniquePtrSyntheticFrontEnd::
+    CalculateNumChildren() {
   if (m_value_ptr_sp)
     return m_deleter_sp ? 2 : 1;
   return 0;
@@ -670,7 +668,7 @@ llvm::Expected<uint32_t> lldb_private::formatters::
 
 lldb::ValueObjectSP
 lldb_private::formatters::LibcxxUniquePtrSyntheticFrontEnd::GetChildAtIndex(
-    uint32_t idx) {
+    size_t idx) {
   if (!m_value_ptr_sp)
     return lldb::ValueObjectSP();
 
@@ -691,15 +689,14 @@ lldb_private::formatters::LibcxxUniquePtrSyntheticFrontEnd::GetChildAtIndex(
   return lldb::ValueObjectSP();
 }
 
-lldb::ChildCacheState
-lldb_private::formatters::LibcxxUniquePtrSyntheticFrontEnd::Update() {
+bool lldb_private::formatters::LibcxxUniquePtrSyntheticFrontEnd::Update() {
   ValueObjectSP valobj_sp = m_backend.GetSP();
   if (!valobj_sp)
-    return lldb::ChildCacheState::eRefetch;
+    return false;
 
   ValueObjectSP ptr_sp(valobj_sp->GetChildMemberWithName("__ptr_"));
   if (!ptr_sp)
-    return lldb::ChildCacheState::eRefetch;
+    return false;
 
   // Retrieve the actual pointer and the deleter, and clone them to give them
   // user-friendly names.
@@ -711,7 +708,7 @@ lldb_private::formatters::LibcxxUniquePtrSyntheticFrontEnd::Update() {
   if (deleter_sp)
     m_deleter_sp = deleter_sp->Clone(ConstString("deleter"));
 
-  return lldb::ChildCacheState::eRefetch;
+  return false;
 }
 
 bool lldb_private::formatters::LibcxxUniquePtrSyntheticFrontEnd::
@@ -1076,190 +1073,14 @@ bool lldb_private::formatters::LibcxxWStringViewSummaryProvider(
   bool success;
   ValueObjectSP dataobj;
   size_t size;
-  std::tie(success, dataobj, size) = LibcxxExtractStringViewData(valobj);
+  std::tie( success, dataobj, size ) = LibcxxExtractStringViewData(valobj);
 
   if (!success) {
     stream << "Summary Unavailable";
     return true;
   }
 
+
   return ::LibcxxWStringSummaryProvider(valobj, stream, summary_options,
                                         dataobj, size);
-}
-
-static bool
-LibcxxChronoTimePointSecondsSummaryProvider(ValueObject &valobj, Stream &stream,
-                                            const TypeSummaryOptions &options,
-                                            const char *fmt) {
-  ValueObjectSP ptr_sp = valobj.GetChildMemberWithName("__d_");
-  if (!ptr_sp)
-    return false;
-  ptr_sp = ptr_sp->GetChildMemberWithName("__rep_");
-  if (!ptr_sp)
-    return false;
-
-  // The date time in the chrono library is valid in the range
-  // [-32767-01-01T00:00:00Z, 32767-12-31T23:59:59Z]. A 64-bit time_t has a
-  // larger range, the function strftime is not able to format the entire range
-  // of time_t. The exact point has not been investigated; it's limited to
-  // chrono's range.
-  const std::time_t chrono_timestamp_min =
-      -1'096'193'779'200; // -32767-01-01T00:00:00Z
-  const std::time_t chrono_timestamp_max =
-      971'890'963'199; // 32767-12-31T23:59:59Z
-
-  const std::time_t seconds = ptr_sp->GetValueAsSigned(0);
-  if (seconds < chrono_timestamp_min || seconds > chrono_timestamp_max)
-    stream.Printf("timestamp=%" PRId64 " s", static_cast<int64_t>(seconds));
-  else {
-    std::array<char, 128> str;
-    std::size_t size =
-        std::strftime(str.data(), str.size(), fmt, gmtime(&seconds));
-    if (size == 0)
-      return false;
-
-    stream.Printf("date/time=%s timestamp=%" PRId64 " s", str.data(),
-                  static_cast<int64_t>(seconds));
-  }
-
-  return true;
-}
-
-bool lldb_private::formatters::LibcxxChronoSysSecondsSummaryProvider(
-    ValueObject &valobj, Stream &stream, const TypeSummaryOptions &options) {
-  return LibcxxChronoTimePointSecondsSummaryProvider(valobj, stream, options,
-                                                     "%FT%H:%M:%SZ");
-}
-
-bool lldb_private::formatters::LibcxxChronoLocalSecondsSummaryProvider(
-    ValueObject &valobj, Stream &stream, const TypeSummaryOptions &options) {
-  return LibcxxChronoTimePointSecondsSummaryProvider(valobj, stream, options,
-                                                     "%FT%H:%M:%S");
-}
-
-static bool
-LibcxxChronoTimepointDaysSummaryProvider(ValueObject &valobj, Stream &stream,
-                                         const TypeSummaryOptions &options,
-                                         const char *fmt) {
-  ValueObjectSP ptr_sp = valobj.GetChildMemberWithName("__d_");
-  if (!ptr_sp)
-    return false;
-  ptr_sp = ptr_sp->GetChildMemberWithName("__rep_");
-  if (!ptr_sp)
-    return false;
-
-  // The date time in the chrono library is valid in the range
-  // [-32767-01-01Z, 32767-12-31Z]. A 32-bit time_t has a larger range, the
-  // function strftime is not able to format the entire range of time_t. The
-  // exact point has not been investigated; it's limited to chrono's range.
-  const int chrono_timestamp_min = -12'687'428; // -32767-01-01Z
-  const int chrono_timestamp_max = 11'248'737;  // 32767-12-31Z
-
-  const int days = ptr_sp->GetValueAsSigned(0);
-  if (days < chrono_timestamp_min || days > chrono_timestamp_max)
-    stream.Printf("timestamp=%d days", days);
-
-  else {
-    const std::time_t seconds = std::time_t(86400) * days;
-
-    std::array<char, 128> str;
-    std::size_t size =
-        std::strftime(str.data(), str.size(), fmt, gmtime(&seconds));
-    if (size == 0)
-      return false;
-
-    stream.Printf("date=%s timestamp=%d days", str.data(), days);
-  }
-
-  return true;
-}
-
-bool lldb_private::formatters::LibcxxChronoSysDaysSummaryProvider(
-    ValueObject &valobj, Stream &stream, const TypeSummaryOptions &options) {
-  return LibcxxChronoTimepointDaysSummaryProvider(valobj, stream, options,
-                                                  "%FZ");
-}
-
-bool lldb_private::formatters::LibcxxChronoLocalDaysSummaryProvider(
-    ValueObject &valobj, Stream &stream, const TypeSummaryOptions &options) {
-  return LibcxxChronoTimepointDaysSummaryProvider(valobj, stream, options,
-                                                  "%F");
-}
-
-bool lldb_private::formatters::LibcxxChronoMonthSummaryProvider(
-    ValueObject &valobj, Stream &stream, const TypeSummaryOptions &options) {
-  // FIXME: These are the names used in the C++20 ostream operator. Since LLVM
-  // uses C++17 it's not possible to use the ostream operator directly.
-  static const std::array<std::string_view, 12> months = {
-      "January", "February", "March",     "April",   "May",      "June",
-      "July",    "August",   "September", "October", "November", "December"};
-
-  ValueObjectSP ptr_sp = valobj.GetChildMemberWithName("__m_");
-  if (!ptr_sp)
-    return false;
-
-  const unsigned month = ptr_sp->GetValueAsUnsigned(0);
-  if (month >= 1 && month <= 12)
-    stream << "month=" << months[month - 1];
-  else
-    stream.Printf("month=%u", month);
-
-  return true;
-}
-
-bool lldb_private::formatters::LibcxxChronoWeekdaySummaryProvider(
-    ValueObject &valobj, Stream &stream, const TypeSummaryOptions &options) {
-  // FIXME: These are the names used in the C++20 ostream operator. Since LLVM
-  // uses C++17 it's not possible to use the ostream operator directly.
-  static const std::array<std::string_view, 7> weekdays = {
-      "Sunday",   "Monday", "Tuesday", "Wednesday",
-      "Thursday", "Friday", "Saturday"};
-
-  ValueObjectSP ptr_sp = valobj.GetChildMemberWithName("__wd_");
-  if (!ptr_sp)
-    return false;
-
-  const unsigned weekday = ptr_sp->GetValueAsUnsigned(0);
-  if (weekday < 7)
-    stream << "weekday=" << weekdays[weekday];
-  else
-    stream.Printf("weekday=%u", weekday);
-
-  return true;
-}
-
-bool lldb_private::formatters::LibcxxChronoYearMonthDaySummaryProvider(
-    ValueObject &valobj, Stream &stream, const TypeSummaryOptions &options) {
-  ValueObjectSP ptr_sp = valobj.GetChildMemberWithName("__y_");
-  if (!ptr_sp)
-    return false;
-  ptr_sp = ptr_sp->GetChildMemberWithName("__y_");
-  if (!ptr_sp)
-    return false;
-  int year = ptr_sp->GetValueAsSigned(0);
-
-  ptr_sp = valobj.GetChildMemberWithName("__m_");
-  if (!ptr_sp)
-    return false;
-  ptr_sp = ptr_sp->GetChildMemberWithName("__m_");
-  if (!ptr_sp)
-    return false;
-  const unsigned month = ptr_sp->GetValueAsUnsigned(0);
-
-  ptr_sp = valobj.GetChildMemberWithName("__d_");
-  if (!ptr_sp)
-    return false;
-  ptr_sp = ptr_sp->GetChildMemberWithName("__d_");
-  if (!ptr_sp)
-    return false;
-  const unsigned day = ptr_sp->GetValueAsUnsigned(0);
-
-  stream << "date=";
-  if (year < 0) {
-    stream << '-';
-    year = -year;
-  }
-  stream.Printf("%04d-%02u-%02u", year, month, day);
-
-  return true;
 }

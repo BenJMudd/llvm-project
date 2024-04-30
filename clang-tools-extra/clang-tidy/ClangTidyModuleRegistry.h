@@ -14,7 +14,7 @@
 
 namespace clang::tidy {
 
-using ClangTidyModuleRegistry = llvm::Registry<ClangTidyModule>;
+typedef llvm::Registry<ClangTidyModule> ClangTidyModuleRegistry;
 
 } // namespace clang::tidy
 

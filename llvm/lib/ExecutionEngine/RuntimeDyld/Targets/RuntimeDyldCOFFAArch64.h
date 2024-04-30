@@ -27,7 +27,7 @@ using namespace llvm::support::endian;
 namespace llvm {
 
 // This relocation type is used for handling long branch instruction
-// through the Stub.
+// throught the Stub.
 enum InternalRelocationType : unsigned {
   INTERNAL_REL_ARM64_LONG_BRANCH26 = 0x111,
 };
@@ -174,7 +174,7 @@ public:
     unsigned TargetSectionID = -1;
     uint64_t TargetOffset = -1;
 
-    if (TargetName.starts_with(getImportSymbolPrefix())) {
+    if (TargetName.startswith(getImportSymbolPrefix())) {
       TargetSectionID = SectionID;
       TargetOffset = getDLLImportOffset(SectionID, Stubs, TargetName);
       TargetName = StringRef();

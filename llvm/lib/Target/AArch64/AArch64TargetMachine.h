@@ -14,7 +14,6 @@
 #define LLVM_LIB_TARGET_AARCH64_AARCH64TARGETMACHINE_H
 
 #include "AArch64InstrInfo.h"
-#include "AArch64LoopIdiomTransform.h"
 #include "AArch64Subtarget.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/Target/TargetMachine.h"
@@ -31,7 +30,7 @@ public:
   AArch64TargetMachine(const Target &T, const Triple &TT, StringRef CPU,
                        StringRef FS, const TargetOptions &Options,
                        std::optional<Reloc::Model> RM,
-                       std::optional<CodeModel::Model> CM, CodeGenOptLevel OL,
+                       std::optional<CodeModel::Model> CM, CodeGenOpt::Level OL,
                        bool JIT, bool IsLittleEndian);
 
   ~AArch64TargetMachine() override;
@@ -43,9 +42,6 @@ public:
 
   // Pass Pipeline Configuration
   TargetPassConfig *createPassConfig(PassManagerBase &PM) override;
-
-  void registerPassBuilderCallbacks(PassBuilder &PB,
-                                    bool PopulateClassToPassNames) override;
 
   TargetTransformInfo getTargetTransformInfo(const Function &F) const override;
 
@@ -84,8 +80,8 @@ public:
   AArch64leTargetMachine(const Target &T, const Triple &TT, StringRef CPU,
                          StringRef FS, const TargetOptions &Options,
                          std::optional<Reloc::Model> RM,
-                         std::optional<CodeModel::Model> CM, CodeGenOptLevel OL,
-                         bool JIT);
+                         std::optional<CodeModel::Model> CM,
+                         CodeGenOpt::Level OL, bool JIT);
 };
 
 // AArch64 big endian target machine.
@@ -97,8 +93,8 @@ public:
   AArch64beTargetMachine(const Target &T, const Triple &TT, StringRef CPU,
                          StringRef FS, const TargetOptions &Options,
                          std::optional<Reloc::Model> RM,
-                         std::optional<CodeModel::Model> CM, CodeGenOptLevel OL,
-                         bool JIT);
+                         std::optional<CodeModel::Model> CM,
+                         CodeGenOpt::Level OL, bool JIT);
 };
 
 } // end namespace llvm

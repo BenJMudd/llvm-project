@@ -88,28 +88,28 @@ getSymbolicOperandMnemonic(SPIRV::OperandCategory::OperandCategory Category,
   return Name;
 }
 
-VersionTuple
+uint32_t
 getSymbolicOperandMinVersion(SPIRV::OperandCategory::OperandCategory Category,
                              uint32_t Value) {
   const SPIRV::SymbolicOperand *Lookup =
       SPIRV::lookupSymbolicOperandByCategoryAndValue(Category, Value);
 
   if (Lookup)
-    return VersionTuple(Lookup->MinVersion / 10, Lookup->MinVersion % 10);
+    return Lookup->MinVersion;
 
-  return VersionTuple(0);
+  return 0;
 }
 
-VersionTuple
+uint32_t
 getSymbolicOperandMaxVersion(SPIRV::OperandCategory::OperandCategory Category,
                              uint32_t Value) {
   const SPIRV::SymbolicOperand *Lookup =
       SPIRV::lookupSymbolicOperandByCategoryAndValue(Category, Value);
 
   if (Lookup)
-    return VersionTuple(Lookup->MaxVersion / 10, Lookup->MaxVersion % 10);
+    return Lookup->MaxVersion;
 
-  return VersionTuple();
+  return 0;
 }
 
 CapabilityList
@@ -124,24 +124,6 @@ getSymbolicOperandCapabilities(SPIRV::OperandCategory::OperandCategory Category,
     Capabilities.push_back(
         static_cast<SPIRV::Capability::Capability>(Capability->ReqCapability));
     ++Capability;
-  }
-
-  return Capabilities;
-}
-
-CapabilityList
-getCapabilitiesEnabledByExtension(SPIRV::Extension::Extension Extension) {
-  const SPIRV::ExtensionEntry *Entry =
-      SPIRV::lookupSymbolicOperandsEnabledByExtension(
-          Extension, SPIRV::OperandCategory::CapabilityOperand);
-
-  CapabilityList Capabilities;
-  while (Entry &&
-         Entry->Category == SPIRV::OperandCategory::CapabilityOperand &&
-         Entry->ReqExtension == Extension) {
-    Capabilities.push_back(
-        static_cast<SPIRV::Capability::Capability>(Entry->Value));
-    ++Entry;
   }
 
   return Capabilities;
@@ -177,7 +159,7 @@ std::string getLinkStringForBuiltIn(SPIRV::BuiltIn::BuiltIn BuiltInValue) {
 bool getSpirvBuiltInIdByName(llvm::StringRef Name,
                              SPIRV::BuiltIn::BuiltIn &BI) {
   const std::string Prefix = "__spirv_BuiltIn";
-  if (!Name.starts_with(Prefix))
+  if (!Name.startswith(Prefix))
     return false;
 
   const SPIRV::SymbolicOperand *Lookup =
@@ -217,7 +199,8 @@ getExtInstSetFromString(std::string SetName) {
 std::string getExtInstName(SPIRV::InstructionSet::InstructionSet Set,
                            uint32_t InstructionNumber) {
   const SPIRV::ExtendedBuiltin *Lookup =
-      SPIRV::lookupExtendedBuiltinBySetAndNumber(Set, InstructionNumber);
+      SPIRV::lookupExtendedBuiltinBySetAndNumber(
+          SPIRV::InstructionSet::OpenCL_std, InstructionNumber);
 
   if (!Lookup)
     return "UNKNOWN_EXT_INST";

@@ -28,14 +28,18 @@ template <class T>
 auto h(T) -> decltype([x = T::invalid]() { });
 void h(...);
 void test_h() {
-  h(0);
+  h(0); // expected-error@-3 {{type 'int' cannot be used prior to '::'}}
+        // expected-note@-1 {{while substituting deduced template arguments}}
+        // expected-note@-5 {{while substituting into a lambda expression here}}
 }
 
 template <class T>
 auto i(T) -> decltype([]() -> typename T::invalid { });
 void i(...);
 void test_i() {
-  i(0);
+  i(0); // expected-error@-3 {{type 'int' cannot be used prior to '::'}}
+        // expected-note@-1 {{while substituting deduced template arguments}}
+        // expected-note@-5 {{while substituting into a lambda expression here}}
 }
 
 

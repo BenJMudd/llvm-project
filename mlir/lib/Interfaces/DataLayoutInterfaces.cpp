@@ -34,31 +34,31 @@ using namespace mlir;
 
 /// Returns the bitwidth of the index type if specified in the param list.
 /// Assumes 64-bit index otherwise.
-static uint64_t getIndexBitwidth(DataLayoutEntryListRef params) {
+static unsigned getIndexBitwidth(DataLayoutEntryListRef params) {
   if (params.empty())
     return 64;
   auto attr = cast<IntegerAttr>(params.front().getValue());
   return attr.getValue().getZExtValue();
 }
 
-llvm::TypeSize
+unsigned
 mlir::detail::getDefaultTypeSize(Type type, const DataLayout &dataLayout,
                                  ArrayRef<DataLayoutEntryInterface> params) {
-  llvm::TypeSize bits = getDefaultTypeSizeInBits(type, dataLayout, params);
-  return divideCeil(bits, 8);
+  unsigned bits = getDefaultTypeSizeInBits(type, dataLayout, params);
+  return llvm::divideCeil(bits, 8);
 }
 
-llvm::TypeSize
-mlir::detail::getDefaultTypeSizeInBits(Type type, const DataLayout &dataLayout,
-                                       DataLayoutEntryListRef params) {
+unsigned mlir::detail::getDefaultTypeSizeInBits(Type type,
+                                                const DataLayout &dataLayout,
+                                                DataLayoutEntryListRef params) {
   if (isa<IntegerType, FloatType>(type))
-    return llvm::TypeSize::getFixed(type.getIntOrFloatBitWidth());
+    return type.getIntOrFloatBitWidth();
 
   if (auto ctype = dyn_cast<ComplexType>(type)) {
-    Type et = ctype.getElementType();
-    uint64_t innerAlignment =
+    auto et = ctype.getElementType();
+    auto innerAlignment =
         getDefaultPreferredAlignment(et, dataLayout, params) * 8;
-    llvm::TypeSize innerSize = getDefaultTypeSizeInBits(et, dataLayout, params);
+    auto innerSize = getDefaultTypeSizeInBits(et, dataLayout, params);
 
     // Include padding required to align the imaginary value in the complex
     // type.
@@ -75,12 +75,10 @@ mlir::detail::getDefaultTypeSizeInBits(Type type, const DataLayout &dataLayout,
   // there is no bit-packing at the moment element sizes are taken in bytes and
   // multiplied with 8 bits.
   // TODO: make this extensible.
-  if (auto vecType = dyn_cast<VectorType>(type)) {
-    uint64_t baseSize = vecType.getNumElements() / vecType.getShape().back() *
-                        llvm::PowerOf2Ceil(vecType.getShape().back()) *
-                        dataLayout.getTypeSize(vecType.getElementType()) * 8;
-    return llvm::TypeSize::get(baseSize, vecType.isScalable());
-  }
+  if (auto vecType = dyn_cast<VectorType>(type))
+    return vecType.getNumElements() / vecType.getShape().back() *
+           llvm::PowerOf2Ceil(vecType.getShape().back()) *
+           dataLayout.getTypeSize(vecType.getElementType()) * 8;
 
   if (auto typeInterface = dyn_cast<DataLayoutTypeInterface>(type))
     return typeInterface.getTypeSizeInBits(dataLayout, params);
@@ -104,46 +102,40 @@ findEntryForIntegerType(IntegerType intType,
   return iter->second;
 }
 
-constexpr const static uint64_t kDefaultBitsInByte = 8u;
-
-static uint64_t extractABIAlignment(DataLayoutEntryInterface entry) {
+static unsigned extractABIAlignment(DataLayoutEntryInterface entry) {
   auto values =
-      cast<DenseIntElementsAttr>(entry.getValue()).getValues<uint64_t>();
-  return static_cast<uint64_t>(*values.begin()) / kDefaultBitsInByte;
+      cast<DenseIntElementsAttr>(entry.getValue()).getValues<int32_t>();
+  return *values.begin() / 8u;
 }
 
-static uint64_t
+static unsigned
 getIntegerTypeABIAlignment(IntegerType intType,
                            ArrayRef<DataLayoutEntryInterface> params) {
-  constexpr uint64_t kDefaultSmallIntAlignment = 4u;
-  constexpr unsigned kSmallIntSize = 64;
   if (params.empty()) {
-    return intType.getWidth() < kSmallIntSize
-               ? llvm::PowerOf2Ceil(
-                     llvm::divideCeil(intType.getWidth(), kDefaultBitsInByte))
-               : kDefaultSmallIntAlignment;
+    return intType.getWidth() < 64
+               ? llvm::PowerOf2Ceil(llvm::divideCeil(intType.getWidth(), 8))
+               : 4;
   }
 
   return extractABIAlignment(findEntryForIntegerType(intType, params));
 }
 
-static uint64_t
+static unsigned
 getFloatTypeABIAlignment(FloatType fltType, const DataLayout &dataLayout,
                          ArrayRef<DataLayoutEntryInterface> params) {
   assert(params.size() <= 1 && "at most one data layout entry is expected for "
                                "the singleton floating-point type");
   if (params.empty())
-    return llvm::PowerOf2Ceil(dataLayout.getTypeSize(fltType).getFixedValue());
+    return llvm::PowerOf2Ceil(dataLayout.getTypeSize(fltType));
   return extractABIAlignment(params[0]);
 }
 
-uint64_t mlir::detail::getDefaultABIAlignment(
+unsigned mlir::detail::getDefaultABIAlignment(
     Type type, const DataLayout &dataLayout,
     ArrayRef<DataLayoutEntryInterface> params) {
-  // Natural alignment is the closest power-of-two number above. For scalable
-  // vectors, aligning them to the same as the base vector is sufficient.
+  // Natural alignment is the closest power-of-two number above.
   if (isa<VectorType>(type))
-    return llvm::PowerOf2Ceil(dataLayout.getTypeSize(type).getKnownMinValue());
+    return llvm::PowerOf2Ceil(dataLayout.getTypeSize(type));
 
   if (auto fltType = dyn_cast<FloatType>(type))
     return getFloatTypeABIAlignment(fltType, dataLayout, params);
@@ -165,23 +157,23 @@ uint64_t mlir::detail::getDefaultABIAlignment(
   reportMissingDataLayout(type);
 }
 
-static uint64_t extractPreferredAlignment(DataLayoutEntryInterface entry) {
+static unsigned extractPreferredAlignment(DataLayoutEntryInterface entry) {
   auto values =
-      cast<DenseIntElementsAttr>(entry.getValue()).getValues<uint64_t>();
-  return *std::next(values.begin(), values.size() - 1) / kDefaultBitsInByte;
+      cast<DenseIntElementsAttr>(entry.getValue()).getValues<int32_t>();
+  return *std::next(values.begin(), values.size() - 1) / 8u;
 }
 
-static uint64_t
+static unsigned
 getIntegerTypePreferredAlignment(IntegerType intType,
                                  const DataLayout &dataLayout,
                                  ArrayRef<DataLayoutEntryInterface> params) {
   if (params.empty())
-    return llvm::PowerOf2Ceil(dataLayout.getTypeSize(intType).getFixedValue());
+    return llvm::PowerOf2Ceil(dataLayout.getTypeSize(intType));
 
   return extractPreferredAlignment(findEntryForIntegerType(intType, params));
 }
 
-static uint64_t
+static unsigned
 getFloatTypePreferredAlignment(FloatType fltType, const DataLayout &dataLayout,
                                ArrayRef<DataLayoutEntryInterface> params) {
   assert(params.size() <= 1 && "at most one data layout entry is expected for "
@@ -191,7 +183,7 @@ getFloatTypePreferredAlignment(FloatType fltType, const DataLayout &dataLayout,
   return extractPreferredAlignment(params[0]);
 }
 
-uint64_t mlir::detail::getDefaultPreferredAlignment(
+unsigned mlir::detail::getDefaultPreferredAlignment(
     Type type, const DataLayout &dataLayout,
     ArrayRef<DataLayoutEntryInterface> params) {
   // Preferred alignment is same as natural for floats and vectors.
@@ -221,32 +213,7 @@ uint64_t mlir::detail::getDefaultPreferredAlignment(
   reportMissingDataLayout(type);
 }
 
-std::optional<uint64_t> mlir::detail::getDefaultIndexBitwidth(
-    Type type, const DataLayout &dataLayout,
-    ArrayRef<DataLayoutEntryInterface> params) {
-  if (isa<IndexType>(type))
-    return getIndexBitwidth(params);
-
-  if (auto typeInterface = dyn_cast<DataLayoutTypeInterface>(type))
-    if (std::optional<uint64_t> indexBitwidth =
-            typeInterface.getIndexBitwidth(dataLayout, params))
-      return *indexBitwidth;
-
-  // Return std::nullopt for all other types, which are assumed to be non
-  // pointer-like types.
-  return std::nullopt;
-}
-
-// Returns the endianness if specified in the given entry. If the entry is empty
-// the default endianness represented by an empty attribute is returned.
-Attribute mlir::detail::getDefaultEndianness(DataLayoutEntryInterface entry) {
-  if (entry == DataLayoutEntryInterface())
-    return Attribute();
-
-  return entry.getValue();
-}
-
-// Returns the memory space used for alloca operations if specified in the
+// Returns the memory space used for allocal operations if specified in the
 // given entry. If the entry is empty the default memory space represented by
 // an empty attribute is returned.
 Attribute
@@ -258,33 +225,9 @@ mlir::detail::getDefaultAllocaMemorySpace(DataLayoutEntryInterface entry) {
   return entry.getValue();
 }
 
-// Returns the memory space used for the program memory space.  if
-// specified in the given entry. If the entry is empty the default
-// memory space represented by an empty attribute is returned.
-Attribute
-mlir::detail::getDefaultProgramMemorySpace(DataLayoutEntryInterface entry) {
-  if (entry == DataLayoutEntryInterface()) {
-    return Attribute();
-  }
-
-  return entry.getValue();
-}
-
-// Returns the memory space used for global the global memory space. if
-// specified in the given entry. If the entry is empty the default memory
-// space represented by an empty attribute is returned.
-Attribute
-mlir::detail::getDefaultGlobalMemorySpace(DataLayoutEntryInterface entry) {
-  if (entry == DataLayoutEntryInterface()) {
-    return Attribute();
-  }
-
-  return entry.getValue();
-}
-
 // Returns the stack alignment if specified in the given entry. If the entry is
 // empty the default alignment zero is returned.
-uint64_t
+unsigned
 mlir::detail::getDefaultStackAlignment(DataLayoutEntryInterface entry) {
   if (entry == DataLayoutEntryInterface())
     return 0;
@@ -410,13 +353,6 @@ LogicalResult mlir::detail::verifyDataLayoutOp(Operation *op) {
   return success();
 }
 
-llvm::TypeSize mlir::detail::divideCeil(llvm::TypeSize numerator,
-                                        uint64_t denominator) {
-  uint64_t divided =
-      llvm::divideCeil(numerator.getKnownMinValue(), denominator);
-  return llvm::TypeSize::get(divided, numerator.isScalable());
-}
-
 //===----------------------------------------------------------------------===//
 // DataLayout
 //===----------------------------------------------------------------------===//
@@ -434,8 +370,7 @@ mlir::DataLayout::DataLayout() : DataLayout(ModuleOp()) {}
 
 mlir::DataLayout::DataLayout(DataLayoutOpInterface op)
     : originalLayout(getCombinedDataLayout(op)), scope(op),
-      allocaMemorySpace(std::nullopt), programMemorySpace(std::nullopt),
-      globalMemorySpace(std::nullopt), stackAlignment(std::nullopt) {
+      allocaMemorySpace(std::nullopt), stackAlignment(std::nullopt) {
 #if LLVM_ENABLE_ABI_BREAKING_CHECKS
   checkMissingLayout(originalLayout, op);
   collectParentLayouts(op, layoutStack);
@@ -444,8 +379,7 @@ mlir::DataLayout::DataLayout(DataLayoutOpInterface op)
 
 mlir::DataLayout::DataLayout(ModuleOp op)
     : originalLayout(getCombinedDataLayout(op)), scope(op),
-      allocaMemorySpace(std::nullopt), programMemorySpace(std::nullopt),
-      globalMemorySpace(std::nullopt), stackAlignment(std::nullopt) {
+      allocaMemorySpace(std::nullopt), stackAlignment(std::nullopt) {
 #if LLVM_ENABLE_ABI_BREAKING_CHECKS
   checkMissingLayout(originalLayout, op);
   collectParentLayouts(op, layoutStack);
@@ -489,9 +423,8 @@ void mlir::DataLayout::checkValid() const {
 /// Looks up the value for the given type key in the given cache. If there is no
 /// such value in the cache, compute it using the given callback and put it in
 /// the cache before returning.
-template <typename T>
-static T cachedLookup(Type t, DenseMap<Type, T> &cache,
-                      function_ref<T(Type)> compute) {
+static unsigned cachedLookup(Type t, DenseMap<Type, unsigned> &cache,
+                             function_ref<unsigned(Type)> compute) {
   auto it = cache.find(t);
   if (it != cache.end())
     return it->second;
@@ -500,9 +433,9 @@ static T cachedLookup(Type t, DenseMap<Type, T> &cache,
   return result.first->second;
 }
 
-llvm::TypeSize mlir::DataLayout::getTypeSize(Type t) const {
+unsigned mlir::DataLayout::getTypeSize(Type t) const {
   checkValid();
-  return cachedLookup<llvm::TypeSize>(t, sizes, [&](Type ty) {
+  return cachedLookup(t, sizes, [&](Type ty) {
     DataLayoutEntryList list;
     if (originalLayout)
       list = originalLayout.getSpecForType(ty.getTypeID());
@@ -512,9 +445,9 @@ llvm::TypeSize mlir::DataLayout::getTypeSize(Type t) const {
   });
 }
 
-llvm::TypeSize mlir::DataLayout::getTypeSizeInBits(Type t) const {
+unsigned mlir::DataLayout::getTypeSizeInBits(Type t) const {
   checkValid();
-  return cachedLookup<llvm::TypeSize>(t, bitsizes, [&](Type ty) {
+  return cachedLookup(t, bitsizes, [&](Type ty) {
     DataLayoutEntryList list;
     if (originalLayout)
       list = originalLayout.getSpecForType(ty.getTypeID());
@@ -524,9 +457,9 @@ llvm::TypeSize mlir::DataLayout::getTypeSizeInBits(Type t) const {
   });
 }
 
-uint64_t mlir::DataLayout::getTypeABIAlignment(Type t) const {
+unsigned mlir::DataLayout::getTypeABIAlignment(Type t) const {
   checkValid();
-  return cachedLookup<uint64_t>(t, abiAlignments, [&](Type ty) {
+  return cachedLookup(t, abiAlignments, [&](Type ty) {
     DataLayoutEntryList list;
     if (originalLayout)
       list = originalLayout.getSpecForType(ty.getTypeID());
@@ -536,9 +469,9 @@ uint64_t mlir::DataLayout::getTypeABIAlignment(Type t) const {
   });
 }
 
-uint64_t mlir::DataLayout::getTypePreferredAlignment(Type t) const {
+unsigned mlir::DataLayout::getTypePreferredAlignment(Type t) const {
   checkValid();
-  return cachedLookup<uint64_t>(t, preferredAlignments, [&](Type ty) {
+  return cachedLookup(t, preferredAlignments, [&](Type ty) {
     DataLayoutEntryList list;
     if (originalLayout)
       list = originalLayout.getSpecForType(ty.getTypeID());
@@ -546,34 +479,6 @@ uint64_t mlir::DataLayout::getTypePreferredAlignment(Type t) const {
       return iface.getTypePreferredAlignment(ty, *this, list);
     return detail::getDefaultPreferredAlignment(ty, *this, list);
   });
-}
-
-std::optional<uint64_t> mlir::DataLayout::getTypeIndexBitwidth(Type t) const {
-  checkValid();
-  return cachedLookup<std::optional<uint64_t>>(t, indexBitwidths, [&](Type ty) {
-    DataLayoutEntryList list;
-    if (originalLayout)
-      list = originalLayout.getSpecForType(ty.getTypeID());
-    if (auto iface = dyn_cast_or_null<DataLayoutOpInterface>(scope))
-      return iface.getIndexBitwidth(ty, *this, list);
-    return detail::getDefaultIndexBitwidth(ty, *this, list);
-  });
-}
-
-mlir::Attribute mlir::DataLayout::getEndianness() const {
-  checkValid();
-  if (endianness)
-    return *endianness;
-  DataLayoutEntryInterface entry;
-  if (originalLayout)
-    entry = originalLayout.getSpecForIdentifier(
-        originalLayout.getEndiannessIdentifier(originalLayout.getContext()));
-
-  if (auto iface = dyn_cast_or_null<DataLayoutOpInterface>(scope))
-    endianness = iface.getEndianness(entry);
-  else
-    endianness = detail::getDefaultEndianness(entry);
-  return *endianness;
 }
 
 mlir::Attribute mlir::DataLayout::getAllocaMemorySpace() const {
@@ -592,39 +497,7 @@ mlir::Attribute mlir::DataLayout::getAllocaMemorySpace() const {
   return *allocaMemorySpace;
 }
 
-mlir::Attribute mlir::DataLayout::getProgramMemorySpace() const {
-  checkValid();
-  if (programMemorySpace)
-    return *programMemorySpace;
-  DataLayoutEntryInterface entry;
-  if (originalLayout)
-    entry = originalLayout.getSpecForIdentifier(
-        originalLayout.getProgramMemorySpaceIdentifier(
-            originalLayout.getContext()));
-  if (auto iface = dyn_cast_or_null<DataLayoutOpInterface>(scope))
-    programMemorySpace = iface.getProgramMemorySpace(entry);
-  else
-    programMemorySpace = detail::getDefaultProgramMemorySpace(entry);
-  return *programMemorySpace;
-}
-
-mlir::Attribute mlir::DataLayout::getGlobalMemorySpace() const {
-  checkValid();
-  if (globalMemorySpace)
-    return *globalMemorySpace;
-  DataLayoutEntryInterface entry;
-  if (originalLayout)
-    entry = originalLayout.getSpecForIdentifier(
-        originalLayout.getGlobalMemorySpaceIdentifier(
-            originalLayout.getContext()));
-  if (auto iface = dyn_cast_or_null<DataLayoutOpInterface>(scope))
-    globalMemorySpace = iface.getGlobalMemorySpace(entry);
-  else
-    globalMemorySpace = detail::getDefaultGlobalMemorySpace(entry);
-  return *globalMemorySpace;
-}
-
-uint64_t mlir::DataLayout::getStackAlignment() const {
+unsigned mlir::DataLayout::getStackAlignment() const {
   checkValid();
   if (stackAlignment)
     return *stackAlignment;
@@ -663,7 +536,7 @@ LogicalResult mlir::detail::verifyDataLayoutSpec(DataLayoutSpecInterface spec,
       return failure();
 
   // Second, dispatch verifications of entry groups to types or dialects they
-  // are associated with.
+  // are are associated with.
   DenseMap<TypeID, DataLayoutEntryList> types;
   DenseMap<StringAttr, DataLayoutEntryInterface> ids;
   spec.bucketEntriesByType(types, ids);
@@ -683,14 +556,14 @@ LogicalResult mlir::detail::verifyDataLayoutSpec(DataLayoutSpecInterface spec,
     if (isa<IntegerType, FloatType>(sampleType)) {
       for (DataLayoutEntryInterface entry : kvp.second) {
         auto value = dyn_cast<DenseIntElementsAttr>(entry.getValue());
-        if (!value || !value.getElementType().isSignlessInteger(64)) {
-          emitError(loc) << "expected a dense i64 elements attribute in the "
+        if (!value || !value.getElementType().isSignlessInteger(32)) {
+          emitError(loc) << "expected a dense i32 elements attribute in the "
                             "data layout entry "
                          << entry;
           return failure();
         }
 
-        auto elements = llvm::to_vector<2>(value.getValues<uint64_t>());
+        auto elements = llvm::to_vector<2>(value.getValues<int32_t>());
         unsigned numElements = elements.size();
         if (numElements < 1 || numElements > 2) {
           emitError(loc) << "expected 1 or 2 elements in the data layout entry "
@@ -698,8 +571,8 @@ LogicalResult mlir::detail::verifyDataLayoutSpec(DataLayoutSpecInterface spec,
           return failure();
         }
 
-        uint64_t abi = elements[0];
-        uint64_t preferred = numElements == 2 ? elements[1] : abi;
+        int32_t abi = elements[0];
+        int32_t preferred = numElements == 2 ? elements[1] : abi;
         if (preferred < abi) {
           emitError(loc)
               << "preferred alignment is expected to be greater than or equal "

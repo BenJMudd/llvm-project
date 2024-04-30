@@ -716,10 +716,7 @@ enum ImportNameType : unsigned {
   IMPORT_NAME_NOPREFIX = 2,
   /// The import name is the public symbol name, but skipping the leading ?,
   /// @, or optionally _, and truncating at the first @.
-  IMPORT_NAME_UNDECORATE = 3,
-  /// The import name is specified as a separate string in the import library
-  /// object file.
-  IMPORT_NAME_EXPORTAS = 4
+  IMPORT_NAME_UNDECORATE = 3
 };
 
 enum class GuardFlags : uint32_t {
@@ -804,12 +801,6 @@ enum Feat00Flags : uint32_t {
   GuardEHCont = 0x4000,
   // Object was compiled with /kernel.
   Kernel = 0x40000000,
-};
-
-enum class Arm64ECThunkType : uint8_t {
-  GuestExit = 0,
-  Entry = 1,
-  Exit = 4,
 };
 
 inline bool isReservedSectionNumber(int32_t SectionNumber) {

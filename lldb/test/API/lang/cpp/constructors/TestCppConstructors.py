@@ -35,19 +35,19 @@ class TestCase(TestBase):
         self.expect(
             "expr ClassWithDefaultedCtor().foo()",
             error=True,
-            substrs=["Couldn't look up symbols:"],
+            substrs=["Couldn't lookup symbols:"],
         )
 
         # FIXME: Calling deleted constructors should fail before linking.
         self.expect(
             "expr ClassWithDeletedCtor(1).value",
             error=True,
-            substrs=["Couldn't look up symbols:"],
+            substrs=["Couldn't lookup symbols:"],
         )
         self.expect(
             "expr ClassWithDeletedDefaultCtor().value",
             error=True,
-            substrs=["Couldn't look up symbols:", "function", "optimized out"],
+            substrs=["Couldn't lookup symbols:"],
         )
 
     @skipIfWindows  # Can't find operator new.

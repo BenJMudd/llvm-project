@@ -12,7 +12,6 @@
 // failures when back-deploying.
 // XFAIL: availability-verbose_abort-missing
 
-#include <__verbose_abort>
 #include <cstdlib>
 
 void std::__libcpp_verbose_abort(char const*, ...) {
@@ -20,6 +19,6 @@ void std::__libcpp_verbose_abort(char const*, ...) {
 }
 
 int main(int, char**) {
-  std::__libcpp_verbose_abort("%s", "message");
+  _LIBCPP_ASSERT(false, "message");
   return EXIT_FAILURE;
 }

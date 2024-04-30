@@ -68,7 +68,7 @@ struct BubbleUpExtractSliceOpPattern
                                          "expected single output of linalg op");
     }
 
-    if (!linalgOp.hasPureTensorSemantics()) {
+    if (!linalgOp.hasTensorSemantics()) {
       return rewriter.notifyMatchFailure(sliceOp,
                                          "expected tensor of linalg op");
     }
@@ -107,7 +107,7 @@ struct BubbleUpExtractSliceOpPattern
                                           rewriter.getIndexAttr(0));
     SmallVector<OpFoldResult> tileSizes = sizeBounds;
     for (auto const &result : enumerate(indexingMap.getResults())) {
-      unsigned position = cast<AffineDimExpr>(result.value()).getPosition();
+      unsigned position = result.value().cast<AffineDimExpr>().getPosition();
       tileOffsets[position] = sliceOp.getMixedOffsets()[result.index()];
       tileSizes[position] = sliceOp.getMixedSizes()[result.index()];
     }
@@ -119,9 +119,9 @@ struct BubbleUpExtractSliceOpPattern
                         /*omitPartialTileCheck=*/true);
 
     SmallVector<Type, 4> resultTensorTypes;
-    for (OpOperand &opOperand : linalgOp.getDpsInitsMutable())
+    for (OpOperand *opOperand : linalgOp.getDpsInitOperands())
       resultTensorTypes.push_back(
-          tiledOperands[opOperand.getOperandNumber()].getType());
+          tiledOperands[opOperand->getOperandNumber()].getType());
 
     Operation *newOp =
         clone(rewriter, linalgOp, resultTensorTypes, tiledOperands);

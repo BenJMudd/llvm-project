@@ -62,8 +62,7 @@ private:
     No = false,
   };
 
-  State analyzeRecord(const CXXRecordDecl *RecordDecl,
-                      DefaultableMemberKind Kind,
+  State analyzeRecord(const CXXRecordDecl *RecDecl, DefaultableMemberKind Kind,
                       SkipMethods SkipMethods = SkipMethods::No);
 
   static State analyzeFunctionEST(const FunctionDecl *FuncDecl,
@@ -81,7 +80,7 @@ private:
   static DefaultableMemberKind
   getDefaultableMemberKind(const FunctionDecl *FuncDecl);
 
-  llvm::DenseMap<const FunctionDecl *, State> FunctionCache{32U};
+  llvm::DenseMap<const FunctionDecl *, State> FunctionCache{32u};
 };
 
 } // namespace clang::tidy::utils

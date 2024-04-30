@@ -554,16 +554,14 @@ void CGDebugInfo::CreateCompileUnit() {
     // If the main file name provided is identical to the input file name, and
     // if the input file is a preprocessed source, use the module name for
     // debug info. The module name comes from the name specified in the first
-    // linemarker if the input is a preprocessed source. In this case we don't
-    // know the content to compute a checksum.
+    // linemarker if the input is a preprocessed source.
     if (MainFile->getName() == MainFileName &&
         FrontendOptions::getInputKindForExtension(
             MainFile->getName().rsplit('.').second)
-            .isPreprocessed()) {
+            .isPreprocessed())
       MainFileName = CGM.getModule().getName().str();
-    } else {
-      CSKind = computeChecksum(SM.getMainFileID(), Checksum);
-    }
+
+    CSKind = computeChecksum(SM.getMainFileID(), Checksum);
   }
 
   llvm::dwarf::SourceLanguage LangTag;
@@ -637,8 +635,7 @@ void CGDebugInfo::CreateCompileUnit() {
     Sysroot = CGM.getHeaderSearchOpts().Sysroot;
     auto B = llvm::sys::path::rbegin(Sysroot);
     auto E = llvm::sys::path::rend(Sysroot);
-    auto It =
-        std::find_if(B, E, [](auto SDK) { return SDK.ends_with(".sdk"); });
+    auto It = std::find_if(B, E, [](auto SDK) { return SDK.endswith(".sdk"); });
     if (It != E)
       SDK = *It;
   }
@@ -1313,44 +1310,6 @@ llvm::DIType *CGDebugInfo::CreateType(const BlockPointerType *Ty,
   return DBuilder.createPointerType(EltTy, Size);
 }
 
-static llvm::SmallVector<TemplateArgument>
-GetTemplateArgs(const TemplateDecl *TD, const TemplateSpecializationType *Ty) {
-  assert(Ty->isTypeAlias());
-  // TemplateSpecializationType doesn't know if its template args are
-  // being substituted into a parameter pack. We can find out if that's
-  // the case now by inspecting the TypeAliasTemplateDecl template
-  // parameters. Insert Ty's template args into SpecArgs, bundling args
-  // passed to a parameter pack into a TemplateArgument::Pack. It also
-  // doesn't know the value of any defaulted args, so collect those now
-  // too.
-  SmallVector<TemplateArgument> SpecArgs;
-  ArrayRef SubstArgs = Ty->template_arguments();
-  for (const NamedDecl *Param : TD->getTemplateParameters()->asArray()) {
-    // If Param is a parameter pack, pack the remaining arguments.
-    if (Param->isParameterPack()) {
-      SpecArgs.push_back(TemplateArgument(SubstArgs));
-      break;
-    }
-
-    // Skip defaulted args.
-    // FIXME: Ideally, we wouldn't do this. We can read the default values
-    // for each parameter. However, defaulted arguments which are dependent
-    // values or dependent types can't (easily?) be resolved here.
-    if (SubstArgs.empty()) {
-      // If SubstArgs is now empty (we're taking from it each iteration) and
-      // this template parameter isn't a pack, then that should mean we're
-      // using default values for the remaining template parameters (after
-      // which there may be an empty pack too which we will ignore).
-      break;
-    }
-
-    // Take the next argument.
-    SpecArgs.push_back(SubstArgs.front());
-    SubstArgs = SubstArgs.drop_front();
-  }
-  return SpecArgs;
-}
-
 llvm::DIType *CGDebugInfo::CreateType(const TemplateSpecializationType *Ty,
                                       llvm::DIFile *Unit) {
   assert(Ty->isTypeAlias());
@@ -1370,52 +1329,6 @@ llvm::DIType *CGDebugInfo::CreateType(const TemplateSpecializationType *Ty,
   auto PP = getPrintingPolicy();
   Ty->getTemplateName().print(OS, PP, TemplateName::Qualified::None);
 
-  SourceLocation Loc = AliasDecl->getLocation();
-
-  if (CGM.getCodeGenOpts().DebugTemplateAlias &&
-      // FIXME: This is a workaround for the issue
-      //        https://github.com/llvm/llvm-project/issues/89774
-      // The TemplateSpecializationType doesn't contain any instantiation
-      // information; dependent template arguments can't be resolved. For now,
-      // fall back to DW_TAG_typedefs for template aliases that are
-      // instantiation dependent, e.g.:
-      // ```
-      // template <int>
-      // using A = int;
-      //
-      // template<int I>
-      // struct S {
-      //   using AA = A<I>; // Instantiation dependent.
-      //   AA aa;
-      // };
-      //
-      // S<0> s;
-      // ```
-      // S::AA's underlying type A<I> is dependent on I so will be emitted as a
-      // DW_TAG_typedef.
-      !Ty->isInstantiationDependentType()) {
-    auto ArgVector = ::GetTemplateArgs(TD, Ty);
-    TemplateArgs Args = {TD->getTemplateParameters(), ArgVector};
-
-    // FIXME: Respect DebugTemplateNameKind::Mangled, e.g. by using GetName.
-    // Note we can't use GetName without additional work: TypeAliasTemplateDecl
-    // doesn't have instantiation information, so
-    // TypeAliasTemplateDecl::getNameForDiagnostic wouldn't have access to the
-    // template args.
-    std::string Name;
-    llvm::raw_string_ostream OS(Name);
-    TD->getNameForDiagnostic(OS, PP, /*Qualified=*/false);
-    if (CGM.getCodeGenOpts().getDebugSimpleTemplateNames() !=
-            llvm::codegenoptions::DebugTemplateNamesKind::Simple ||
-        !HasReconstitutableArgs(Args.Args))
-      printTemplateArgumentList(OS, Args.Args, PP);
-
-    llvm::DIDerivedType *AliasTy = DBuilder.createTemplateAlias(
-        Src, Name, getOrCreateFile(Loc), getLineNumber(Loc),
-        getDeclContextDescriptor(AliasDecl), CollectTemplateParams(Args, Unit));
-    return AliasTy;
-  }
-
   // Disable PrintCanonicalTypes here because we want
   // the DW_AT_name to benefit from the TypePrinter's ability
   // to skip defaulted template arguments.
@@ -1427,6 +1340,8 @@ llvm::DIType *CGDebugInfo::CreateType(const TemplateSpecializationType *Ty,
   PP.PrintCanonicalTypes = false;
   printTemplateArgumentList(OS, Ty->template_arguments(), PP,
                             TD->getTemplateParameters());
+
+  SourceLocation Loc = AliasDecl->getLocation();
   return DBuilder.createTypedef(Src, OS.str(), getOrCreateFile(Loc),
                                 getLineNumber(Loc),
                                 getDeclContextDescriptor(AliasDecl));
@@ -1522,19 +1437,14 @@ static unsigned getDwarfCC(CallingConv CC) {
   case CC_Swift:
     return llvm::dwarf::DW_CC_LLVM_Swift;
   case CC_SwiftAsync:
-    return llvm::dwarf::DW_CC_LLVM_SwiftTail;
+    // [FIXME: swiftasynccc] Update to SwiftAsync once LLVM support lands.
+    return llvm::dwarf::DW_CC_LLVM_Swift;
   case CC_PreserveMost:
     return llvm::dwarf::DW_CC_LLVM_PreserveMost;
   case CC_PreserveAll:
     return llvm::dwarf::DW_CC_LLVM_PreserveAll;
   case CC_X86RegCall:
     return llvm::dwarf::DW_CC_LLVM_X86RegCall;
-  case CC_M68kRTD:
-    return llvm::dwarf::DW_CC_LLVM_M68kRTD;
-  case CC_PreserveNone:
-    return llvm::dwarf::DW_CC_LLVM_PreserveNone;
-  case CC_RISCVVectorCall:
-    return llvm::dwarf::DW_CC_LLVM_RISCVVectorCall;
   }
   return 0;
 }
@@ -1587,8 +1497,6 @@ CGDebugInfo::createBitFieldType(const FieldDecl *BitFieldDecl,
                                 llvm::DIScope *RecordTy, const RecordDecl *RD) {
   StringRef Name = BitFieldDecl->getName();
   QualType Ty = BitFieldDecl->getType();
-  if (BitFieldDecl->hasAttr<PreferredTypeAttr>())
-    Ty = BitFieldDecl->getAttr<PreferredTypeAttr>()->getType();
   SourceLocation Loc = BitFieldDecl->getLocation();
   llvm::DIFile *VUnit = getOrCreateFile(Loc);
   llvm::DIType *DebugType = getOrCreateType(Ty, VUnit);
@@ -1745,10 +1653,8 @@ void CGDebugInfo::CollectRecordLambdaFields(
       FieldDecl *f = *Field;
       llvm::DIFile *VUnit = getOrCreateFile(f->getLocation());
       QualType type = f->getType();
-      StringRef ThisName =
-          CGM.getCodeGenOpts().EmitCodeView ? "__this" : "this";
       llvm::DIType *fieldType = createFieldType(
-          ThisName, type, f->getLocation(), f->getAccess(),
+          "this", type, f->getLocation(), f->getAccess(),
           layout.getFieldOffset(fieldno), VUnit, RecordTy, CXXDecl);
 
       elements.push_back(fieldType);
@@ -1767,9 +1673,6 @@ CGDebugInfo::CreateRecordStaticField(const VarDecl *Var, llvm::DIType *RecordTy,
 
   unsigned LineNumber = getLineNumber(Var->getLocation());
   StringRef VName = Var->getName();
-
-  // FIXME: to avoid complications with type merging we should
-  // emit the constant on the definition instead of the declaration.
   llvm::Constant *C = nullptr;
   if (Var->getInit()) {
     const APValue *Value = Var->evaluateValue();
@@ -1782,12 +1685,9 @@ CGDebugInfo::CreateRecordStaticField(const VarDecl *Var, llvm::DIType *RecordTy,
   }
 
   llvm::DINode::DIFlags Flags = getAccessFlag(Var->getAccess(), RD);
-  auto Tag = CGM.getCodeGenOpts().DwarfVersion >= 5
-                 ? llvm::dwarf::DW_TAG_variable
-                 : llvm::dwarf::DW_TAG_member;
   auto Align = getDeclAlignIfRequired(Var, CGM.getContext());
   llvm::DIDerivedType *GV = DBuilder.createStaticMemberType(
-      RecordTy, VName, VUnit, LineNumber, VTy, Flags, C, Tag, Align);
+      RecordTy, VName, VUnit, LineNumber, VTy, Flags, C, Align);
   StaticDataMemberCache[Var->getCanonicalDecl()].reset(GV);
   return GV;
 }
@@ -2011,7 +1911,7 @@ llvm::DISubprogram *CGDebugInfo::CreateCXXMemberFunction(
   int ThisAdjustment = 0;
 
   if (VTableContextBase::hasVtableSlot(Method)) {
-    if (Method->isPureVirtual())
+    if (Method->isPure())
       SPFlags |= llvm::DISubprogram::SPFlagPureVirtual;
     else
       SPFlags |= llvm::DISubprogram::SPFlagVirtual;
@@ -2230,14 +2130,14 @@ CGDebugInfo::CollectTemplateParams(std::optional<TemplateArgs> OArgs,
       // attribute, i.e. that value is not available at the host side.
       if (!CGM.getLangOpts().CUDA || CGM.getLangOpts().CUDAIsDevice ||
           !D->hasAttr<CUDADeviceAttr>()) {
+        const CXXMethodDecl *MD;
         // Variable pointer template parameters have a value that is the address
         // of the variable.
         if (const auto *VD = dyn_cast<VarDecl>(D))
           V = CGM.GetAddrOfGlobalVar(VD);
         // Member function pointers have special support for building them,
         // though this is currently unsupported in LLVM CodeGen.
-        else if (const auto *MD = dyn_cast<CXXMethodDecl>(D);
-                 MD && MD->isImplicitObjectMemberFunction())
+        else if ((MD = dyn_cast<CXXMethodDecl>(D)) && MD->isInstance())
           V = CGM.getCXXABI().EmitMemberFunctionPointer(MD);
         else if (const auto *FD = dyn_cast<FunctionDecl>(D))
           V = CGM.GetAddrOfFunction(FD);
@@ -2283,14 +2183,6 @@ CGDebugInfo::CollectTemplateParams(std::optional<TemplateArgs> OArgs,
           V = CGM.getCXXABI().EmitNullMemberPointer(MPT);
       if (!V)
         V = llvm::ConstantInt::get(CGM.Int8Ty, 0);
-      TemplateParams.push_back(DBuilder.createTemplateValueParameter(
-          TheCU, Name, TTy, defaultParameter, V));
-    } break;
-    case TemplateArgument::StructuralValue: {
-      QualType T = TA.getStructuralValueType();
-      llvm::DIType *TTy = getOrCreateType(T, Unit);
-      llvm::Constant *V = ConstantEmitter(CGM).emitAbstract(
-          SourceLocation(), TA.getAsStructuralValue(), T);
       TemplateParams.push_back(DBuilder.createTemplateValueParameter(
           TheCU, Name, TTy, defaultParameter, V));
     } break;
@@ -2979,7 +2871,7 @@ llvm::DIModule *CGDebugInfo::getOrCreateModuleRef(ASTSourceDescriptor Mod,
   // clang::Module object, but it won't actually be built or imported; it will
   // be textual.
   if (CreateSkeletonCU && IsRootModule && Mod.getASTFile().empty() && M)
-    assert(StringRef(M->Name).starts_with(CGM.getLangOpts().ModuleName) &&
+    assert(StringRef(M->Name).startswith(CGM.getLangOpts().ModuleName) &&
            "clang module without ASTFile must be specified by -fmodule-name");
 
   // Return a StringRef to the remapped Path.
@@ -3225,8 +3117,8 @@ llvm::DIType *CGDebugInfo::CreateType(const VectorType *Ty,
     uint64_t NumVectorBytes = Size / Ctx.getCharWidth();
 
     // Construct the vector of 'char' type.
-    QualType CharVecTy =
-        Ctx.getVectorType(Ctx.CharTy, NumVectorBytes, VectorKind::Generic);
+    QualType CharVecTy = Ctx.getVectorType(Ctx.CharTy, NumVectorBytes,
+                                           VectorType::GenericVector);
     return CreateType(CharVecTy->getAs<VectorType>(), Unit);
   }
 
@@ -3322,7 +3214,7 @@ llvm::DIType *CGDebugInfo::CreateType(const ArrayType *Ty, llvm::DIFile *Unit) {
     //   };
     int64_t Count = -1; // Count == -1 is an unbounded array.
     if (const auto *CAT = dyn_cast<ConstantArrayType>(Ty))
-      Count = CAT->getZExtSize();
+      Count = CAT->getSize().getZExtValue();
     else if (const auto *VAT = dyn_cast<VariableArrayType>(Ty)) {
       if (Expr *Size = VAT->getSizeExpr()) {
         Expr::EvalResult Result;
@@ -3489,9 +3381,9 @@ llvm::DIType *CGDebugInfo::CreateTypeDefinition(const EnumType *Ty) {
   unsigned Line = getLineNumber(ED->getLocation());
   llvm::DIScope *EnumContext = getDeclContextDescriptor(ED);
   llvm::DIType *ClassTy = getOrCreateType(ED->getIntegerType(), DefUnit);
-  return DBuilder.createEnumerationType(
-      EnumContext, ED->getName(), DefUnit, Line, Size, Align, EltArray, ClassTy,
-      /*RunTimeLang=*/0, Identifier, ED->isScoped());
+  return DBuilder.createEnumerationType(EnumContext, ED->getName(), DefUnit,
+                                        Line, Size, Align, EltArray, ClassTy,
+                                        Identifier, ED->isScoped());
 }
 
 llvm::DIMacro *CGDebugInfo::CreateMacro(llvm::DIMacroFile *Parent,
@@ -3546,9 +3438,6 @@ static QualType UnwrapTypeForDebugInfo(QualType T, const ASTContext &C) {
     case Type::BTFTagAttributed:
       T = cast<BTFTagAttributedType>(T)->getWrappedType();
       break;
-    case Type::CountAttributed:
-      T = cast<CountAttributedType>(T)->desugar();
-      break;
     case Type::Elaborated:
       T = cast<ElaboratedType>(T)->getNamedType();
       break;
@@ -3569,10 +3458,6 @@ static QualType UnwrapTypeForDebugInfo(QualType T, const ASTContext &C) {
       QualType DT = cast<DeducedType>(T)->getDeducedType();
       assert(!DT.isNull() && "Undeduced types shouldn't reach here.");
       T = DT;
-      break;
-    }
-    case Type::PackIndexing: {
-      T = cast<PackIndexingType>(T)->getSelectedType();
       break;
     }
     case Type::Adjusted:
@@ -3723,7 +3608,6 @@ llvm::DIType *CGDebugInfo::CreateTypeNode(QualType Ty, llvm::DIFile *Unit) {
   case Type::ConstantArray:
   case Type::VariableArray:
   case Type::IncompleteArray:
-  case Type::ArrayParameter:
     return CreateType(cast<ArrayType>(Ty), Unit);
 
   case Type::LValueReference:
@@ -3745,7 +3629,6 @@ llvm::DIType *CGDebugInfo::CreateTypeNode(QualType Ty, llvm::DIFile *Unit) {
   case Type::TemplateSpecialization:
     return CreateType(cast<TemplateSpecializationType>(Ty), Unit);
 
-  case Type::CountAttributed:
   case Type::Auto:
   case Type::Attributed:
   case Type::BTFTagAttributed:
@@ -3760,7 +3643,6 @@ llvm::DIType *CGDebugInfo::CreateTypeNode(QualType Ty, llvm::DIFile *Unit) {
   case Type::TypeOfExpr:
   case Type::TypeOf:
   case Type::Decltype:
-  case Type::PackIndexing:
   case Type::UnaryTransform:
     break;
   }
@@ -3990,7 +3872,7 @@ void CGDebugInfo::collectVarDeclProps(const VarDecl *VD, llvm::DIFile *&Unit,
     QualType ET = CGM.getContext().getAsArrayType(T)->getElementType();
 
     T = CGM.getContext().getConstantArrayType(ET, ConstVal, nullptr,
-                                              ArraySizeModifier::Normal, 0);
+                                              ArrayType::Normal, 0);
   }
 
   Name = VD->getName();
@@ -4353,7 +4235,7 @@ void CGDebugInfo::emitFunctionStart(GlobalDecl GD, SourceLocation Loc,
 
     Flags |= llvm::DINode::FlagPrototyped;
   }
-  if (Name.starts_with("\01"))
+  if (Name.startswith("\01"))
     Name = Name.substr(1);
 
   assert((!D || !isa<VarDecl>(D) ||
@@ -4662,7 +4544,7 @@ CGDebugInfo::EmitTypeForVarWithBlocksAttr(const VarDecl *VD,
     if (NumPaddingBytes.isPositive()) {
       llvm::APInt pad(32, NumPaddingBytes.getQuantity());
       FType = CGM.getContext().getConstantArrayType(
-          CGM.getContext().CharTy, pad, nullptr, ArraySizeModifier::Normal, 0);
+          CGM.getContext().CharTy, pad, nullptr, ArrayType::Normal, 0);
       EltTys.push_back(CreateMemberType(Unit, FType, "", &FieldOffset));
     }
   }
@@ -4733,8 +4615,8 @@ llvm::DILocalVariable *CGDebugInfo::EmitDeclare(const VarDecl *VD,
   // If this is implicit parameter of CXXThis or ObjCSelf kind, then give it an
   // object pointer flag.
   if (const auto *IPD = dyn_cast<ImplicitParamDecl>(VD)) {
-    if (IPD->getParameterKind() == ImplicitParamKind::CXXThis ||
-        IPD->getParameterKind() == ImplicitParamKind::ObjCSelf)
+    if (IPD->getParameterKind() == ImplicitParamDecl::CXXThis ||
+        IPD->getParameterKind() == ImplicitParamDecl::ObjCSelf)
       Flags |= llvm::DINode::FlagObjectPointer;
   }
 
@@ -4865,40 +4747,6 @@ llvm::DILocalVariable *CGDebugInfo::EmitDeclare(const VarDecl *VD,
   return D;
 }
 
-llvm::DIType *CGDebugInfo::CreateBindingDeclType(const BindingDecl *BD) {
-  llvm::DIFile *Unit = getOrCreateFile(BD->getLocation());
-
-  // If the declaration is bound to a bitfield struct field, its type may have a
-  // size that is different from its deduced declaration type's.
-  if (const MemberExpr *ME = dyn_cast<MemberExpr>(BD->getBinding())) {
-    if (const FieldDecl *FD = dyn_cast<FieldDecl>(ME->getMemberDecl())) {
-      if (FD->isBitField()) {
-        ASTContext &Context = CGM.getContext();
-        const CGRecordLayout &RL =
-            CGM.getTypes().getCGRecordLayout(FD->getParent());
-        const CGBitFieldInfo &Info = RL.getBitFieldInfo(FD);
-
-        // Find an integer type with the same bitwidth as the bitfield size. If
-        // no suitable type is present in the target, give up on producing debug
-        // information as it would be wrong. It is certainly possible to produce
-        // correct debug info, but the logic isn't currently implemented.
-        uint64_t BitfieldSizeInBits = Info.Size;
-        QualType IntTy =
-            Context.getIntTypeForBitwidth(BitfieldSizeInBits, Info.IsSigned);
-        if (IntTy.isNull())
-          return nullptr;
-        Qualifiers Quals = BD->getType().getQualifiers();
-        QualType FinalTy = Context.getQualifiedType(IntTy, Quals);
-        llvm::DIType *Ty = getOrCreateType(FinalTy, Unit);
-        assert(Ty);
-        return Ty;
-      }
-    }
-  }
-
-  return getOrCreateType(BD->getType(), Unit);
-}
-
 llvm::DILocalVariable *CGDebugInfo::EmitDeclare(const BindingDecl *BD,
                                                 llvm::Value *Storage,
                                                 std::optional<unsigned> ArgNo,
@@ -4913,7 +4761,8 @@ llvm::DILocalVariable *CGDebugInfo::EmitDeclare(const BindingDecl *BD,
   if (isa<DeclRefExpr>(BD->getBinding()))
     return nullptr;
 
-  llvm::DIType *Ty = CreateBindingDeclType(BD);
+  llvm::DIFile *Unit = getOrCreateFile(BD->getLocation());
+  llvm::DIType *Ty = getOrCreateType(BD->getType(), Unit);
 
   // If there is no debug info for this type then do not emit debug info
   // for this variable.
@@ -4939,7 +4788,6 @@ llvm::DILocalVariable *CGDebugInfo::EmitDeclare(const BindingDecl *BD,
   unsigned Column = getColumnNumber(BD->getLocation());
   StringRef Name = BD->getName();
   auto *Scope = cast<llvm::DIScope>(LexicalBlockStack.back());
-  llvm::DIFile *Unit = getOrCreateFile(BD->getLocation());
   // Create the descriptor for the variable.
   llvm::DILocalVariable *D = DBuilder.createAutoVariable(
       Scope, Name, Unit, Line, Ty, CGM.getLangOpts().Optimize,
@@ -4955,11 +4803,6 @@ llvm::DILocalVariable *CGDebugInfo::EmitDeclare(const BindingDecl *BD,
       const uint64_t fieldOffset = layout.getFieldOffset(fieldIndex);
 
       if (fieldOffset != 0) {
-        // Currently if the field offset is not a multiple of byte, the produced
-        // location would not be accurate. Therefore give up.
-        if (fieldOffset % CGM.getContext().getCharWidth() != 0)
-          return nullptr;
-
         Expr.push_back(llvm::dwarf::DW_OP_plus_uconst);
         Expr.push_back(
             CGM.getContext().toCharUnitsFromBits(fieldOffset).getQuantity());
@@ -4995,15 +4838,11 @@ CGDebugInfo::EmitDeclareOfAutoVariable(const VarDecl *VD, llvm::Value *Storage,
                                        const bool UsePointerValue) {
   assert(CGM.getCodeGenOpts().hasReducedDebugInfo());
 
-  if (auto *DD = dyn_cast<DecompositionDecl>(VD)) {
+  if (auto *DD = dyn_cast<DecompositionDecl>(VD))
     for (auto *B : DD->bindings()) {
       EmitDeclare(B, Storage, std::nullopt, Builder,
                   VD->getType()->isReferenceType());
     }
-    // Don't emit an llvm.dbg.declare for the composite storage as it doesn't
-    // correspond to a user variable.
-    return nullptr;
-  }
 
   return EmitDeclare(VD, Storage, std::nullopt, Builder, UsePointerValue);
 }
@@ -5067,7 +4906,7 @@ void CGDebugInfo::EmitDeclareOfBlockDeclRefVariable(
   // Self is passed along as an implicit non-arg variable in a
   // block. Mark it as the object pointer.
   if (const auto *IPD = dyn_cast<ImplicitParamDecl>(VD))
-    if (IPD->getParameterKind() == ImplicitParamKind::ObjCSelf)
+    if (IPD->getParameterKind() == ImplicitParamDecl::ObjCSelf)
       Ty = CreateSelfType(VD->getType(), Ty);
 
   // Get location information.
@@ -5445,54 +5284,6 @@ static bool IsReconstitutableType(QualType QT) {
   return T.Reconstitutable;
 }
 
-bool CGDebugInfo::HasReconstitutableArgs(
-    ArrayRef<TemplateArgument> Args) const {
-  return llvm::all_of(Args, [&](const TemplateArgument &TA) {
-    switch (TA.getKind()) {
-    case TemplateArgument::Template:
-      // Easy to reconstitute - the value of the parameter in the debug
-      // info is the string name of the template. The template name
-      // itself won't benefit from any name rebuilding, but that's a
-      // representational limitation - maybe DWARF could be
-      // changed/improved to use some more structural representation.
-      return true;
-    case TemplateArgument::Declaration:
-      // Reference and pointer non-type template parameters point to
-      // variables, functions, etc and their value is, at best (for
-      // variables) represented as an address - not a reference to the
-      // DWARF describing the variable/function/etc. This makes it hard,
-      // possibly impossible to rebuild the original name - looking up
-      // the address in the executable file's symbol table would be
-      // needed.
-      return false;
-    case TemplateArgument::NullPtr:
-      // These could be rebuilt, but figured they're close enough to the
-      // declaration case, and not worth rebuilding.
-      return false;
-    case TemplateArgument::Pack:
-      // A pack is invalid if any of the elements of the pack are
-      // invalid.
-      return HasReconstitutableArgs(TA.getPackAsArray());
-    case TemplateArgument::Integral:
-      // Larger integers get encoded as DWARF blocks which are a bit
-      // harder to parse back into a large integer, etc - so punting on
-      // this for now. Re-parsing the integers back into APInt is
-      // probably feasible some day.
-      return TA.getAsIntegral().getBitWidth() <= 64 &&
-             IsReconstitutableType(TA.getIntegralType());
-    case TemplateArgument::StructuralValue:
-      return false;
-    case TemplateArgument::Type:
-      return IsReconstitutableType(TA.getAsType());
-    case TemplateArgument::Expression:
-      return IsReconstitutableType(TA.getAsExpr()->getType());
-    default:
-      llvm_unreachable("Other, unresolved, template arguments should "
-                       "not be seen here");
-    }
-  });
-}
-
 std::string CGDebugInfo::GetName(const Decl *D, bool Qualified) const {
   std::string Name;
   llvm::raw_string_ostream OS(Name);
@@ -5519,7 +5310,47 @@ std::string CGDebugInfo::GetName(const Decl *D, bool Qualified) const {
   } else if (auto *VD = dyn_cast<VarDecl>(ND)) {
     Args = GetTemplateArgs(VD);
   }
-
+  std::function<bool(ArrayRef<TemplateArgument>)> HasReconstitutableArgs =
+      [&](ArrayRef<TemplateArgument> Args) {
+        return llvm::all_of(Args, [&](const TemplateArgument &TA) {
+          switch (TA.getKind()) {
+          case TemplateArgument::Template:
+            // Easy to reconstitute - the value of the parameter in the debug
+            // info is the string name of the template. (so the template name
+            // itself won't benefit from any name rebuilding, but that's a
+            // representational limitation - maybe DWARF could be
+            // changed/improved to use some more structural representation)
+            return true;
+          case TemplateArgument::Declaration:
+            // Reference and pointer non-type template parameters point to
+            // variables, functions, etc and their value is, at best (for
+            // variables) represented as an address - not a reference to the
+            // DWARF describing the variable/function/etc. This makes it hard,
+            // possibly impossible to rebuild the original name - looking up the
+            // address in the executable file's symbol table would be needed.
+            return false;
+          case TemplateArgument::NullPtr:
+            // These could be rebuilt, but figured they're close enough to the
+            // declaration case, and not worth rebuilding.
+            return false;
+          case TemplateArgument::Pack:
+            // A pack is invalid if any of the elements of the pack are invalid.
+            return HasReconstitutableArgs(TA.getPackAsArray());
+          case TemplateArgument::Integral:
+            // Larger integers get encoded as DWARF blocks which are a bit
+            // harder to parse back into a large integer, etc - so punting on
+            // this for now. Re-parsing the integers back into APInt is probably
+            // feasible some day.
+            return TA.getAsIntegral().getBitWidth() <= 64 &&
+                   IsReconstitutableType(TA.getIntegralType());
+          case TemplateArgument::Type:
+            return IsReconstitutableType(TA.getAsType());
+          default:
+            llvm_unreachable("Other, unresolved, template arguments should "
+                             "not be seen here");
+          }
+        });
+      };
   // A conversion operator presents complications/ambiguity if there's a
   // conversion to class template that is itself a template, eg:
   // template<typename T>
@@ -5702,8 +5533,25 @@ void CGDebugInfo::EmitGlobalVariable(const ValueDecl *VD, const APValue &Init) {
   auto &GV = DeclCache[VD];
   if (GV)
     return;
+  llvm::DIExpression *InitExpr = nullptr;
+  if (CGM.getContext().getTypeSize(VD->getType()) <= 64) {
+    // FIXME: Add a representation for integer constants wider than 64 bits.
+    if (Init.isInt()) {
+      const llvm::APSInt &InitInt = Init.getInt();
+      std::optional<uint64_t> InitIntOpt;
+      if (InitInt.isUnsigned())
+        InitIntOpt = InitInt.tryZExtValue();
+      else if (auto tmp = InitInt.trySExtValue(); tmp.has_value())
+        // Transform a signed optional to unsigned optional. When cpp 23 comes,
+        // use std::optional::transform
+        InitIntOpt = (uint64_t)tmp.value();
+      if (InitIntOpt)
+        InitExpr = DBuilder.createConstantValueExpression(InitIntOpt.value());
+    } else if (Init.isFloat())
+      InitExpr = DBuilder.createConstantValueExpression(
+          Init.getFloat().bitcastToAPInt().getZExtValue());
+  }
 
-  llvm::DIExpression *InitExpr = createConstantValueExpression(VD, Init);
   llvm::MDTuple *TemplateParameters = nullptr;
 
   if (isa<VarTemplateSpecializationDecl>(VD))
@@ -6039,33 +5887,4 @@ llvm::DINode::DIFlags CGDebugInfo::getCallSiteRelatedAttrs() const {
     return llvm::DINode::FlagZero;
 
   return llvm::DINode::FlagAllCallsDescribed;
-}
-
-llvm::DIExpression *
-CGDebugInfo::createConstantValueExpression(const clang::ValueDecl *VD,
-                                           const APValue &Val) {
-  // FIXME: Add a representation for integer constants wider than 64 bits.
-  if (CGM.getContext().getTypeSize(VD->getType()) > 64)
-    return nullptr;
-
-  if (Val.isFloat())
-    return DBuilder.createConstantValueExpression(
-        Val.getFloat().bitcastToAPInt().getZExtValue());
-
-  if (!Val.isInt())
-    return nullptr;
-
-  llvm::APSInt const &ValInt = Val.getInt();
-  std::optional<uint64_t> ValIntOpt;
-  if (ValInt.isUnsigned())
-    ValIntOpt = ValInt.tryZExtValue();
-  else if (auto tmp = ValInt.trySExtValue())
-    // Transform a signed optional to unsigned optional. When cpp 23 comes,
-    // use std::optional::transform
-    ValIntOpt = static_cast<uint64_t>(*tmp);
-
-  if (ValIntOpt)
-    return DBuilder.createConstantValueExpression(ValIntOpt.value());
-
-  return nullptr;
 }

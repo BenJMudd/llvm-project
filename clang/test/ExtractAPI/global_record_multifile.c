@@ -2,7 +2,7 @@
 // RUN: split-file %s %t
 // RUN: sed -e "s@INPUT_DIR@%{/t:regex_replacement}@g" \
 // RUN: %t/reference.output.json.in >> %t/reference.output.json
-// RUN: %clang -extract-api --pretty-sgf --product-name=GlobalRecord -target arm64-apple-macosx \
+// RUN: %clang -extract-api --product-name=GlobalRecord -target arm64-apple-macosx \
 // RUN: %t/input1.h %t/input2.h %t/input3.h -o %t/output.json | FileCheck -allow-empty %s
 
 // Generator version is not consistent across test runs, normalize it.
@@ -70,10 +70,6 @@ char unavailable __attribute__((unavailable));
         {
           "kind": "identifier",
           "spelling": "num"
-        },
-        {
-          "kind": "text",
-          "spelling": ";"
         }
       ],
       "identifier": {
@@ -86,8 +82,8 @@ char unavailable __attribute__((unavailable));
       },
       "location": {
         "position": {
-          "character": 4,
-          "line": 0
+          "character": 5,
+          "line": 1
         },
         "uri": "file://INPUT_DIR/input1.h"
       },
@@ -203,12 +199,12 @@ char unavailable __attribute__((unavailable));
           {
             "range": {
               "end": {
-                "character": 3,
-                "line": 0
+                "character": 4,
+                "line": 1
               },
               "start": {
-                "character": 3,
-                "line": 0
+                "character": 4,
+                "line": 1
               }
             },
             "text": ""
@@ -216,12 +212,12 @@ char unavailable __attribute__((unavailable));
           {
             "range": {
               "end": {
-                "character": 26,
-                "line": 1
+                "character": 27,
+                "line": 2
               },
               "start": {
-                "character": 2,
-                "line": 1
+                "character": 3,
+                "line": 2
               }
             },
             "text": " \\brief Add two numbers."
@@ -229,12 +225,12 @@ char unavailable __attribute__((unavailable));
           {
             "range": {
               "end": {
-                "character": 29,
-                "line": 2
+                "character": 30,
+                "line": 3
               },
               "start": {
-                "character": 2,
-                "line": 2
+                "character": 3,
+                "line": 3
               }
             },
             "text": " \\param [in]  x   A number."
@@ -242,12 +238,12 @@ char unavailable __attribute__((unavailable));
           {
             "range": {
               "end": {
-                "character": 35,
-                "line": 3
+                "character": 36,
+                "line": 4
               },
               "start": {
-                "character": 2,
-                "line": 3
+                "character": 3,
+                "line": 4
               }
             },
             "text": " \\param [in]  y   Another number."
@@ -255,12 +251,12 @@ char unavailable __attribute__((unavailable));
           {
             "range": {
               "end": {
-                "character": 40,
-                "line": 4
+                "character": 41,
+                "line": 5
               },
               "start": {
-                "character": 2,
-                "line": 4
+                "character": 3,
+                "line": 5
               }
             },
             "text": " \\param [out] res The result of x + y."
@@ -268,12 +264,12 @@ char unavailable __attribute__((unavailable));
           {
             "range": {
               "end": {
-                "character": 3,
-                "line": 5
+                "character": 4,
+                "line": 6
               },
               "start": {
-                "character": 0,
-                "line": 5
+                "character": 1,
+                "line": 6
               }
             },
             "text": " "
@@ -371,8 +367,8 @@ char unavailable __attribute__((unavailable));
       },
       "location": {
         "position": {
-          "character": 5,
-          "line": 6
+          "character": 6,
+          "line": 7
         },
         "uri": "file://INPUT_DIR/input2.h"
       },

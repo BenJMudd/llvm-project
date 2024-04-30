@@ -14,7 +14,6 @@
 #include "flang/Common/enum-set.h"
 #include "flang/Common/reference.h"
 #include "flang/Common/visit.h"
-#include "flang/Semantics/module-dependences.h"
 #include "llvm/ADT/DenseMapInfo.h"
 
 #include <array>
@@ -46,38 +45,8 @@ using SymbolVector = std::vector<SymbolRef>;
 using MutableSymbolRef = common::Reference<Symbol>;
 using MutableSymbolVector = std::vector<MutableSymbolRef>;
 
-// Mixin for details with OpenMP declarative constructs.
-class WithOmpDeclarative {
-  using OmpAtomicOrderType = common::OmpAtomicDefaultMemOrderType;
-
-public:
-  ENUM_CLASS(RequiresFlag, ReverseOffload, UnifiedAddress, UnifiedSharedMemory,
-      DynamicAllocators);
-  using RequiresFlags = common::EnumSet<RequiresFlag, RequiresFlag_enumSize>;
-
-  bool has_ompRequires() const { return ompRequires_.has_value(); }
-  const RequiresFlags *ompRequires() const {
-    return ompRequires_ ? &*ompRequires_ : nullptr;
-  }
-  void set_ompRequires(RequiresFlags flags) { ompRequires_ = flags; }
-
-  bool has_ompAtomicDefaultMemOrder() const {
-    return ompAtomicDefaultMemOrder_.has_value();
-  }
-  const OmpAtomicOrderType *ompAtomicDefaultMemOrder() const {
-    return ompAtomicDefaultMemOrder_ ? &*ompAtomicDefaultMemOrder_ : nullptr;
-  }
-  void set_ompAtomicDefaultMemOrder(OmpAtomicOrderType flags) {
-    ompAtomicDefaultMemOrder_ = flags;
-  }
-
-private:
-  std::optional<RequiresFlags> ompRequires_;
-  std::optional<OmpAtomicOrderType> ompAtomicDefaultMemOrder_;
-};
-
 // A module or submodule.
-class ModuleDetails : public WithOmpDeclarative {
+class ModuleDetails {
 public:
   ModuleDetails(bool isSubmodule = false) : isSubmodule_{isSubmodule} {}
   bool isSubmodule() const { return isSubmodule_; }
@@ -87,22 +56,14 @@ public:
   void set_scope(const Scope *);
   bool isDefaultPrivate() const { return isDefaultPrivate_; }
   void set_isDefaultPrivate(bool yes = true) { isDefaultPrivate_ = yes; }
-  std::optional<ModuleCheckSumType> moduleFileHash() const {
-    return moduleFileHash_;
-  }
-  void set_moduleFileHash(ModuleCheckSumType x) { moduleFileHash_ = x; }
-  const Symbol *previous() const { return previous_; }
-  void set_previous(const Symbol *p) { previous_ = p; }
 
 private:
   bool isSubmodule_;
   bool isDefaultPrivate_{false};
   const Scope *scope_{nullptr};
-  std::optional<ModuleCheckSumType> moduleFileHash_;
-  const Symbol *previous_{nullptr}; // same name, different module file hash
 };
 
-class MainProgramDetails : public WithOmpDeclarative {
+class MainProgramDetails {
 public:
 private:
 };
@@ -121,62 +82,10 @@ private:
   bool isExplicitBindName_{false};
 };
 
-// Device type specific OpenACC routine information
-class OpenACCRoutineDeviceTypeInfo {
-public:
-  bool isSeq() const { return isSeq_; }
-  void set_isSeq(bool value = true) { isSeq_ = value; }
-  bool isVector() const { return isVector_; }
-  void set_isVector(bool value = true) { isVector_ = value; }
-  bool isWorker() const { return isWorker_; }
-  void set_isWorker(bool value = true) { isWorker_ = value; }
-  bool isGang() const { return isGang_; }
-  void set_isGang(bool value = true) { isGang_ = value; }
-  unsigned gangDim() const { return gangDim_; }
-  void set_gangDim(unsigned value) { gangDim_ = value; }
-  const std::string *bindName() const {
-    return bindName_ ? &*bindName_ : nullptr;
-  }
-  void set_bindName(std::string &&name) { bindName_ = std::move(name); }
-  void set_dType(Fortran::common::OpenACCDeviceType dType) {
-    deviceType_ = dType;
-  }
-  Fortran::common::OpenACCDeviceType dType() const { return deviceType_; }
-
-private:
-  bool isSeq_{false};
-  bool isVector_{false};
-  bool isWorker_{false};
-  bool isGang_{false};
-  unsigned gangDim_{0};
-  std::optional<std::string> bindName_;
-  Fortran::common::OpenACCDeviceType deviceType_{
-      Fortran::common::OpenACCDeviceType::None};
-};
-
-// OpenACC routine information. Device independent info are stored on the
-// OpenACCRoutineInfo instance while device dependent info are stored
-// in as objects in the OpenACCRoutineDeviceTypeInfo list.
-class OpenACCRoutineInfo : public OpenACCRoutineDeviceTypeInfo {
-public:
-  bool isNohost() const { return isNohost_; }
-  void set_isNohost(bool value = true) { isNohost_ = value; }
-  std::list<OpenACCRoutineDeviceTypeInfo> &deviceTypeInfos() {
-    return deviceTypeInfos_;
-  }
-  void add_deviceTypeInfo(OpenACCRoutineDeviceTypeInfo &info) {
-    deviceTypeInfos_.push_back(info);
-  }
-
-private:
-  std::list<OpenACCRoutineDeviceTypeInfo> deviceTypeInfos_;
-  bool isNohost_{false};
-};
-
 // A subroutine or function definition, or a subprogram interface defined
 // in an INTERFACE block as part of the definition of a dummy procedure
 // or a procedure pointer (with just POINTER).
-class SubprogramDetails : public WithBindName, public WithOmpDeclarative {
+class SubprogramDetails : public WithBindName {
 public:
   bool isFunction() const { return result_ != nullptr; }
   bool isInterface() const { return isInterface_; }
@@ -228,12 +137,6 @@ public:
   void set_cudaClusterDims(std::vector<std::int64_t> &&x) {
     cudaClusterDims_ = std::move(x);
   }
-  const std::vector<OpenACCRoutineInfo> &openACCRoutineInfos() const {
-    return openACCRoutineInfos_;
-  }
-  void add_openACCRoutineInfo(OpenACCRoutineInfo info) {
-    openACCRoutineInfos_.push_back(info);
-  }
 
 private:
   bool isInterface_{false}; // true if this represents an interface-body
@@ -251,8 +154,6 @@ private:
   std::optional<common::CUDASubprogramAttrs> cudaSubprogramAttrs_;
   // CUDA LAUNCH_BOUNDS(...) & CLUSTER_DIMS(...) from prefix
   std::vector<std::int64_t> cudaLaunchBounds_, cudaClusterDims_;
-  // OpenACC routine information
-  std::vector<OpenACCRoutineInfo> openACCRoutineInfos_;
 
   friend llvm::raw_ostream &operator<<(
       llvm::raw_ostream &, const SubprogramDetails &);
@@ -299,8 +200,7 @@ private:
       llvm::raw_ostream &, const EntityDetails &);
 };
 
-// Symbol is associated with a name or expression in an ASSOCIATE,
-// SELECT TYPE, or SELECT RANK construct.
+// Symbol is associated with a name or expression in a SELECT TYPE or ASSOCIATE.
 class AssocEntityDetails : public EntityDetails {
 public:
   AssocEntityDetails() {}
@@ -310,32 +210,11 @@ public:
   AssocEntityDetails &operator=(const AssocEntityDetails &) = default;
   AssocEntityDetails &operator=(AssocEntityDetails &&) = default;
   const MaybeExpr &expr() const { return expr_; }
-
-  // SELECT RANK's rank cases will return a populated result for
-  // RANK(n) and RANK(*), and IsAssumedRank() will be true for
-  // RANK DEFAULT.
-  std::optional<int> rank() const {
-    int r{rank_.value_or(0)};
-    if (r == isAssumedSize) {
-      return 1; // RANK(*)
-    } else if (r == isAssumedRank) {
-      return std::nullopt; // RANK DEFAULT
-    } else {
-      return rank_;
-    }
-  }
-  bool IsAssumedSize() const { return rank_.value_or(0) == isAssumedSize; }
-  bool IsAssumedRank() const { return rank_.value_or(0) == isAssumedRank; }
   void set_rank(int rank);
-  void set_IsAssumedSize();
-  void set_IsAssumedRank();
+  std::optional<int> rank() const { return rank_; }
 
 private:
   MaybeExpr expr_;
-  // Populated for SELECT RANK with rank (n>=0) for RANK(n),
-  // isAssumedSize for RANK(*), or isAssumedRank for RANK DEFAULT.
-  static constexpr int isAssumedSize{-1}; // RANK(*)
-  static constexpr int isAssumedRank{-2}; // RANK DEFAULT
   std::optional<int> rank_;
 };
 llvm::raw_ostream &operator<<(llvm::raw_ostream &, const AssocEntityDetails &);
@@ -371,10 +250,11 @@ public:
   void set_ignoreTKR(common::IgnoreTKRSet set) { ignoreTKR_ = set; }
   bool IsArray() const { return !shape_.empty(); }
   bool IsCoarray() const { return !coshape_.empty(); }
-  bool IsAssumedShape() const {
+  bool CanBeAssumedShape() const {
     return isDummy() && shape_.CanBeAssumedShape();
   }
   bool CanBeDeferredShape() const { return shape_.CanBeDeferredShape(); }
+  bool IsAssumedSize() const { return isDummy() && shape_.CanBeAssumedSize(); }
   bool IsAssumedRank() const { return isDummy() && shape_.IsAssumedRank(); }
   std::optional<common::CUDADataAttr> cudaDataAttr() const {
     return cudaDataAttr_;
@@ -420,12 +300,9 @@ public:
   ProcEntityDetails(ProcEntityDetails &&) = default;
   ProcEntityDetails &operator=(const ProcEntityDetails &) = default;
 
-  const Symbol *rawProcInterface() const { return rawProcInterface_; }
   const Symbol *procInterface() const { return procInterface_; }
-  void set_procInterfaces(const Symbol &raw, const Symbol &resolved) {
-    rawProcInterface_ = &raw;
-    procInterface_ = &resolved;
-  }
+  void set_procInterface(const Symbol &sym) { procInterface_ = &sym; }
+  bool IsInterfaceSet() { return procInterface_ || type(); }
   inline bool HasExplicitInterface() const;
 
   // Be advised: !init().has_value() => uninitialized pointer,
@@ -435,17 +312,11 @@ public:
   void set_init(std::nullptr_t) { init_ = nullptr; }
   bool isCUDAKernel() const { return isCUDAKernel_; }
   void set_isCUDAKernel(bool yes = true) { isCUDAKernel_ = yes; }
-  std::optional<SourceName> usedAsProcedureHere() const {
-    return usedAsProcedureHere_;
-  }
-  void set_usedAsProcedureHere(SourceName here) { usedAsProcedureHere_ = here; }
 
 private:
-  const Symbol *rawProcInterface_{nullptr};
   const Symbol *procInterface_{nullptr};
   std::optional<const Symbol *> init_;
   bool isCUDAKernel_{false};
-  std::optional<SourceName> usedAsProcedureHere_;
   friend llvm::raw_ostream &operator<<(
       llvm::raw_ostream &, const ProcEntityDetails &);
 };
@@ -655,9 +526,7 @@ public:
   const SymbolVector &uses() const { return uses_; }
 
   // specific and derivedType indicate a specific procedure or derived type
-  // with the same name as this generic. Only one of them may be set in
-  // a scope that declares them, but both can be set during USE association
-  // when generics are combined.
+  // with the same name as this generic. Only one of them may be set.
   Symbol *specific() { return specific_; }
   const Symbol *specific() const { return specific_; }
   void set_specific(Symbol &specific);
@@ -725,10 +594,7 @@ public:
       // OpenACC data-sharing attribute
       AccPrivate, AccFirstPrivate, AccShared,
       // OpenACC data-mapping attribute
-      AccCopy, AccCopyIn, AccCopyInReadOnly, AccCopyOut, AccCreate, AccDelete,
-      AccPresent, AccLink, AccDeviceResident, AccDevicePtr,
-      // OpenACC declare
-      AccDeclare,
+      AccCopy, AccCopyIn, AccCopyOut, AccCreate, AccDelete, AccPresent,
       // OpenACC data-movement attribute
       AccDevice, AccHost, AccSelf,
       // OpenACC miscellaneous flags
@@ -736,9 +602,8 @@ public:
       // OpenMP data-sharing attribute
       OmpShared, OmpPrivate, OmpLinear, OmpFirstPrivate, OmpLastPrivate,
       // OpenMP data-mapping attribute
-      OmpMapTo, OmpMapFrom, OmpMapToFrom, OmpMapAlloc, OmpMapRelease,
-      OmpMapDelete, OmpUseDevicePtr, OmpUseDeviceAddr, OmpIsDevicePtr,
-      OmpHasDeviceAddr,
+      OmpMapTo, OmpMapFrom, OmpMapAlloc, OmpMapRelease, OmpMapDelete,
+      OmpUseDevicePtr, OmpUseDeviceAddr,
       // OpenMP data-copying attribute
       OmpCopyIn, OmpCopyPrivate,
       // OpenMP miscellaneous flags
@@ -768,7 +633,6 @@ public:
   void set_offset(std::size_t offset) { offset_ = offset; }
   // Give the symbol a name with a different source location but same chars.
   void ReplaceName(const SourceName &);
-  std::string OmpFlagToClauseName(Flag ompFlag);
 
   // Does symbol have this type of details?
   template <typename D> bool has() const {
@@ -839,9 +703,6 @@ public:
             [](const auto &) { return false; },
         },
         details_);
-  }
-  bool HasLocalLocality() const {
-    return test(Flag::LocalityLocal) || test(Flag::LocalityLocalInit);
   }
 
   bool operator==(const Symbol &that) const { return this == &that; }
@@ -926,14 +787,12 @@ private:
               return iface ? iface->RankImpl(depth) : 0;
             },
             [](const AssocEntityDetails &aed) {
-              if (auto assocRank{aed.rank()}) {
-                // RANK(n) & RANK(*)
-                return *assocRank;
-              } else if (aed.IsAssumedRank()) {
-                // RANK DEFAULT
-                return 0;
-              } else if (const auto &expr{aed.expr()}) {
-                return expr->Rank();
+              if (const auto &expr{aed.expr()}) {
+                if (auto assocRank{aed.rank()}) {
+                  return *assocRank;
+                } else {
+                  return expr->Rank();
+                }
               } else {
                 return 0;
               }
@@ -1053,7 +912,7 @@ struct SymbolAddressCompare {
 // Symbol comparison is usually based on the order of cooked source
 // stream creation and, when both are from the same cooked source,
 // their positions in that cooked source stream.
-// Don't use this comparator or SourceOrderedSymbolSet to hold
+// Don't use this comparator or OrderedSymbolSet to hold
 // Symbols that might be subject to ReplaceName().
 struct SymbolSourcePositionCompare {
   // These functions are implemented in Evaluate/tools.cpp to

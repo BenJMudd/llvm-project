@@ -21,12 +21,9 @@
 #include "../types.h"
 
 template <bool Count, typename It>
-constexpr void
-check_forward(int* first, int* last, std::iter_difference_t<It> n, int* expected, int expected_equals_count = -1) {
+constexpr void check_forward(int* first, int* last, std::iter_difference_t<It> n, int* expected) {
   using Difference = std::iter_difference_t<It>;
   Difference const M = (expected - first); // expected travel distance
-  // `expected_equals_count` is only relevant when `Count` is true.
-  assert(Count || expected_equals_count == -1);
 
   {
     It it(first);
@@ -45,7 +42,6 @@ check_forward(int* first, int* last, std::iter_difference_t<It> n, int* expected
     // regardless of the iterator category.
     assert(it.stride_count() == M);
     assert(it.stride_displacement() == M);
-    assert(it.equals_count() == expected_equals_count);
   }
 }
 
@@ -78,20 +74,9 @@ constexpr void check_forward_sized_sentinel(int* first, int* last, std::iter_dif
   }
 }
 
-struct Expected {
-  int stride_count;
-  int stride_displacement;
-  int equals_count;
-};
-
-template <bool Count, typename It>
-constexpr void
-check_backward(int* first, int* last, std::iter_difference_t<It> n, int* expected, Expected expected_counts) {
-  // Check preconditions for `advance` when called with negative `n`
-  // (see [range.iter.op.advance]). In addition, allow `n == 0`.
-  assert(n <= 0);
-  static_assert(std::bidirectional_iterator<It>);
-
+template <typename It>
+constexpr void check_backward(int* first, int* last, std::iter_difference_t<It> n, int* expected) {
+  static_assert(std::random_access_iterator<It>, "This test doesn't support non random access iterators");
   using Difference = std::iter_difference_t<It>;
   Difference const M = (expected - last); // expected travel distance (which is negative)
 
@@ -107,14 +92,9 @@ check_backward(int* first, int* last, std::iter_difference_t<It> n, int* expecte
   {
     auto it = stride_counting_iterator(It(last));
     auto sent = stride_counting_iterator(It(first));
-    static_assert(std::bidirectional_iterator<stride_counting_iterator<It>>);
-    static_assert(Count == !std::sized_sentinel_for<It, It>);
-
     (void)std::ranges::advance(it, n, sent);
-
-    assert(it.stride_count() == expected_counts.stride_count);
-    assert(it.stride_displacement() == expected_counts.stride_displacement);
-    assert(it.equals_count() == expected_counts.equals_count);
+    assert(it.stride_count() <= 1);
+    assert(it.stride_displacement() <= 1);
   }
 }
 
@@ -191,17 +171,13 @@ constexpr bool test() {
 
       {
         int* expected = n > size ? range + size : range + n;
-        int equals_count = n > size ? size + 1 : n;
-
-        // clang-format off
         check_forward<false, cpp17_input_iterator<int*>>(  range, range+size, n, expected);
         check_forward<false, cpp20_input_iterator<int*>>(  range, range+size, n, expected);
-        check_forward<true,  forward_iterator<int*>>(      range, range+size, n, expected, equals_count);
-        check_forward<true,  bidirectional_iterator<int*>>(range, range+size, n, expected, equals_count);
-        check_forward<true,  random_access_iterator<int*>>(range, range+size, n, expected, equals_count);
-        check_forward<true,  contiguous_iterator<int*>>(   range, range+size, n, expected, equals_count);
-        check_forward<true,  int*>(                        range, range+size, n, expected, equals_count);
-        // clang-format on
+        check_forward<true,  forward_iterator<int*>>(      range, range+size, n, expected);
+        check_forward<true,  bidirectional_iterator<int*>>(range, range+size, n, expected);
+        check_forward<true,  random_access_iterator<int*>>(range, range+size, n, expected);
+        check_forward<true,  contiguous_iterator<int*>>(   range, range+size, n, expected);
+        check_forward<true,  int*>(                        range, range+size, n, expected);
 
         check_forward_sized_sentinel<cpp17_input_iterator<int*>>(  range, range+size, n, expected);
         check_forward_sized_sentinel<cpp20_input_iterator<int*>>(  range, range+size, n, expected);
@@ -212,32 +188,14 @@ constexpr bool test() {
         check_forward_sized_sentinel<int*>(                        range, range+size, n, expected);
       }
 
-      // Input and forward iterators are not tested as the backwards case does
-      // not apply for them.
       {
+        // Note that we can only test ranges::advance with a negative n for iterators that
+        // are sized sentinels for themselves, because ranges::advance is UB otherwise.
+        // In particular, that excludes bidirectional_iterators since those are not sized sentinels.
         int* expected = n > size ? range : range + size - n;
-        {
-          Expected expected_counts = {
-              .stride_count        = static_cast<int>(range + size - expected),
-              .stride_displacement = -expected_counts.stride_count,
-              .equals_count        = n > size ? size + 1 : n,
-          };
-
-          check_backward<true, bidirectional_iterator<int*>>(range, range + size, -n, expected, expected_counts);
-        }
-        {
-          Expected expected_counts = {
-              // If `n >= size`, the algorithm can just do `it = std::move(sent);`
-              // instead of doing iterator arithmetic.
-              .stride_count        = (n >= size) ? 0 : 1,
-              .stride_displacement = (n >= size) ? 0 : 1,
-              .equals_count        = 0,
-          };
-
-          check_backward<false, random_access_iterator<int*>>(range, range + size, -n, expected, expected_counts);
-          check_backward<false, contiguous_iterator<int*>>(range, range + size, -n, expected, expected_counts);
-          check_backward<false, int*>(range, range + size, -n, expected, expected_counts);
-        }
+        check_backward<random_access_iterator<int*>>(range, range+size, -n, expected);
+        check_backward<contiguous_iterator<int*>>(   range, range+size, -n, expected);
+        check_backward<int*>(                        range, range+size, -n, expected);
       }
     }
   }

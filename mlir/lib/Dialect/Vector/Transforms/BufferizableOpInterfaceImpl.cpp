@@ -42,8 +42,8 @@ struct TransferReadOpInterface
     return false;
   }
 
-  AliasingValueList getAliasingValues(Operation *op, OpOperand &opOperand,
-                                      const AnalysisState &state) const {
+  AliasingOpResultList getAliasingOpResults(Operation *op, OpOperand &opOperand,
+                                            const AnalysisState &state) const {
     return {};
   }
 
@@ -142,8 +142,8 @@ struct GatherOpInterface
     return false;
   }
 
-  AliasingValueList getAliasingValues(Operation *op, OpOperand &opOperand,
-                                      const AnalysisState &state) const {
+  AliasingOpResultList getAliasingOpResults(Operation *op, OpOperand &opOperand,
+                                            const AnalysisState &state) const {
     return {};
   }
 
@@ -169,13 +169,13 @@ struct MaskOpInterface
     : public BufferizableOpInterface::ExternalModel<MaskOpInterface,
                                                     vector::MaskOp> {
   AliasingOpOperandList
-  getAliasingOpOperands(Operation *op, Value value,
+  getAliasingOpOperands(Operation *op, OpResult opResult,
                         const AnalysisState &state) const {
     // MaskOps do not have tensor OpOperands. The yielded values are the result
     // of the wrapped op.
     auto maskOp = cast<vector::MaskOp>(op);
     size_t resultNum = std::distance(op->getOpResults().begin(),
-                                     llvm::find(op->getOpResults(), value));
+                                     llvm::find(op->getOpResults(), opResult));
     auto yieldOp =
         cast<vector::YieldOp>(maskOp.getMaskRegion().front().getTerminator());
     return {{&yieldOp->getOpOperand(resultNum), BufferRelation::Equivalent}};
@@ -217,7 +217,8 @@ struct MaskOpInterface
     SmallVector<Value> newReturnValues(maskOp->getNumResults(), Value());
     SmallVector<Value> newYieldedValues;
     for (const auto &it : llvm::enumerate(yieldOp.getOperands())) {
-      if (llvm::is_contained(maskedOp->getOpResults(), it.value())) {
+      if (llvm::find(maskedOp->getOpResults(), it.value()) !=
+          maskedOp->getOpResults().end()) {
         newYieldedValues.push_back(it.value());
       } else {
         // This used to be a tensor result of the masked op, but is now a memref
@@ -225,7 +226,7 @@ struct MaskOpInterface
         newReturnValues[it.index()] = it.value();
       }
     }
-    rewriter.modifyOpInPlace(yieldOp, [&]() {
+    rewriter.updateRootInPlace(yieldOp, [&]() {
       yieldOp.getOperandsMutable().assign(newYieldedValues);
     });
 
@@ -264,8 +265,8 @@ struct YieldOpInterface
     return false;
   }
 
-  AliasingValueList getAliasingValues(Operation *op, OpOperand &opOperand,
-                                      const AnalysisState &state) const {
+  AliasingOpResultList getAliasingOpResults(Operation *op, OpOperand &opOperand,
+                                            const AnalysisState &state) const {
     return {{op->getParentOp()->getResult(opOperand.getOperandNumber()),
              BufferRelation::Equivalent}};
   }

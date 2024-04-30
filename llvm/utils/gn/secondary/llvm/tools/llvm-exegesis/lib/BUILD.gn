@@ -8,12 +8,9 @@ static_library("lib") {
     "//llvm/lib/CodeGen",
     "//llvm/lib/CodeGen/GlobalISel",
     "//llvm/lib/ExecutionEngine",
-    "//llvm/lib/ExecutionEngine/Orc",
-    "//llvm/lib/ExecutionEngine/RuntimeDyld",
+    "//llvm/lib/ExecutionEngine/MCJIT",
     "//llvm/lib/IR",
     "//llvm/lib/MC",
-    "//llvm/lib/MC/MCDisassembler",
-    "//llvm/lib/MC/MCParser",
     "//llvm/lib/MCA",
     "//llvm/lib/Object",
     "//llvm/lib/ObjectYAML",
@@ -36,7 +33,6 @@ static_library("lib") {
     "PerfHelper.cpp",
     "RegisterAliasing.cpp",
     "RegisterValue.cpp",
-    "ResultAggregator.cpp",
     "SchedClassResolution.cpp",
     "SerialSnippetGenerator.cpp",
     "SnippetFile.cpp",
@@ -45,7 +41,6 @@ static_library("lib") {
     "SubprocessMemory.cpp",
     "Target.cpp",
     "UopsBenchmarkRunner.cpp",
-    "ValidationEvent.cpp",
   ]
 
   deps += targets_with_exegesis

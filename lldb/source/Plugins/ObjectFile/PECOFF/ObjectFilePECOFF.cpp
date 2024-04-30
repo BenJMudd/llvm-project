@@ -14,6 +14,7 @@
 #include "lldb/Core/ModuleSpec.h"
 #include "lldb/Core/PluginManager.h"
 #include "lldb/Core/Section.h"
+#include "lldb/Core/StreamFile.h"
 #include "lldb/Interpreter/OptionValueDictionary.h"
 #include "lldb/Interpreter/OptionValueProperties.h"
 #include "lldb/Symbol/ObjectFile.h"
@@ -79,8 +80,8 @@ enum {
 
 class PluginProperties : public Properties {
 public:
-  static llvm::StringRef GetSettingName() {
-    return ObjectFilePECOFF::GetPluginNameStatic();
+  static ConstString GetSettingName() {
+    return ConstString(ObjectFilePECOFF::GetPluginNameStatic());
   }
 
   PluginProperties() {
@@ -791,10 +792,11 @@ void ObjectFilePECOFF::AppendFromCOFFSymbolTable(
   for (const auto &sym_ref : m_binary->symbols()) {
     const auto coff_sym_ref = m_binary->getCOFFSymbol(sym_ref);
     auto name_or_error = sym_ref.getName();
-    if (!name_or_error) {
-      LLDB_LOG_ERROR(log, name_or_error.takeError(),
-                     "ObjectFilePECOFF::AppendFromCOFFSymbolTable - failed to "
-                     "get symbol table entry name: {0}");
+    if (auto err = name_or_error.takeError()) {
+      LLDB_LOG(log,
+               "ObjectFilePECOFF::AppendFromCOFFSymbolTable - failed to get "
+               "symbol table entry name: {0}",
+               llvm::fmt_consume(std::move(err)));
       continue;
     }
     const llvm::StringRef sym_name = *name_or_error;
@@ -1008,7 +1010,6 @@ SectionType ObjectFilePECOFF::GetSectionType(llvm::StringRef sect_name,
           // .eh_frame can be truncated to 8 chars.
           .Cases(".eh_frame", ".eh_fram", eSectionTypeEHFrame)
           .Case(".gosymtab", eSectionTypeGoSymtab)
-          .Case("swiftast", eSectionTypeSwiftModules)
           .Default(eSectionTypeInvalid);
   if (section_type != eSectionTypeInvalid)
     return section_type;
@@ -1024,16 +1025,6 @@ SectionType ObjectFilePECOFF::GetSectionType(llvm::StringRef sect_name,
       return eSectionTypeData;
   }
   return eSectionTypeOther;
-}
-
-size_t ObjectFilePECOFF::GetSectionDataSize(Section *section) {
-  // For executables, SizeOfRawData (getFileSize()) is aligned by
-  // FileAlignment and the actual section size is in VirtualSize
-  // (getByteSize()). See the comment on
-  // llvm::object::COFFObjectFile::getSectionSize().
-  if (m_binary->getPE32Header() || m_binary->getPE32PlusHeader())
-    return std::min(section->GetByteSize(), section->GetFileSize());
-  return section->GetFileSize();
 }
 
 void ObjectFilePECOFF::CreateSections(SectionList &unified_section_list) {

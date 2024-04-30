@@ -49,7 +49,7 @@ else:
     import queue as queue
 
 
-def run_tidy(task_queue, lock, timeout, failed_files):
+def run_tidy(task_queue, lock, timeout):
     watchdog = None
     while True:
         command = task_queue.get()
@@ -63,14 +63,6 @@ def run_tidy(task_queue, lock, timeout, failed_files):
                 watchdog.start()
 
             stdout, stderr = proc.communicate()
-            if proc.returncode != 0:
-                if proc.returncode < 0:
-                    msg = "Terminated by signal %d : %s\n" % (
-                        -proc.returncode,
-                        " ".join(command),
-                    )
-                    stderr += msg.encode("utf-8")
-                failed_files.append(command)
 
             with lock:
                 sys.stdout.write(stdout.decode("utf-8") + "\n")
@@ -92,9 +84,9 @@ def run_tidy(task_queue, lock, timeout, failed_files):
             task_queue.task_done()
 
 
-def start_workers(max_tasks, tidy_caller, arguments):
+def start_workers(max_tasks, tidy_caller, task_queue, lock, timeout):
     for _ in range(max_tasks):
-        t = threading.Thread(target=tidy_caller, args=arguments)
+        t = threading.Thread(target=tidy_caller, args=(task_queue, lock, timeout))
         t.daemon = True
         t.start()
 
@@ -173,12 +165,6 @@ def main():
         help="checks filter, when not specified, use clang-tidy " "default",
         default="",
     )
-    parser.add_argument(
-        "-config-file",
-        dest="config_file",
-        help="Specify the path of .clang-tidy or custom config file",
-        default="",
-    )
     parser.add_argument("-use-color", action="store_true", help="Use colors in output")
     parser.add_argument(
         "-path", dest="build_path", help="Path used to read a compile command database."
@@ -186,21 +172,10 @@ def main():
     if yaml:
         parser.add_argument(
             "-export-fixes",
-            metavar="FILE_OR_DIRECTORY",
+            metavar="FILE",
             dest="export_fixes",
-            help="A directory or a yaml file to store suggested fixes in, "
-            "which can be applied with clang-apply-replacements. If the "
-            "parameter is a directory, the fixes of each compilation unit are "
-            "stored in individual yaml files in the directory.",
-        )
-    else:
-        parser.add_argument(
-            "-export-fixes",
-            metavar="DIRECTORY",
-            dest="export_fixes",
-            help="A directory to store suggested fixes in, which can be applied "
-            "with clang-apply-replacements. The fixes of each compilation unit are "
-            "stored in individual yaml files in the directory.",
+            help="Create a yaml file to store suggested fixes in, "
+            "which can be applied with clang-apply-replacements.",
         )
     parser.add_argument(
         "-extra-arg",
@@ -275,43 +250,17 @@ def main():
         max_task_count = multiprocessing.cpu_count()
     max_task_count = min(len(lines_by_file), max_task_count)
 
-    combine_fixes = False
-    export_fixes_dir = None
-    delete_fixes_dir = False
-    if args.export_fixes is not None:
-        # if a directory is given, create it if it does not exist
-        if args.export_fixes.endswith(os.path.sep) and not os.path.isdir(
-            args.export_fixes
-        ):
-            os.makedirs(args.export_fixes)
-
-        if not os.path.isdir(args.export_fixes):
-            if not yaml:
-                raise RuntimeError(
-                    "Cannot combine fixes in one yaml file. Either install PyYAML or specify an output directory."
-                )
-
-            combine_fixes = True
-
-        if os.path.isdir(args.export_fixes):
-            export_fixes_dir = args.export_fixes
-
-    if combine_fixes:
-        export_fixes_dir = tempfile.mkdtemp()
-        delete_fixes_dir = True
+    tmpdir = None
+    if yaml and args.export_fixes:
+        tmpdir = tempfile.mkdtemp()
 
     # Tasks for clang-tidy.
     task_queue = queue.Queue(max_task_count)
     # A lock for console output.
     lock = threading.Lock()
 
-    # List of files with a non-zero return code.
-    failed_files = []
-
     # Run a pool of clang-tidy workers.
-    start_workers(
-        max_task_count, run_tidy, (task_queue, lock, args.timeout, failed_files)
-    )
+    start_workers(max_task_count, run_tidy, task_queue, lock, args.timeout)
 
     # Form the common args list.
     common_clang_tidy_args = []
@@ -319,8 +268,6 @@ def main():
         common_clang_tidy_args.append("-fix")
     if args.checks != "":
         common_clang_tidy_args.append("-checks=" + args.checks)
-    if args.config_file != "":
-        common_clang_tidy_args.append("-config-file=" + args.config_file)
     if args.quiet:
         common_clang_tidy_args.append("-quiet")
     if args.build_path is not None:
@@ -342,10 +289,10 @@ def main():
         # Run clang-tidy on files containing changes.
         command = [args.clang_tidy_binary]
         command.append("-line-filter=" + line_filter_json)
-        if args.export_fixes is not None:
+        if yaml and args.export_fixes:
             # Get a temporary file. We immediately close the handle so clang-tidy can
             # overwrite it.
-            (handle, tmp_name) = tempfile.mkstemp(suffix=".yaml", dir=export_fixes_dir)
+            (handle, tmp_name) = tempfile.mkstemp(suffix=".yaml", dir=tmpdir)
             os.close(handle)
             command.append("-export-fixes=" + tmp_name)
         command.extend(common_clang_tidy_args)
@@ -354,28 +301,19 @@ def main():
 
         task_queue.put(command)
 
-    # Application return code
-    return_code = 0
-
     # Wait for all threads to be done.
     task_queue.join()
-    # Application return code
-    return_code = 0
-    if failed_files:
-        return_code = 1
 
-    if combine_fixes:
+    if yaml and args.export_fixes:
         print("Writing fixes to " + args.export_fixes + " ...")
         try:
-            merge_replacement_files(export_fixes_dir, args.export_fixes)
+            merge_replacement_files(tmpdir, args.export_fixes)
         except:
             sys.stderr.write("Error exporting fixes.\n")
             traceback.print_exc()
-            return_code = 1
 
-    if delete_fixes_dir:
-        shutil.rmtree(export_fixes_dir)
-    sys.exit(return_code)
+    if tmpdir:
+        shutil.rmtree(tmpdir)
 
 
 if __name__ == "__main__":

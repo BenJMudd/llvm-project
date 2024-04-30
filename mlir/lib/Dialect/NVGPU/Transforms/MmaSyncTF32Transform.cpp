@@ -54,7 +54,7 @@ struct MmaSyncF32ToTF32Pattern : public OpRewritePattern<nvgpu::MmaSyncOp> {
                                  "for nvgpu.mma.sync on f32 datatype");
 
     if (precision == MmaSyncF32Lowering::TF32) {
-      rewriter.modifyOpInPlace(
+      rewriter.updateRootInPlace(
           op, [&]() { op.setTf32EnabledAttr(rewriter.getUnitAttr()); });
     }
 

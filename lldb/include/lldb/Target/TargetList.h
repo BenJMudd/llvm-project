@@ -25,7 +25,7 @@ private:
   /// Constructor
   ///
   /// The constructor for the target list is private. Clients can
-  /// get ahold of the one and only target list through the
+  /// get ahold of of the one and only target list through the
   /// lldb_private::Debugger::GetSharedInstance().GetTargetList().
   ///
   /// \see static TargetList& lldb_private::Debugger::GetTargetList().
@@ -37,9 +37,9 @@ public:
 
   // These two functions fill out the Broadcaster interface:
 
-  static llvm::StringRef GetStaticBroadcasterClass();
+  static ConstString &GetStaticBroadcasterClass();
 
-  llvm::StringRef GetBroadcasterClass() const override {
+  ConstString &GetBroadcasterClass() const override {
     return GetStaticBroadcasterClass();
   }
 

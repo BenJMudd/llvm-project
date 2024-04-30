@@ -27,8 +27,9 @@ public:
       const SourceLocationSpec &location_spec,
       std::optional<llvm::StringRef> removed_prefix_opt = std::nullopt);
 
-  static lldb::BreakpointResolverSP
-  CreateFromStructuredData(const StructuredData::Dictionary &data_dict,
+  static BreakpointResolver *
+  CreateFromStructuredData(const lldb::BreakpointSP &bkpt,
+                           const StructuredData::Dictionary &data_dict,
                            Status &error);
 
   StructuredData::ObjectSP SerializeToStructuredData() override;

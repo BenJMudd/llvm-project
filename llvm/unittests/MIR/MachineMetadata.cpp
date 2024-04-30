@@ -193,7 +193,8 @@ static bool checkOutput(std::string CheckString, std::string Output) {
   SourceMgr SM;
   SM.AddNewSourceBuffer(MemoryBuffer::getMemBuffer(CheckFileText, "CheckFile"),
                         SMLoc());
-  if (FC.readCheckFile(SM, CheckFileText))
+  Regex PrefixRE = FC.buildCheckPrefixRegex();
+  if (FC.readCheckFile(SM, CheckFileText, PrefixRE))
     return false;
 
   auto OutBuffer = OutputBuffer->getBuffer();

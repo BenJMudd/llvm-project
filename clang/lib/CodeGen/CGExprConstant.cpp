@@ -25,7 +25,6 @@
 #include "clang/Basic/Builtins.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/Sequence.h"
-#include "llvm/Analysis/ConstantFolding.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/Function.h"
@@ -564,13 +563,12 @@ class ConstStructBuilder {
 
 public:
   static llvm::Constant *BuildStruct(ConstantEmitter &Emitter,
-                                     const InitListExpr *ILE,
-                                     QualType StructTy);
+                                     InitListExpr *ILE, QualType StructTy);
   static llvm::Constant *BuildStruct(ConstantEmitter &Emitter,
                                      const APValue &Value, QualType ValTy);
   static bool UpdateStruct(ConstantEmitter &Emitter,
                            ConstantAggregateBuilder &Const, CharUnits Offset,
-                           const InitListExpr *Updater);
+                           InitListExpr *Updater);
 
 private:
   ConstStructBuilder(ConstantEmitter &Emitter,
@@ -587,7 +585,7 @@ private:
   bool AppendBitField(const FieldDecl *Field, uint64_t FieldOffset,
                       llvm::ConstantInt *InitExpr, bool AllowOverwrite = false);
 
-  bool Build(const InitListExpr *ILE, bool AllowOverwrite);
+  bool Build(InitListExpr *ILE, bool AllowOverwrite);
   bool Build(const APValue &Val, const RecordDecl *RD, bool IsPrimaryBase,
              const CXXRecordDecl *VTableClass, CharUnits BaseOffset);
   llvm::Constant *Finalize(QualType Ty);
@@ -636,7 +634,7 @@ bool ConstStructBuilder::AppendBitField(
 static bool EmitDesignatedInitUpdater(ConstantEmitter &Emitter,
                                       ConstantAggregateBuilder &Const,
                                       CharUnits Offset, QualType Type,
-                                      const InitListExpr *Updater) {
+                                      InitListExpr *Updater) {
   if (Type->isRecordType())
     return ConstStructBuilder::UpdateStruct(Emitter, Const, Offset, Updater);
 
@@ -648,7 +646,7 @@ static bool EmitDesignatedInitUpdater(ConstantEmitter &Emitter,
   llvm::Type *ElemTy = Emitter.CGM.getTypes().ConvertTypeForMem(ElemType);
 
   llvm::Constant *FillC = nullptr;
-  if (const Expr *Filler = Updater->getArrayFiller()) {
+  if (Expr *Filler = Updater->getArrayFiller()) {
     if (!isa<NoInitExpr>(Filler)) {
       FillC = Emitter.tryEmitAbstractForMemory(Filler, ElemType);
       if (!FillC)
@@ -657,9 +655,9 @@ static bool EmitDesignatedInitUpdater(ConstantEmitter &Emitter,
   }
 
   unsigned NumElementsToUpdate =
-      FillC ? CAT->getZExtSize() : Updater->getNumInits();
+      FillC ? CAT->getSize().getZExtValue() : Updater->getNumInits();
   for (unsigned I = 0; I != NumElementsToUpdate; ++I, Offset += ElemSize) {
-    const Expr *Init = nullptr;
+    Expr *Init = nullptr;
     if (I < Updater->getNumInits())
       Init = Updater->getInit(I);
 
@@ -668,7 +666,7 @@ static bool EmitDesignatedInitUpdater(ConstantEmitter &Emitter,
         return false;
     } else if (!Init || isa<NoInitExpr>(Init)) {
       continue;
-    } else if (const auto *ChildILE = dyn_cast<InitListExpr>(Init)) {
+    } else if (InitListExpr *ChildILE = dyn_cast<InitListExpr>(Init)) {
       if (!EmitDesignatedInitUpdater(Emitter, Const, Offset, ElemType,
                                      ChildILE))
         return false;
@@ -684,7 +682,7 @@ static bool EmitDesignatedInitUpdater(ConstantEmitter &Emitter,
   return true;
 }
 
-bool ConstStructBuilder::Build(const InitListExpr *ILE, bool AllowOverwrite) {
+bool ConstStructBuilder::Build(InitListExpr *ILE, bool AllowOverwrite) {
   RecordDecl *RD = ILE->getType()->castAs<RecordType>()->getDecl();
   const ASTRecordLayout &Layout = CGM.getContext().getASTRecordLayout(RD);
 
@@ -707,12 +705,12 @@ bool ConstStructBuilder::Build(const InitListExpr *ILE, bool AllowOverwrite) {
       continue;
 
     // Don't emit anonymous bitfields.
-    if (Field->isUnnamedBitField())
+    if (Field->isUnnamedBitfield())
       continue;
 
     // Get the initializer.  A struct can include fields without initializers,
     // we just use explicit null values for them.
-    const Expr *Init = nullptr;
+    Expr *Init = nullptr;
     if (ElementNo < ILE->getNumInits())
       Init = ILE->getInit(ElementNo++);
     if (Init && isa<NoInitExpr>(Init))
@@ -801,8 +799,8 @@ bool ConstStructBuilder::Build(const APValue &Val, const RecordDecl *RD,
     // Add a vtable pointer, if we need one and it hasn't already been added.
     if (Layout.hasOwnVFPtr()) {
       llvm::Constant *VTableAddressPoint =
-          CGM.getCXXABI().getVTableAddressPoint(BaseSubobject(CD, Offset),
-                                                VTableClass);
+          CGM.getCXXABI().getVTableAddressPointForConstExpr(
+              BaseSubobject(CD, Offset), VTableClass);
       if (!AppendBytes(Offset, VTableAddressPoint))
         return false;
     }
@@ -841,7 +839,7 @@ bool ConstStructBuilder::Build(const APValue &Val, const RecordDecl *RD,
       continue;
 
     // Don't emit anonymous bitfields or zero-sized fields.
-    if (Field->isUnnamedBitField() || Field->isZeroSize(CGM.getContext()))
+    if (Field->isUnnamedBitfield() || Field->isZeroSize(CGM.getContext()))
       continue;
 
     // Emit the value of the initializer.
@@ -880,7 +878,7 @@ llvm::Constant *ConstStructBuilder::Finalize(QualType Type) {
 }
 
 llvm::Constant *ConstStructBuilder::BuildStruct(ConstantEmitter &Emitter,
-                                                const InitListExpr *ILE,
+                                                InitListExpr *ILE,
                                                 QualType ValTy) {
   ConstantAggregateBuilder Const(Emitter.CGM);
   ConstStructBuilder Builder(Emitter, Const, CharUnits::Zero());
@@ -907,8 +905,7 @@ llvm::Constant *ConstStructBuilder::BuildStruct(ConstantEmitter &Emitter,
 
 bool ConstStructBuilder::UpdateStruct(ConstantEmitter &Emitter,
                                       ConstantAggregateBuilder &Const,
-                                      CharUnits Offset,
-                                      const InitListExpr *Updater) {
+                                      CharUnits Offset, InitListExpr *Updater) {
   return ConstStructBuilder(Emitter, Const, Offset)
       .Build(Updater, /*AllowOverwrite*/ true);
 }
@@ -937,7 +934,7 @@ tryEmitGlobalCompoundLiteral(ConstantEmitter &emitter,
 
   auto GV = new llvm::GlobalVariable(
       CGM.getModule(), C->getType(),
-      E->getType().isConstantStorage(CGM.getContext(), true, false),
+      CGM.isTypeConstant(E->getType(), true, false),
       llvm::GlobalValue::InternalLinkage, C, ".compoundliteral", nullptr,
       llvm::GlobalVariable::NotThreadLocal,
       CGM.getContext().getTargetAddressSpace(addressSpace));
@@ -1015,8 +1012,8 @@ EmitArrayConstant(CodeGenModule &CGM, llvm::ArrayType *DesiredType,
 //
 // Constant folding is currently missing support for a few features supported
 // here: CK_ToUnion, CK_ReinterpretMemberPointer, and DesignatedInitUpdateExpr.
-class ConstExprEmitter
-    : public ConstStmtVisitor<ConstExprEmitter, llvm::Constant *, QualType> {
+class ConstExprEmitter :
+  public StmtVisitor<ConstExprEmitter, llvm::Constant*, QualType> {
   CodeGenModule &CGM;
   ConstantEmitter &Emitter;
   llvm::LLVMContext &VMContext;
@@ -1029,42 +1026,43 @@ public:
   //                            Visitor Methods
   //===--------------------------------------------------------------------===//
 
-  llvm::Constant *VisitStmt(const Stmt *S, QualType T) { return nullptr; }
+  llvm::Constant *VisitStmt(Stmt *S, QualType T) {
+    return nullptr;
+  }
 
-  llvm::Constant *VisitConstantExpr(const ConstantExpr *CE, QualType T) {
+  llvm::Constant *VisitConstantExpr(ConstantExpr *CE, QualType T) {
     if (llvm::Constant *Result = Emitter.tryEmitConstantExpr(CE))
       return Result;
     return Visit(CE->getSubExpr(), T);
   }
 
-  llvm::Constant *VisitParenExpr(const ParenExpr *PE, QualType T) {
+  llvm::Constant *VisitParenExpr(ParenExpr *PE, QualType T) {
     return Visit(PE->getSubExpr(), T);
   }
 
   llvm::Constant *
-  VisitSubstNonTypeTemplateParmExpr(const SubstNonTypeTemplateParmExpr *PE,
+  VisitSubstNonTypeTemplateParmExpr(SubstNonTypeTemplateParmExpr *PE,
                                     QualType T) {
     return Visit(PE->getReplacement(), T);
   }
 
-  llvm::Constant *VisitGenericSelectionExpr(const GenericSelectionExpr *GE,
+  llvm::Constant *VisitGenericSelectionExpr(GenericSelectionExpr *GE,
                                             QualType T) {
     return Visit(GE->getResultExpr(), T);
   }
 
-  llvm::Constant *VisitChooseExpr(const ChooseExpr *CE, QualType T) {
+  llvm::Constant *VisitChooseExpr(ChooseExpr *CE, QualType T) {
     return Visit(CE->getChosenSubExpr(), T);
   }
 
-  llvm::Constant *VisitCompoundLiteralExpr(const CompoundLiteralExpr *E,
-                                           QualType T) {
+  llvm::Constant *VisitCompoundLiteralExpr(CompoundLiteralExpr *E, QualType T) {
     return Visit(E->getInitializer(), T);
   }
 
-  llvm::Constant *VisitCastExpr(const CastExpr *E, QualType destType) {
+  llvm::Constant *VisitCastExpr(CastExpr *E, QualType destType) {
     if (const auto *ECE = dyn_cast<ExplicitCastExpr>(E))
       CGM.EmitExplicitCastExprType(ECE, Emitter.CGF);
-    const Expr *subExpr = E->getSubExpr();
+    Expr *subExpr = E->getSubExpr();
 
     switch (E->getCastKind()) {
     case CK_ToUnion: {
@@ -1118,8 +1116,7 @@ public:
       // interesting conversions should be done in Evaluate().  But as a
       // special case, allow compound literals to support the gcc extension
       // allowing "struct x {int x;} x = (struct x) {};".
-      if (const auto *E =
-              dyn_cast<CompoundLiteralExpr>(subExpr->IgnoreParens()))
+      if (auto *E = dyn_cast<CompoundLiteralExpr>(subExpr->IgnoreParens()))
         return Visit(E->getInitializer(), destType);
       return nullptr;
     }
@@ -1130,35 +1127,8 @@ public:
     case CK_ConstructorConversion:
       return Visit(subExpr, destType);
 
-    case CK_ArrayToPointerDecay:
-      if (const auto *S = dyn_cast<StringLiteral>(subExpr))
-        return CGM.GetAddrOfConstantStringFromLiteral(S).getPointer();
-      return nullptr;
-    case CK_NullToPointer:
-      if (Visit(subExpr, destType))
-        return CGM.EmitNullConstant(destType);
-      return nullptr;
-
     case CK_IntToOCLSampler:
       llvm_unreachable("global sampler variables are not generated");
-
-    case CK_IntegralCast: {
-      QualType FromType = subExpr->getType();
-      // See also HandleIntToIntCast in ExprConstant.cpp
-      if (FromType->isIntegerType())
-        if (llvm::Constant *C = Visit(subExpr, FromType))
-          if (auto *CI = dyn_cast<llvm::ConstantInt>(C)) {
-            unsigned SrcWidth = CGM.getContext().getIntWidth(FromType);
-            unsigned DstWidth = CGM.getContext().getIntWidth(destType);
-            if (DstWidth == SrcWidth)
-              return CI;
-            llvm::APInt A = FromType->isSignedIntegerType()
-                                ? CI->getValue().sextOrTrunc(DstWidth)
-                                : CI->getValue().zextOrTrunc(DstWidth);
-            return llvm::ConstantInt::get(CGM.getLLVMContext(), A);
-          }
-      return nullptr;
-    }
 
     case CK_Dependent: llvm_unreachable("saw dependent cast!");
 
@@ -1194,6 +1164,7 @@ public:
     case CK_CPointerToObjCPointerCast:
     case CK_BlockPointerToObjCPointerCast:
     case CK_AnyPointerToBlockPointerCast:
+    case CK_ArrayToPointerDecay:
     case CK_FunctionToPointerDecay:
     case CK_BaseToDerived:
     case CK_DerivedToBase:
@@ -1212,6 +1183,8 @@ public:
     case CK_IntegralComplexToFloatingComplex:
     case CK_PointerToIntegral:
     case CK_PointerToBoolean:
+    case CK_NullToPointer:
+    case CK_IntegralCast:
     case CK_BooleanToSignedIntegral:
     case CK_IntegralToPointer:
     case CK_IntegralToBoolean:
@@ -1227,33 +1200,26 @@ public:
     case CK_IntegralToFixedPoint:
     case CK_ZeroToOCLOpaqueType:
     case CK_MatrixCast:
-    case CK_HLSLVectorTruncation:
-    case CK_HLSLArrayRValue:
       return nullptr;
     }
     llvm_unreachable("Invalid CastKind");
   }
 
-  llvm::Constant *VisitCXXDefaultInitExpr(const CXXDefaultInitExpr *DIE,
-                                          QualType T) {
+  llvm::Constant *VisitCXXDefaultInitExpr(CXXDefaultInitExpr *DIE, QualType T) {
     // No need for a DefaultInitExprScope: we don't handle 'this' in a
     // constant expression.
     return Visit(DIE->getExpr(), T);
   }
 
-  llvm::Constant *VisitExprWithCleanups(const ExprWithCleanups *E, QualType T) {
+  llvm::Constant *VisitExprWithCleanups(ExprWithCleanups *E, QualType T) {
     return Visit(E->getSubExpr(), T);
   }
 
-  llvm::Constant *VisitIntegerLiteral(const IntegerLiteral *I, QualType T) {
-    return llvm::ConstantInt::get(CGM.getLLVMContext(), I->getValue());
-  }
-
-  llvm::Constant *EmitArrayInitialization(const InitListExpr *ILE, QualType T) {
+  llvm::Constant *EmitArrayInitialization(InitListExpr *ILE, QualType T) {
     auto *CAT = CGM.getContext().getAsConstantArrayType(ILE->getType());
     assert(CAT && "can't emit array init for non-constant-bound array");
     unsigned NumInitElements = ILE->getNumInits();
-    unsigned NumElements = CAT->getZExtSize();
+    unsigned NumElements = CAT->getSize().getZExtValue();
 
     // Initialising an array requires us to automatically
     // initialise any elements that have not been initialised explicitly
@@ -1263,7 +1229,7 @@ public:
 
     // Initialize remaining array elements.
     llvm::Constant *fillC = nullptr;
-    if (const Expr *filler = ILE->getArrayFiller()) {
+    if (Expr *filler = ILE->getArrayFiller()) {
       fillC = Emitter.tryEmitAbstractForMemory(filler, EltType);
       if (!fillC)
         return nullptr;
@@ -1278,7 +1244,7 @@ public:
 
     llvm::Type *CommonElementType = nullptr;
     for (unsigned i = 0; i < NumInitableElts; ++i) {
-      const Expr *Init = ILE->getInit(i);
+      Expr *Init = ILE->getInit(i);
       llvm::Constant *C = Emitter.tryEmitPrivateForMemory(Init, EltType);
       if (!C)
         return nullptr;
@@ -1295,17 +1261,16 @@ public:
                              fillC);
   }
 
-  llvm::Constant *EmitRecordInitialization(const InitListExpr *ILE,
-                                           QualType T) {
+  llvm::Constant *EmitRecordInitialization(InitListExpr *ILE, QualType T) {
     return ConstStructBuilder::BuildStruct(Emitter, ILE, T);
   }
 
-  llvm::Constant *VisitImplicitValueInitExpr(const ImplicitValueInitExpr *E,
+  llvm::Constant *VisitImplicitValueInitExpr(ImplicitValueInitExpr* E,
                                              QualType T) {
     return CGM.EmitNullConstant(T);
   }
 
-  llvm::Constant *VisitInitListExpr(const InitListExpr *ILE, QualType T) {
+  llvm::Constant *VisitInitListExpr(InitListExpr *ILE, QualType T) {
     if (ILE->isTransparent())
       return Visit(ILE->getInit(0), T);
 
@@ -1318,9 +1283,8 @@ public:
     return nullptr;
   }
 
-  llvm::Constant *
-  VisitDesignatedInitUpdateExpr(const DesignatedInitUpdateExpr *E,
-                                QualType destType) {
+  llvm::Constant *VisitDesignatedInitUpdateExpr(DesignatedInitUpdateExpr *E,
+                                                QualType destType) {
     auto C = Visit(E->getBase(), destType);
     if (!C)
       return nullptr;
@@ -1334,13 +1298,12 @@ public:
 
     llvm::Type *ValTy = CGM.getTypes().ConvertType(destType);
     bool HasFlexibleArray = false;
-    if (const auto *RT = destType->getAs<RecordType>())
+    if (auto *RT = destType->getAs<RecordType>())
       HasFlexibleArray = RT->getDecl()->hasFlexibleArrayMember();
     return Const.build(ValTy, HasFlexibleArray);
   }
 
-  llvm::Constant *VisitCXXConstructExpr(const CXXConstructExpr *E,
-                                        QualType Ty) {
+  llvm::Constant *VisitCXXConstructExpr(CXXConstructExpr *E, QualType Ty) {
     if (!E->getConstructor()->isTrivial())
       return nullptr;
 
@@ -1350,13 +1313,13 @@ public:
       assert(E->getConstructor()->isCopyOrMoveConstructor() &&
              "trivial ctor has argument but isn't a copy/move ctor");
 
-      const Expr *Arg = E->getArg(0);
+      Expr *Arg = E->getArg(0);
       assert(CGM.getContext().hasSameUnqualifiedType(Ty, Arg->getType()) &&
              "argument to copy ctor is of wrong type");
 
       // Look through the temporary; it's just converting the value to an
       // lvalue to pass it to the constructor.
-      if (const auto *MTE = dyn_cast<MaterializeTemporaryExpr>(Arg))
+      if (auto *MTE = dyn_cast<MaterializeTemporaryExpr>(Arg))
         return Visit(MTE->getSubExpr(), Ty);
       // Don't try to support arbitrary lvalue-to-rvalue conversions for now.
       return nullptr;
@@ -1365,12 +1328,12 @@ public:
     return CGM.EmitNullConstant(Ty);
   }
 
-  llvm::Constant *VisitStringLiteral(const StringLiteral *E, QualType T) {
+  llvm::Constant *VisitStringLiteral(StringLiteral *E, QualType T) {
     // This is a string literal initializing an array in an initializer.
     return CGM.GetConstantArrayFromStringLiteral(E);
   }
 
-  llvm::Constant *VisitObjCEncodeExpr(const ObjCEncodeExpr *E, QualType T) {
+  llvm::Constant *VisitObjCEncodeExpr(ObjCEncodeExpr *E, QualType T) {
     // This must be an @encode initializing an array in a static initializer.
     // Don't emit it as the address of the string, emit the string data itself
     // as an inline array.
@@ -1381,23 +1344,12 @@ public:
 
     // Resize the string to the right size, adding zeros at the end, or
     // truncating as needed.
-    Str.resize(CAT->getZExtSize(), '\0');
+    Str.resize(CAT->getSize().getZExtValue(), '\0');
     return llvm::ConstantDataArray::getString(VMContext, Str, false);
   }
 
   llvm::Constant *VisitUnaryExtension(const UnaryOperator *E, QualType T) {
     return Visit(E->getSubExpr(), T);
-  }
-
-  llvm::Constant *VisitUnaryMinus(const UnaryOperator *U, QualType T) {
-    if (llvm::Constant *C = Visit(U->getSubExpr(), T))
-      if (auto *CI = dyn_cast<llvm::ConstantInt>(C))
-        return llvm::ConstantInt::get(CGM.getLLVMContext(), -CI->getValue());
-    return nullptr;
-  }
-
-  llvm::Constant *VisitPackIndexingExpr(const PackIndexingExpr *E, QualType T) {
-    return Visit(E->getSelectedExpr(), T);
   }
 
   // Utility methods
@@ -1642,8 +1594,13 @@ namespace {
         IndexValues[i] = llvm::ConstantInt::get(CGM.Int32Ty, Indices[i]);
       }
 
-      llvm::Constant *location = llvm::ConstantExpr::getInBoundsGetElementPtr(
-          BaseValueTy, Base, IndexValues);
+      // Form a GEP and then bitcast to the placeholder type so that the
+      // replacement will succeed.
+      llvm::Constant *location =
+        llvm::ConstantExpr::getInBoundsGetElementPtr(BaseValueTy,
+                                                     Base, IndexValues);
+      location = llvm::ConstantExpr::getBitCast(location,
+                                                placeholder->getType());
 
       Locations.insert({placeholder, location});
     }
@@ -1702,7 +1659,8 @@ llvm::Constant *ConstantEmitter::tryEmitPrivateForVarInit(const VarDecl &D) {
 
   if (!destType->isReferenceType()) {
     QualType nonMemoryDestType = getNonMemoryType(CGM, destType);
-    if (llvm::Constant *C = ConstExprEmitter(*this).Visit(E, nonMemoryDestType))
+    if (llvm::Constant *C = ConstExprEmitter(*this).Visit(const_cast<Expr *>(E),
+                                                          nonMemoryDestType))
       return emitForMemory(C, destType);
   }
 
@@ -1768,10 +1726,7 @@ llvm::Constant *ConstantEmitter::emitForMemory(CodeGenModule &CGM,
   // Zero-extend bool.
   if (C->getType()->isIntegerTy(1) && !destType->isBitIntType()) {
     llvm::Type *boolTy = CGM.getTypes().ConvertTypeForMem(destType);
-    llvm::Constant *Res = llvm::ConstantFoldCastOperand(
-        llvm::Instruction::ZExt, C, boolTy, CGM.getDataLayout());
-    assert(Res && "Constant folding must succeed");
-    return Res;
+    return llvm::ConstantExpr::getZExt(C, boolTy);
   }
 
   return C;
@@ -1782,7 +1737,8 @@ llvm::Constant *ConstantEmitter::tryEmitPrivate(const Expr *E,
   assert(!destType->isVoidType() && "can't emit a void constant");
 
   if (!destType->isReferenceType())
-    if (llvm::Constant *C = ConstExprEmitter(*this).Visit(E, destType))
+    if (llvm::Constant *C =
+            ConstExprEmitter(*this).Visit(const_cast<Expr *>(E), destType))
       return C;
 
   Expr::EvalResult Result;
@@ -1871,7 +1827,10 @@ private:
     if (!hasNonZeroOffset())
       return C;
 
-    return llvm::ConstantExpr::getGetElementPtr(CGM.Int8Ty, C, getOffset());
+    llvm::Type *origPtrTy = C->getType();
+    C = llvm::ConstantExpr::getGetElementPtr(CGM.Int8Ty, C, getOffset());
+    C = llvm::ConstantExpr::getPointerCast(C, origPtrTy);
+    return C;
   }
 };
 
@@ -1932,9 +1891,8 @@ ConstantLValueEmitter::tryEmitAbsolute(llvm::Type *destTy) {
   // FIXME: signedness depends on the original integer type.
   auto intptrTy = CGM.getDataLayout().getIntPtrType(destPtrTy);
   llvm::Constant *C;
-  C = llvm::ConstantFoldIntegerCast(getOffset(), intptrTy, /*isSigned*/ false,
-                                    CGM.getDataLayout());
-  assert(C && "Must have folded, as Offset is a ConstantInt");
+  C = llvm::ConstantExpr::getIntegerCast(getOffset(), intptrTy,
+                                         /*isSigned*/ false);
   C = llvm::ConstantExpr::getIntToPtr(C, destPtrTy);
   return C;
 }
@@ -2026,7 +1984,7 @@ ConstantLValue
 ConstantLValueEmitter::VisitObjCBoxedExpr(const ObjCBoxedExpr *E) {
   assert(E->isExpressibleAsConstantInitializer() &&
          "this boxed expression can't be emitted as a compile-time constant");
-  const auto *SL = cast<StringLiteral>(E->getSubExpr()->IgnoreParenCasts());
+  auto *SL = cast<StringLiteral>(E->getSubExpr()->IgnoreParenCasts());
   return emitConstantObjCStringLiteral(SL, E->getType(), CGM);
 }
 
@@ -2039,6 +1997,8 @@ ConstantLValue
 ConstantLValueEmitter::VisitAddrLabelExpr(const AddrLabelExpr *E) {
   assert(Emitter.CGF && "Invalid address of label expression outside function");
   llvm::Constant *Ptr = Emitter.CGF->GetAddrOfLabel(E->getLabel());
+  Ptr = llvm::ConstantExpr::getBitCast(Ptr,
+                                   CGM.getTypes().ConvertType(E->getType()));
   return Ptr;
 }
 
@@ -2052,12 +2012,12 @@ ConstantLValueEmitter::VisitCallExpr(const CallExpr *E) {
       builtin != Builtin::BI__builtin___NSStringMakeConstantString)
     return nullptr;
 
-  const auto *Literal = cast<StringLiteral>(E->getArg(0)->IgnoreParenCasts());
+  auto literal = cast<StringLiteral>(E->getArg(0)->IgnoreParenCasts());
   if (builtin == Builtin::BI__builtin___NSStringMakeConstantString) {
-    return CGM.getObjCRuntime().GenerateConstantString(Literal);
+    return CGM.getObjCRuntime().GenerateConstantString(literal);
   } else {
     // FIXME: need to deal with UCN conversion issues.
-    return CGM.GetAddrOfConstantCFString(Literal);
+    return CGM.GetAddrOfConstantCFString(literal);
   }
 }
 
@@ -2086,7 +2046,10 @@ ConstantLValue
 ConstantLValueEmitter::VisitMaterializeTemporaryExpr(
                                             const MaterializeTemporaryExpr *E) {
   assert(E->getStorageDuration() == SD_Static);
-  const Expr *Inner = E->getSubExpr()->skipRValueSubobjectAdjustments();
+  SmallVector<const Expr *, 2> CommaLHSs;
+  SmallVector<SubobjectAdjustment, 2> Adjustments;
+  const Expr *Inner =
+      E->getSubExpr()->skipRValueSubobjectAdjustments(CommaLHSs, Adjustments);
   return CGM.GetAddrOfGlobalTemporary(E, Inner);
 }
 
@@ -2150,9 +2113,6 @@ llvm::Constant *ConstantEmitter::tryEmitPrivate(const APValue &Value,
         Inits[I] = llvm::ConstantInt::get(CGM.getLLVMContext(), Elt.getInt());
       else if (Elt.isFloat())
         Inits[I] = llvm::ConstantFP::get(CGM.getLLVMContext(), Elt.getFloat());
-      else if (Elt.isIndeterminate())
-        Inits[I] = llvm::UndefValue::get(CGM.getTypes().ConvertType(
-            DestType->castAs<VectorType>()->getElementType()));
       else
         llvm_unreachable("unsupported vector element type");
     }
@@ -2387,7 +2347,7 @@ llvm::Constant *CodeGenModule::EmitNullConstant(QualType T) {
 
     llvm::Constant *Element =
       ConstantEmitter::emitNullForMemory(*this, ElementTy);
-    unsigned NumElements = CAT->getZExtSize();
+    unsigned NumElements = CAT->getSize().getZExtValue();
     SmallVector<llvm::Constant *, 8> Array(NumElements, Element);
     return llvm::ConstantArray::get(ATy, Array);
   }

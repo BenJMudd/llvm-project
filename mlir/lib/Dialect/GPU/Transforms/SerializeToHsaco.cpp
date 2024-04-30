@@ -11,12 +11,11 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "mlir/Config/mlir-config.h"
 #include "mlir/Dialect/GPU/Transforms/Passes.h"
 #include "mlir/IR/Location.h"
 #include "mlir/IR/MLIRContext.h"
 
-#if MLIR_ENABLE_ROCM_CONVERSIONS
+#if MLIR_GPU_TO_HSACO_PASS_ENABLE
 #include "mlir/ExecutionEngine/OptUtils.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Support/FileUtilities.h"
@@ -43,7 +42,6 @@
 #include "llvm/MC/TargetRegistry.h"
 
 #include "llvm/Support/CommandLine.h"
-#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/FileUtilities.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/Program.h"
@@ -86,6 +84,8 @@ protected:
   translateToLLVMIR(llvm::LLVMContext &llvmContext) override;
 
 private:
+  void getDependentDialects(DialectRegistry &registry) const override;
+
   // Loads LLVM bitcode libraries
   std::optional<SmallVector<std::unique_ptr<llvm::Module>, 3>>
   loadLibraries(SmallVectorImpl<char> &path,
@@ -96,9 +96,9 @@ private:
   std::unique_ptr<std::vector<char>>
   serializeISA(const std::string &isa) override;
 
-  LogicalResult assembleIsa(const std::string &isa,
-                            SmallVectorImpl<char> &result);
-  std::unique_ptr<std::vector<char>> createHsaco(ArrayRef<char> isaBinary);
+  std::unique_ptr<SmallVectorImpl<char>> assembleIsa(const std::string &isa);
+  std::unique_ptr<std::vector<char>>
+  createHsaco(const SmallVectorImpl<char> &isaBinary);
 
   std::string getRocmPath();
 };
@@ -143,6 +143,12 @@ SerializeToHsacoPass::SerializeToHsacoPass(StringRef triple, StringRef arch,
   maybeSetOption(this->features, [&features] { return features.str(); });
   if (this->optLevel.getNumOccurrences() == 0)
     this->optLevel.setValue(optLevel);
+}
+
+void SerializeToHsacoPass::getDependentDialects(
+    DialectRegistry &registry) const {
+  registerROCDLDialectTranslation(registry);
+  gpu::SerializeToBlobPass::getDependentDialects(registry);
 }
 
 std::optional<SmallVector<std::unique_ptr<llvm::Module>, 3>>
@@ -202,9 +208,9 @@ SerializeToHsacoPass::translateToLLVMIR(llvm::LLVMContext &llvmContext) {
       StringRef funcName = f.getName();
       if ("printf" == funcName)
         needOpenCl = true;
-      if (funcName.starts_with("__ockl_"))
+      if (funcName.startswith("__ockl_"))
         needOckl = true;
-      if (funcName.starts_with("__ocml_"))
+      if (funcName.startswith("__ocml_"))
         needOcml = true;
     }
   }
@@ -254,7 +260,7 @@ SerializeToHsacoPass::translateToLLVMIR(llvm::LLVMContext &llvmContext) {
   if (needOcml || needOckl) {
     addControlConstant("__oclc_wavefrontsize64", 1, 8);
     StringRef chipSet = this->chip.getValue();
-    if (chipSet.starts_with("gfx"))
+    if (chipSet.startswith("gfx"))
       chipSet = chipSet.substr(3);
     uint32_t minor =
         llvm::APInt(32, chipSet.substr(chipSet.size() - 2), 16).getZExtValue();
@@ -265,7 +271,7 @@ SerializeToHsacoPass::translateToLLVMIR(llvm::LLVMContext &llvmContext) {
 
     // This constant must always match the default code object ABI version
     // of the AMDGPU backend.
-    addControlConstant("__oclc_ABI_version", 500, 32);
+    addControlConstant("__oclc_ABI_version", 400, 32);
   }
 
   // Determine libraries we need to link - order matters due to dependencies
@@ -319,18 +325,21 @@ SerializeToHsacoPass::translateToLLVMIR(llvm::LLVMContext &llvmContext) {
   return ret;
 }
 
-LogicalResult SerializeToHsacoPass::assembleIsa(const std::string &isa,
-                                                SmallVectorImpl<char> &result) {
+std::unique_ptr<SmallVectorImpl<char>>
+SerializeToHsacoPass::assembleIsa(const std::string &isa) {
   auto loc = getOperation().getLoc();
 
+  SmallVector<char, 0> result;
   llvm::raw_svector_ostream os(result);
 
   llvm::Triple triple(llvm::Triple::normalize(this->triple));
   std::string error;
   const llvm::Target *target =
       llvm::TargetRegistry::lookupTarget(triple.normalize(), error);
-  if (!target)
-    return emitError(loc, Twine("failed to lookup target: ") + error);
+  if (!target) {
+    emitError(loc, Twine("failed to lookup target: ") + error);
+    return {};
+  }
 
   llvm::SourceMgr srcMgr;
   srcMgr.AddNewSourceBuffer(llvm::MemoryBuffer::getMemBuffer(isa), SMLoc());
@@ -340,6 +349,7 @@ LogicalResult SerializeToHsacoPass::assembleIsa(const std::string &isa,
       target->createMCRegInfo(this->triple));
   std::unique_ptr<llvm::MCAsmInfo> mai(
       target->createMCAsmInfo(*mri, this->triple, mcOptions));
+  mai->setRelaxELFRelocations(true);
   std::unique_ptr<llvm::MCSubtargetInfo> sti(
       target->createMCSubtargetInfo(this->triple, this->chip, this->features));
 
@@ -370,17 +380,19 @@ LogicalResult SerializeToHsacoPass::assembleIsa(const std::string &isa,
   std::unique_ptr<llvm::MCTargetAsmParser> tap(
       target->createMCAsmParser(*sti, *parser, *mcii, mcOptions));
 
-  if (!tap)
-    return emitError(loc, "assembler initialization error");
+  if (!tap) {
+    emitError(loc, "assembler initialization error");
+    return {};
+  }
 
   parser->setTargetParser(*tap);
   parser->Run(false);
 
-  return success();
+  return std::make_unique<SmallVector<char, 0>>(std::move(result));
 }
 
 std::unique_ptr<std::vector<char>>
-SerializeToHsacoPass::createHsaco(ArrayRef<char> isaBinary) {
+SerializeToHsacoPass::createHsaco(const SmallVectorImpl<char> &isaBinary) {
   auto loc = getOperation().getLoc();
 
   // Save the ISA binary to a temp file.
@@ -397,8 +409,9 @@ SerializeToHsacoPass::createHsaco(ArrayRef<char> isaBinary) {
   tempIsaBinaryOs.close();
 
   // Create a temp file for HSA code object.
+  int tempHsacoFD = -1;
   SmallString<128> tempHsacoFilename;
-  if (llvm::sys::fs::createTemporaryFile("kernel", "hsaco",
+  if (llvm::sys::fs::createTemporaryFile("kernel", "hsaco", tempHsacoFD,
                                          tempHsacoFilename)) {
     emitError(loc, "temporary file for HSA code object creation error");
     return {};
@@ -417,23 +430,22 @@ SerializeToHsacoPass::createHsaco(ArrayRef<char> isaBinary) {
   }
 
   // Load the HSA code object.
-  auto hsacoFile =
-      llvm::MemoryBuffer::getFile(tempHsacoFilename, /*IsText=*/false);
+  auto hsacoFile = openInputFile(tempHsacoFilename);
   if (!hsacoFile) {
     emitError(loc, "read HSA code object from temp file error");
     return {};
   }
 
-  StringRef buffer = (*hsacoFile)->getBuffer();
+  StringRef buffer = hsacoFile->getBuffer();
   return std::make_unique<std::vector<char>>(buffer.begin(), buffer.end());
 }
 
 std::unique_ptr<std::vector<char>>
 SerializeToHsacoPass::serializeISA(const std::string &isa) {
-  SmallVector<char, 0> isaBinary;
-  if (failed(assembleIsa(isa, isaBinary)))
+  auto isaBinary = assembleIsa(isa);
+  if (!isaBinary)
     return {};
-  return createHsaco(isaBinary);
+  return createHsaco(*isaBinary);
 }
 
 // Register pass to serialize GPU kernel functions to a HSACO binary annotation.
@@ -454,6 +466,6 @@ std::unique_ptr<Pass> mlir::createGpuSerializeToHsacoPass(StringRef triple,
                                                 optLevel);
 }
 
-#else  // MLIR_ENABLE_ROCM_CONVERSIONS
+#else  // MLIR_GPU_TO_HSACO_PASS_ENABLE
 void mlir::registerGpuSerializeToHsacoPass() {}
-#endif // MLIR_ENABLE_ROCM_CONVERSIONS
+#endif // MLIR_GPU_TO_HSACO_PASS_ENABLE

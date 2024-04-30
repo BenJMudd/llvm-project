@@ -23,7 +23,6 @@
 #include "llvm/Analysis/MemorySSAUpdater.h"
 #include "llvm/Analysis/OptimizationRemarkEmitter.h"
 #include "llvm/Analysis/TargetTransformInfo.h"
-#include "llvm/CodeGen/InterleavedLoadCombine.h"
 #include "llvm/CodeGen/Passes.h"
 #include "llvm/CodeGen/TargetLowering.h"
 #include "llvm/CodeGen/TargetPassConfig.h"
@@ -64,7 +63,7 @@ struct VectorInfo;
 struct InterleavedLoadCombineImpl {
 public:
   InterleavedLoadCombineImpl(Function &F, DominatorTree &DT, MemorySSA &MSSA,
-                             const TargetMachine &TM)
+                             TargetMachine &TM)
       : F(F), DT(DT), MSSA(MSSA),
         TLI(*TM.getSubtargetImpl(F)->getTargetLowering()),
         TTI(TM.getTargetTransformInfo(F)) {}
@@ -629,7 +628,7 @@ static raw_ostream &operator<<(raw_ostream &OS, const Polynomial &S) {
 /// VectorInfo stores abstract the following information for each vector
 /// element:
 ///
-/// 1) The memory address loaded into the element as Polynomial
+/// 1) The the memory address loaded into the element as Polynomial
 /// 2) a set of load instruction necessary to construct the vector,
 /// 3) a set of all other instructions that are necessary to create the vector and
 /// 4) a pointer value that can be used as relative base for all elements.
@@ -890,7 +889,7 @@ public:
           ConstantInt::get(Type::getInt32Ty(LI->getContext()), 0),
           ConstantInt::get(Type::getInt32Ty(LI->getContext()), i),
       };
-      int64_t Ofs = DL.getIndexedOffsetInType(Result.VTy, Idx);
+      int64_t Ofs = DL.getIndexedOffsetInType(Result.VTy, ArrayRef(Idx, 2));
       Result.EI[i] = ElementInfo(Offset + Ofs, i == 0 ? LI : nullptr);
     }
 
@@ -1216,9 +1215,13 @@ bool InterleavedLoadCombineImpl::combine(std::list<VectorInfo> &InterleavedLoad,
     return false;
   }
 
+  // Create a pointer cast for the wide load.
+  auto CI = Builder.CreatePointerCast(InsertionPoint->getOperand(0),
+                                      ILTy->getPointerTo(),
+                                      "interleaved.wide.ptrcast");
+
   // Create the wide load and update the MemorySSA.
-  auto Ptr = InsertionPoint->getPointerOperand();
-  auto LI = Builder.CreateAlignedLoad(ILTy, Ptr, InsertionPoint->getAlign(),
+  auto LI = Builder.CreateAlignedLoad(ILTy, CI, InsertionPoint->getAlign(),
                                       "interleaved.wide.load");
   auto MSSAU = MemorySSAUpdater(&MSSA);
   MemoryUse *MSSALoad = cast<MemoryUse>(MSSAU.createMemoryAccessBefore(
@@ -1339,15 +1342,6 @@ struct InterleavedLoadCombine : public FunctionPass {
 private:
 };
 } // anonymous namespace
-
-PreservedAnalyses
-InterleavedLoadCombinePass::run(Function &F, FunctionAnalysisManager &FAM) {
-
-  auto &DT = FAM.getResult<DominatorTreeAnalysis>(F);
-  auto &MemSSA = FAM.getResult<MemorySSAAnalysis>(F).getMSSA();
-  bool Changed = InterleavedLoadCombineImpl(F, DT, MemSSA, *TM).run();
-  return Changed ? PreservedAnalyses::none() : PreservedAnalyses::all();
-}
 
 char InterleavedLoadCombine::ID = 0;
 

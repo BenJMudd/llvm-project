@@ -11,8 +11,6 @@ HLSL Design and Implementation
 .. toctree::
    :maxdepth: 1
 
-   ExpectedDifferences
    HLSLIRReference
    ResourceTypes
    EntryFunctions
-   FunctionCalls

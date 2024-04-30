@@ -273,7 +273,7 @@ static ParallelComputeFunction createParallelComputeFunction(
   // Insert function into the module symbol table and assign it unique name.
   SymbolTable symbolTable(module);
   symbolTable.insert(func);
-  rewriter.getListener()->notifyOperationInserted(func, /*previous=*/{});
+  rewriter.getListener()->notifyOperationInserted(func);
 
   // Create function entry block.
   Block *block =
@@ -429,9 +429,8 @@ static ParallelComputeFunction createParallelComputeFunction(
       mapping.map(op.getInductionVars(), computeBlockInductionVars);
       mapping.map(computeFuncType.captures, captures);
 
-      for (auto &bodyOp : op.getRegion().front().without_terminator())
+      for (auto &bodyOp : op.getLoopBody().getOps())
         b.clone(bodyOp, mapping);
-      b.create<scf::YieldOp>(loc);
     };
   };
 
@@ -489,7 +488,7 @@ createAsyncDispatchFunction(ParallelComputeFunction &computeFunc,
   // Insert function into the module symbol table and assign it unique name.
   SymbolTable symbolTable(module);
   symbolTable.insert(func);
-  rewriter.getListener()->notifyOperationInserted(func, /*previous=*/{});
+  rewriter.getListener()->notifyOperationInserted(func);
 
   // Create function entry block.
   Block *block = b.createBlock(&func.getBody(), func.begin(), type.getInputs(),
@@ -549,7 +548,7 @@ createAsyncDispatchFunction(ParallelComputeFunction &computeFunc,
       operands[2] = end;
 
       executeBuilder.create<func::CallOp>(executeLoc, func.getSymName(),
-                                          func.getResultTypes(), operands);
+                                          func.getCallableResults(), operands);
       executeBuilder.create<async::YieldOp>(executeLoc, ValueRange());
     };
 
@@ -570,7 +569,7 @@ createAsyncDispatchFunction(ParallelComputeFunction &computeFunc,
   computeFuncOperands.append(forwardedInputs.begin(), forwardedInputs.end());
 
   b.create<func::CallOp>(computeFunc.func.getSymName(),
-                         computeFunc.func.getResultTypes(),
+                         computeFunc.func.getCallableResults(),
                          computeFuncOperands);
   b.create<func::ReturnOp>(ValueRange());
 
@@ -617,7 +616,7 @@ static void doAsyncDispatch(ImplicitLocOpBuilder &b, PatternRewriter &rewriter,
     appendBlockComputeOperands(operands);
 
     b.create<func::CallOp>(parallelComputeFunction.func.getSymName(),
-                           parallelComputeFunction.func.getResultTypes(),
+                           parallelComputeFunction.func.getCallableResults(),
                            operands);
     b.create<scf::YieldOp>();
   };
@@ -636,7 +635,8 @@ static void doAsyncDispatch(ImplicitLocOpBuilder &b, PatternRewriter &rewriter,
     appendBlockComputeOperands(operands);
 
     b.create<func::CallOp>(asyncDispatchFunction.getSymName(),
-                           asyncDispatchFunction.getResultTypes(), operands);
+                           asyncDispatchFunction.getCallableResults(),
+                           operands);
 
     // Wait for the completion of all parallel compute operations.
     b.create<AwaitAllOp>(group);
@@ -694,7 +694,7 @@ doSequentialDispatch(ImplicitLocOpBuilder &b, PatternRewriter &rewriter,
     auto executeBodyBuilder = [&](OpBuilder &executeBuilder,
                                   Location executeLoc, ValueRange executeArgs) {
       executeBuilder.create<func::CallOp>(executeLoc, compute.getSymName(),
-                                          compute.getResultTypes(),
+                                          compute.getCallableResults(),
                                           computeFuncOperands(iv));
       executeBuilder.create<async::YieldOp>(executeLoc, ValueRange());
     };
@@ -710,7 +710,7 @@ doSequentialDispatch(ImplicitLocOpBuilder &b, PatternRewriter &rewriter,
   b.create<scf::ForOp>(c1, blockCount, c1, ValueRange(), loopBuilder);
 
   // Call parallel compute function for the first block in the caller thread.
-  b.create<func::CallOp>(compute.getSymName(), compute.getResultTypes(),
+  b.create<func::CallOp>(compute.getSymName(), compute.getCallableResults(),
                          computeFuncOperands(c0));
 
   // Wait for the completion of all async compute operations.
@@ -733,7 +733,7 @@ AsyncParallelForRewrite::matchAndRewrite(scf::ParallelOp op,
 
   // Make sure that all constants will be inside the parallel operation body to
   // reduce the number of parallel compute function arguments.
-  cloneConstantsIntoTheRegion(op.getRegion(), rewriter);
+  cloneConstantsIntoTheRegion(op.getLoopBody(), rewriter);
 
   // Compute trip count for each loop induction variable:
   //   tripCount = ceil_div(upperBound - lowerBound, step);

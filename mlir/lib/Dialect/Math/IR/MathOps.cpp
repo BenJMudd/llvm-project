@@ -9,7 +9,6 @@
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/CommonFolders.h"
 #include "mlir/Dialect/Math/IR/Math.h"
-#include "mlir/Dialect/UB/IR/UBOps.h"
 #include "mlir/IR/Builders.h"
 #include <optional>
 
@@ -42,78 +41,6 @@ OpFoldResult math::AbsIOp::fold(FoldAdaptor adaptor) {
 }
 
 //===----------------------------------------------------------------------===//
-// AcosOp folder
-//===----------------------------------------------------------------------===//
-
-OpFoldResult math::AcosOp::fold(FoldAdaptor adaptor) {
-  return constFoldUnaryOpConditional<FloatAttr>(
-      adaptor.getOperands(), [](const APFloat &a) -> std::optional<APFloat> {
-        switch (a.getSizeInBits(a.getSemantics())) {
-        case 64:
-          return APFloat(acos(a.convertToDouble()));
-        case 32:
-          return APFloat(acosf(a.convertToFloat()));
-        default:
-          return {};
-        }
-      });
-}
-
-//===----------------------------------------------------------------------===//
-// AcoshOp folder
-//===----------------------------------------------------------------------===//
-
-OpFoldResult math::AcoshOp::fold(FoldAdaptor adaptor) {
-  return constFoldUnaryOpConditional<FloatAttr>(
-      adaptor.getOperands(), [](const APFloat &a) -> std::optional<APFloat> {
-        switch (a.getSizeInBits(a.getSemantics())) {
-        case 64:
-          return APFloat(acosh(a.convertToDouble()));
-        case 32:
-          return APFloat(acoshf(a.convertToFloat()));
-        default:
-          return {};
-        }
-      });
-}
-
-//===----------------------------------------------------------------------===//
-// AsinOp folder
-//===----------------------------------------------------------------------===//
-
-OpFoldResult math::AsinOp::fold(FoldAdaptor adaptor) {
-  return constFoldUnaryOpConditional<FloatAttr>(
-      adaptor.getOperands(), [](const APFloat &a) -> std::optional<APFloat> {
-        switch (a.getSizeInBits(a.getSemantics())) {
-        case 64:
-          return APFloat(asin(a.convertToDouble()));
-        case 32:
-          return APFloat(asinf(a.convertToFloat()));
-        default:
-          return {};
-        }
-      });
-}
-
-//===----------------------------------------------------------------------===//
-// AsinhOp folder
-//===----------------------------------------------------------------------===//
-
-OpFoldResult math::AsinhOp::fold(FoldAdaptor adaptor) {
-  return constFoldUnaryOpConditional<FloatAttr>(
-      adaptor.getOperands(), [](const APFloat &a) -> std::optional<APFloat> {
-        switch (a.getSizeInBits(a.getSemantics())) {
-        case 64:
-          return APFloat(asinh(a.convertToDouble()));
-        case 32:
-          return APFloat(asinhf(a.convertToFloat()));
-        default:
-          return {};
-        }
-      });
-}
-
-//===----------------------------------------------------------------------===//
 // AtanOp folder
 //===----------------------------------------------------------------------===//
 
@@ -125,24 +52,6 @@ OpFoldResult math::AtanOp::fold(FoldAdaptor adaptor) {
           return APFloat(atan(a.convertToDouble()));
         case 32:
           return APFloat(atanf(a.convertToFloat()));
-        default:
-          return {};
-        }
-      });
-}
-
-//===----------------------------------------------------------------------===//
-// AtanhOp folder
-//===----------------------------------------------------------------------===//
-
-OpFoldResult math::AtanhOp::fold(FoldAdaptor adaptor) {
-  return constFoldUnaryOpConditional<FloatAttr>(
-      adaptor.getOperands(), [](const APFloat &a) -> std::optional<APFloat> {
-        switch (a.getSizeInBits(a.getSemantics())) {
-        case 64:
-          return APFloat(atanh(a.convertToDouble()));
-        case 32:
-          return APFloat(atanhf(a.convertToFloat()));
         default:
           return {};
         }
@@ -217,24 +126,6 @@ OpFoldResult math::CosOp::fold(FoldAdaptor adaptor) {
 }
 
 //===----------------------------------------------------------------------===//
-// CoshOp folder
-//===----------------------------------------------------------------------===//
-
-OpFoldResult math::CoshOp::fold(FoldAdaptor adaptor) {
-  return constFoldUnaryOpConditional<FloatAttr>(
-      adaptor.getOperands(), [](const APFloat &a) -> std::optional<APFloat> {
-        switch (a.getSizeInBits(a.getSemantics())) {
-        case 64:
-          return APFloat(cosh(a.convertToDouble()));
-        case 32:
-          return APFloat(coshf(a.convertToFloat()));
-        default:
-          return {};
-        }
-      });
-}
-
-//===----------------------------------------------------------------------===//
 // SinOp folder
 //===----------------------------------------------------------------------===//
 
@@ -246,24 +137,6 @@ OpFoldResult math::SinOp::fold(FoldAdaptor adaptor) {
           return APFloat(sin(a.convertToDouble()));
         case 32:
           return APFloat(sinf(a.convertToFloat()));
-        default:
-          return {};
-        }
-      });
-}
-
-//===----------------------------------------------------------------------===//
-// SinhOp folder
-//===----------------------------------------------------------------------===//
-
-OpFoldResult math::SinhOp::fold(FoldAdaptor adaptor) {
-  return constFoldUnaryOpConditional<FloatAttr>(
-      adaptor.getOperands(), [](const APFloat &a) -> std::optional<APFloat> {
-        switch (a.getSizeInBits(a.getSemantics())) {
-        case 64:
-          return APFloat(sinh(a.convertToDouble()));
-        case 32:
-          return APFloat(sinhf(a.convertToFloat()));
         default:
           return {};
         }
@@ -649,8 +522,5 @@ OpFoldResult math::TruncOp::fold(FoldAdaptor adaptor) {
 Operation *math::MathDialect::materializeConstant(OpBuilder &builder,
                                                   Attribute value, Type type,
                                                   Location loc) {
-  if (auto poison = dyn_cast<ub::PoisonAttr>(value))
-    return builder.create<ub::PoisonOp>(loc, type, poison);
-
   return arith::ConstantOp::materialize(builder, value, type, loc);
 }

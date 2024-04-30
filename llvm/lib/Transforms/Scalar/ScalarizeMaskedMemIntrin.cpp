@@ -627,7 +627,6 @@ static void scalarizeMaskedExpandLoad(const DataLayout &DL, CallInst *CI,
   Value *Ptr = CI->getArgOperand(0);
   Value *Mask = CI->getArgOperand(1);
   Value *PassThru = CI->getArgOperand(2);
-  Align Alignment = CI->getParamAlign(0).valueOrOne();
 
   auto *VecType = cast<FixedVectorType>(CI->getType());
 
@@ -645,10 +644,6 @@ static void scalarizeMaskedExpandLoad(const DataLayout &DL, CallInst *CI,
   // The result vector
   Value *VResult = PassThru;
 
-  // Adjust alignment for the scalar instruction.
-  const Align AdjustedAlignment =
-      commonAlignment(Alignment, EltTy->getPrimitiveSizeInBits() / 8);
-
   // Shorten the way if the mask is a vector of constants.
   // Create a build_vector pattern, with loads/poisons as necessary and then
   // shuffle blend with the pass through value.
@@ -664,7 +659,7 @@ static void scalarizeMaskedExpandLoad(const DataLayout &DL, CallInst *CI,
       } else {
         Value *NewPtr =
             Builder.CreateConstInBoundsGEP1_32(EltTy, Ptr, MemIndex);
-        InsertElt = Builder.CreateAlignedLoad(EltTy, NewPtr, AdjustedAlignment,
+        InsertElt = Builder.CreateAlignedLoad(EltTy, NewPtr, Align(1),
                                               "Load" + Twine(Idx));
         ShuffleMask[Idx] = Idx;
         ++MemIndex;
@@ -718,7 +713,7 @@ static void scalarizeMaskedExpandLoad(const DataLayout &DL, CallInst *CI,
     CondBlock->setName("cond.load");
 
     Builder.SetInsertPoint(CondBlock->getTerminator());
-    LoadInst *Load = Builder.CreateAlignedLoad(EltTy, Ptr, AdjustedAlignment);
+    LoadInst *Load = Builder.CreateAlignedLoad(EltTy, Ptr, Align(1));
     Value *NewVResult = Builder.CreateInsertElement(VResult, Load, Idx);
 
     // Move the pointer if there are more blocks to come.
@@ -760,7 +755,6 @@ static void scalarizeMaskedCompressStore(const DataLayout &DL, CallInst *CI,
   Value *Src = CI->getArgOperand(0);
   Value *Ptr = CI->getArgOperand(1);
   Value *Mask = CI->getArgOperand(2);
-  Align Alignment = CI->getParamAlign(1).valueOrOne();
 
   auto *VecType = cast<FixedVectorType>(Src->getType());
 
@@ -773,10 +767,6 @@ static void scalarizeMaskedCompressStore(const DataLayout &DL, CallInst *CI,
 
   Type *EltTy = VecType->getElementType();
 
-  // Adjust alignment for the scalar instruction.
-  const Align AdjustedAlignment =
-      commonAlignment(Alignment, EltTy->getPrimitiveSizeInBits() / 8);
-
   unsigned VectorWidth = VecType->getNumElements();
 
   // Shorten the way if the mask is a vector of constants.
@@ -788,7 +778,7 @@ static void scalarizeMaskedCompressStore(const DataLayout &DL, CallInst *CI,
       Value *OneElt =
           Builder.CreateExtractElement(Src, Idx, "Elt" + Twine(Idx));
       Value *NewPtr = Builder.CreateConstInBoundsGEP1_32(EltTy, Ptr, MemIndex);
-      Builder.CreateAlignedStore(OneElt, NewPtr, AdjustedAlignment);
+      Builder.CreateAlignedStore(OneElt, NewPtr, Align(1));
       ++MemIndex;
     }
     CI->eraseFromParent();
@@ -834,7 +824,7 @@ static void scalarizeMaskedCompressStore(const DataLayout &DL, CallInst *CI,
 
     Builder.SetInsertPoint(CondBlock->getTerminator());
     Value *OneElt = Builder.CreateExtractElement(Src, Idx);
-    Builder.CreateAlignedStore(OneElt, Ptr, AdjustedAlignment);
+    Builder.CreateAlignedStore(OneElt, Ptr, Align(1));
 
     // Move the pointer if there are more blocks to come.
     Value *NewPtr;
@@ -979,16 +969,12 @@ static bool optimizeCallInst(CallInst *CI, bool &ModifiedDT,
       return true;
     }
     case Intrinsic::masked_expandload:
-      if (TTI.isLegalMaskedExpandLoad(
-              CI->getType(),
-              CI->getAttributes().getParamAttrs(0).getAlignment().valueOrOne()))
+      if (TTI.isLegalMaskedExpandLoad(CI->getType()))
         return false;
       scalarizeMaskedExpandLoad(DL, CI, DTU, ModifiedDT);
       return true;
     case Intrinsic::masked_compressstore:
-      if (TTI.isLegalMaskedCompressStore(
-              CI->getArgOperand(0)->getType(),
-              CI->getAttributes().getParamAttrs(1).getAlignment().valueOrOne()))
+      if (TTI.isLegalMaskedCompressStore(CI->getArgOperand(0)->getType()))
         return false;
       scalarizeMaskedCompressStore(DL, CI, DTU, ModifiedDT);
       return true;

@@ -27,7 +27,7 @@
 using namespace mlir;
 using namespace mlir::LLVM;
 
-constexpr const static uint64_t kBitsInByte = 8;
+constexpr const static unsigned kBitsInByte = 8;
 
 //===----------------------------------------------------------------------===//
 // custom<FunctionTypes>
@@ -73,6 +73,40 @@ static void printFunctionTypes(AsmPrinter &p, ArrayRef<Type> params,
     p << "...";
   }
   p << ')';
+}
+
+//===----------------------------------------------------------------------===//
+// custom<Pointer>
+//===----------------------------------------------------------------------===//
+
+static ParseResult parsePointer(AsmParser &p, Type &elementType,
+                                unsigned &addressSpace) {
+  // `<` addressSpace `>`
+  OptionalParseResult result = p.parseOptionalInteger(addressSpace);
+  if (result.has_value()) {
+    if (failed(result.value()))
+      return failure();
+    elementType = Type();
+    return success();
+  }
+
+  if (parsePrettyLLVMType(p, elementType))
+    return failure();
+  if (succeeded(p.parseOptionalComma()))
+    return p.parseInteger(addressSpace);
+
+  return success();
+}
+
+static void printPointer(AsmPrinter &p, Type elementType,
+                         unsigned addressSpace) {
+  if (elementType)
+    printPrettyLLVMType(p, elementType);
+  if (addressSpace != 0) {
+    if (elementType)
+      p << ", ";
+    p << addressSpace;
+  }
 }
 
 //===----------------------------------------------------------------------===//
@@ -178,26 +212,24 @@ LLVMArrayType::verify(function_ref<InFlightDiagnostic()> emitError,
 //===----------------------------------------------------------------------===//
 // DataLayoutTypeInterface
 
-llvm::TypeSize
-LLVMArrayType::getTypeSizeInBits(const DataLayout &dataLayout,
-                                 DataLayoutEntryListRef params) const {
-  return llvm::TypeSize::getFixed(kBitsInByte *
-                                  getTypeSize(dataLayout, params));
+unsigned LLVMArrayType::getTypeSizeInBits(const DataLayout &dataLayout,
+                                          DataLayoutEntryListRef params) const {
+  return kBitsInByte * getTypeSize(dataLayout, params);
 }
 
-llvm::TypeSize LLVMArrayType::getTypeSize(const DataLayout &dataLayout,
-                                          DataLayoutEntryListRef params) const {
+unsigned LLVMArrayType::getTypeSize(const DataLayout &dataLayout,
+                                    DataLayoutEntryListRef params) const {
   return llvm::alignTo(dataLayout.getTypeSize(getElementType()),
                        dataLayout.getTypeABIAlignment(getElementType())) *
          getNumElements();
 }
 
-uint64_t LLVMArrayType::getABIAlignment(const DataLayout &dataLayout,
+unsigned LLVMArrayType::getABIAlignment(const DataLayout &dataLayout,
                                         DataLayoutEntryListRef params) const {
   return dataLayout.getTypeABIAlignment(getElementType());
 }
 
-uint64_t
+unsigned
 LLVMArrayType::getPreferredAlignment(const DataLayout &dataLayout,
                                      DataLayoutEntryListRef params) const {
   return dataLayout.getTypePreferredAlignment(getElementType());
@@ -254,25 +286,52 @@ LLVMFunctionType::verify(function_ref<InFlightDiagnostic()> emitError,
 }
 
 //===----------------------------------------------------------------------===//
+// LLVMPointerType
+//===----------------------------------------------------------------------===//
+
+bool LLVMPointerType::isValidElementType(Type type) {
+  if (!type)
+    return true;
+  return isCompatibleOuterType(type)
+             ? !llvm::isa<LLVMVoidType, LLVMTokenType, LLVMMetadataType,
+                          LLVMLabelType>(type)
+             : llvm::isa<PointerElementTypeInterface>(type);
+}
+
+LLVMPointerType LLVMPointerType::get(Type pointee, unsigned addressSpace) {
+  assert(pointee && "expected non-null subtype, pass the context instead if "
+                    "the opaque pointer type is desired");
+  return Base::get(pointee.getContext(), pointee, addressSpace);
+}
+
+LogicalResult
+LLVMPointerType::verify(function_ref<InFlightDiagnostic()> emitError,
+                        Type pointee, unsigned) {
+  if (!isValidElementType(pointee))
+    return emitError() << "invalid pointer element type: " << pointee;
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // DataLayoutTypeInterface
 
-constexpr const static uint64_t kDefaultPointerSizeBits = 64;
-constexpr const static uint64_t kDefaultPointerAlignment = 8;
+constexpr const static unsigned kDefaultPointerSizeBits = 64;
+constexpr const static unsigned kDefaultPointerAlignment = 8;
 
-std::optional<uint64_t> mlir::LLVM::extractPointerSpecValue(Attribute attr,
+std::optional<unsigned> mlir::LLVM::extractPointerSpecValue(Attribute attr,
                                                             PtrDLEntryPos pos) {
-  auto spec = cast<DenseIntElementsAttr>(attr);
-  auto idx = static_cast<int64_t>(pos);
+  auto spec = llvm::cast<DenseIntElementsAttr>(attr);
+  auto idx = static_cast<unsigned>(pos);
   if (idx >= spec.size())
     return std::nullopt;
-  return spec.getValues<uint64_t>()[idx];
+  return spec.getValues<unsigned>()[idx];
 }
 
 /// Returns the part of the data layout entry that corresponds to `pos` for the
 /// given `type` by interpreting the list of entries `params`. For the pointer
 /// type in the default address space, returns the default value if the entries
 /// do not provide a custom one, for other address spaces returns std::nullopt.
-static std::optional<uint64_t>
+static std::optional<unsigned>
 getPointerDataLayoutEntry(DataLayoutEntryListRef params, LLVMPointerType type,
                           PtrDLEntryPos pos) {
   // First, look for the entry for the pointer in the current address space.
@@ -280,73 +339,62 @@ getPointerDataLayoutEntry(DataLayoutEntryListRef params, LLVMPointerType type,
   for (DataLayoutEntryInterface entry : params) {
     if (!entry.isTypeEntry())
       continue;
-    if (cast<LLVMPointerType>(entry.getKey().get<Type>()).getAddressSpace() ==
-        type.getAddressSpace()) {
+    if (llvm::cast<LLVMPointerType>(entry.getKey().get<Type>())
+            .getAddressSpace() == type.getAddressSpace()) {
       currentEntry = entry.getValue();
       break;
     }
   }
   if (currentEntry) {
-    std::optional<uint64_t> value = extractPointerSpecValue(currentEntry, pos);
-    // If the optional `PtrDLEntryPos::Index` entry is not available, use the
-    // pointer size as the index bitwidth.
-    if (!value && pos == PtrDLEntryPos::Index)
-      value = extractPointerSpecValue(currentEntry, PtrDLEntryPos::Size);
-    bool isSizeOrIndex =
-        pos == PtrDLEntryPos::Size || pos == PtrDLEntryPos::Index;
-    return *value / (isSizeOrIndex ? 1 : kBitsInByte);
+    return *extractPointerSpecValue(currentEntry, pos) /
+           (pos == PtrDLEntryPos::Size ? 1 : kBitsInByte);
   }
 
   // If not found, and this is the pointer to the default memory space, assume
   // 64-bit pointers.
   if (type.getAddressSpace() == 0) {
-    bool isSizeOrIndex =
-        pos == PtrDLEntryPos::Size || pos == PtrDLEntryPos::Index;
-    return isSizeOrIndex ? kDefaultPointerSizeBits : kDefaultPointerAlignment;
+    return pos == PtrDLEntryPos::Size ? kDefaultPointerSizeBits
+                                      : kDefaultPointerAlignment;
   }
 
   return std::nullopt;
 }
 
-llvm::TypeSize
+unsigned
 LLVMPointerType::getTypeSizeInBits(const DataLayout &dataLayout,
                                    DataLayoutEntryListRef params) const {
-  if (std::optional<uint64_t> size =
+  if (std::optional<unsigned> size =
           getPointerDataLayoutEntry(params, *this, PtrDLEntryPos::Size))
-    return llvm::TypeSize::getFixed(*size);
+    return *size;
 
   // For other memory spaces, use the size of the pointer to the default memory
   // space.
-  return dataLayout.getTypeSizeInBits(get(getContext()));
+  if (isOpaque())
+    return dataLayout.getTypeSizeInBits(get(getContext()));
+  return dataLayout.getTypeSizeInBits(get(getElementType()));
 }
 
-uint64_t LLVMPointerType::getABIAlignment(const DataLayout &dataLayout,
+unsigned LLVMPointerType::getABIAlignment(const DataLayout &dataLayout,
                                           DataLayoutEntryListRef params) const {
-  if (std::optional<uint64_t> alignment =
+  if (std::optional<unsigned> alignment =
           getPointerDataLayoutEntry(params, *this, PtrDLEntryPos::Abi))
     return *alignment;
 
-  return dataLayout.getTypeABIAlignment(get(getContext()));
+  if (isOpaque())
+    return dataLayout.getTypeABIAlignment(get(getContext()));
+  return dataLayout.getTypeABIAlignment(get(getElementType()));
 }
 
-uint64_t
+unsigned
 LLVMPointerType::getPreferredAlignment(const DataLayout &dataLayout,
                                        DataLayoutEntryListRef params) const {
-  if (std::optional<uint64_t> alignment =
+  if (std::optional<unsigned> alignment =
           getPointerDataLayoutEntry(params, *this, PtrDLEntryPos::Preferred))
     return *alignment;
 
-  return dataLayout.getTypePreferredAlignment(get(getContext()));
-}
-
-std::optional<uint64_t>
-LLVMPointerType::getIndexBitwidth(const DataLayout &dataLayout,
-                                  DataLayoutEntryListRef params) const {
-  if (std::optional<uint64_t> indexBitwidth =
-          getPointerDataLayoutEntry(params, *this, PtrDLEntryPos::Index))
-    return *indexBitwidth;
-
-  return dataLayout.getTypeIndexBitwidth(get(getContext()));
+  if (isOpaque())
+    return dataLayout.getTypePreferredAlignment(get(getContext()));
+  return dataLayout.getTypePreferredAlignment(get(getElementType()));
 }
 
 bool LLVMPointerType::areCompatible(DataLayoutEntryListRef oldLayout,
@@ -354,8 +402,8 @@ bool LLVMPointerType::areCompatible(DataLayoutEntryListRef oldLayout,
   for (DataLayoutEntryInterface newEntry : newLayout) {
     if (!newEntry.isTypeEntry())
       continue;
-    uint64_t size = kDefaultPointerSizeBits;
-    uint64_t abi = kDefaultPointerAlignment;
+    unsigned size = kDefaultPointerSizeBits;
+    unsigned abi = kDefaultPointerAlignment;
     auto newType = llvm::cast<LLVMPointerType>(newEntry.getKey().get<Type>());
     const auto *it =
         llvm::find_if(oldLayout, [&](DataLayoutEntryInterface entry) {
@@ -379,8 +427,8 @@ bool LLVMPointerType::areCompatible(DataLayoutEntryListRef oldLayout,
     }
 
     Attribute newSpec = llvm::cast<DenseIntElementsAttr>(newEntry.getValue());
-    uint64_t newSize = *extractPointerSpecValue(newSpec, PtrDLEntryPos::Size);
-    uint64_t newAbi = *extractPointerSpecValue(newSpec, PtrDLEntryPos::Abi);
+    unsigned newSize = *extractPointerSpecValue(newSpec, PtrDLEntryPos::Size);
+    unsigned newAbi = *extractPointerSpecValue(newSpec, PtrDLEntryPos::Abi);
     if (size != newSize || abi < newAbi || abi % newAbi != 0)
       return false;
   }
@@ -392,17 +440,18 @@ LogicalResult LLVMPointerType::verifyEntries(DataLayoutEntryListRef entries,
   for (DataLayoutEntryInterface entry : entries) {
     if (!entry.isTypeEntry())
       continue;
-    auto key = entry.getKey().get<Type>();
+    auto key = llvm::cast<LLVMPointerType>(entry.getKey().get<Type>());
     auto values = llvm::dyn_cast<DenseIntElementsAttr>(entry.getValue());
     if (!values || (values.size() != 3 && values.size() != 4)) {
       return emitError(loc)
-             << "expected layout attribute for " << key
+             << "expected layout attribute for " << entry.getKey().get<Type>()
              << " to be a dense integer elements attribute with 3 or 4 "
                 "elements";
     }
-    if (!values.getElementType().isInteger(64))
-      return emitError(loc) << "expected i64 parameters for " << key;
-
+    if (key.getElementType() && !key.getElementType().isInteger(8)) {
+      return emitError(loc) << "unexpected layout attribute for pointer to "
+                            << key.getElementType();
+    }
     if (extractPointerSpecValue(values, PtrDLEntryPos::Abi) >
         extractPointerSpecValue(values, PtrDLEntryPos::Preferred)) {
       return emitError(loc) << "preferred alignment is expected to be at least "
@@ -507,16 +556,16 @@ LLVMStructType::verify(function_ref<InFlightDiagnostic()> emitError,
   return success();
 }
 
-llvm::TypeSize
+unsigned
 LLVMStructType::getTypeSizeInBits(const DataLayout &dataLayout,
                                   DataLayoutEntryListRef params) const {
-  auto structSize = llvm::TypeSize::getFixed(0);
-  uint64_t structAlignment = 1;
+  unsigned structSize = 0;
+  unsigned structAlignment = 1;
   for (Type element : getBody()) {
-    uint64_t elementAlignment =
+    unsigned elementAlignment =
         isPacked() ? 1 : dataLayout.getTypeABIAlignment(element);
     // Add padding to the struct size to align it to the abi alignment of the
-    // element type before than adding the size of the element.
+    // element type before than adding the size of the element
     structSize = llvm::alignTo(structSize, elementAlignment);
     structSize += dataLayout.getTypeSize(element);
 
@@ -534,7 +583,7 @@ namespace {
 enum class StructDLEntryPos { Abi = 0, Preferred = 1 };
 } // namespace
 
-static std::optional<uint64_t>
+static std::optional<unsigned>
 getStructDataLayoutEntry(DataLayoutEntryListRef params, LLVMStructType type,
                          StructDLEntryPos pos) {
   const auto *currentEntry =
@@ -546,14 +595,14 @@ getStructDataLayoutEntry(DataLayoutEntryListRef params, LLVMStructType type,
 
   auto attr = llvm::cast<DenseIntElementsAttr>(currentEntry->getValue());
   if (pos == StructDLEntryPos::Preferred &&
-      attr.size() <= static_cast<int64_t>(StructDLEntryPos::Preferred))
+      attr.size() <= static_cast<unsigned>(StructDLEntryPos::Preferred))
     // If no preferred was specified, fall back to abi alignment
     pos = StructDLEntryPos::Abi;
 
-  return attr.getValues<uint64_t>()[static_cast<size_t>(pos)];
+  return attr.getValues<unsigned>()[static_cast<unsigned>(pos)];
 }
 
-static uint64_t calculateStructAlignment(const DataLayout &dataLayout,
+static unsigned calculateStructAlignment(const DataLayout &dataLayout,
                                          DataLayoutEntryListRef params,
                                          LLVMStructType type,
                                          StructDLEntryPos pos) {
@@ -564,36 +613,36 @@ static uint64_t calculateStructAlignment(const DataLayout &dataLayout,
 
   // The alignment requirement of a struct is equal to the strictest alignment
   // requirement of its elements.
-  uint64_t structAlignment = 1;
+  unsigned structAlignment = 1;
   for (Type iter : type.getBody()) {
     structAlignment =
         std::max(dataLayout.getTypeABIAlignment(iter), structAlignment);
   }
 
   // Entries are only allowed to be stricter than the required alignment
-  if (std::optional<uint64_t> entryResult =
+  if (std::optional<unsigned> entryResult =
           getStructDataLayoutEntry(params, type, pos))
     return std::max(*entryResult / kBitsInByte, structAlignment);
 
   return structAlignment;
 }
 
-uint64_t LLVMStructType::getABIAlignment(const DataLayout &dataLayout,
+unsigned LLVMStructType::getABIAlignment(const DataLayout &dataLayout,
                                          DataLayoutEntryListRef params) const {
   return calculateStructAlignment(dataLayout, params, *this,
                                   StructDLEntryPos::Abi);
 }
 
-uint64_t
+unsigned
 LLVMStructType::getPreferredAlignment(const DataLayout &dataLayout,
                                       DataLayoutEntryListRef params) const {
   return calculateStructAlignment(dataLayout, params, *this,
                                   StructDLEntryPos::Preferred);
 }
 
-static uint64_t extractStructSpecValue(Attribute attr, StructDLEntryPos pos) {
+static unsigned extractStructSpecValue(Attribute attr, StructDLEntryPos pos) {
   return llvm::cast<DenseIntElementsAttr>(attr)
-      .getValues<uint64_t>()[static_cast<size_t>(pos)];
+      .getValues<unsigned>()[static_cast<unsigned>(pos)];
 }
 
 bool LLVMStructType::areCompatible(DataLayoutEntryListRef oldLayout,
@@ -609,9 +658,9 @@ bool LLVMStructType::areCompatible(DataLayoutEntryListRef oldLayout,
     if (previousEntry == oldLayout.end())
       continue;
 
-    uint64_t abi = extractStructSpecValue(previousEntry->getValue(),
+    unsigned abi = extractStructSpecValue(previousEntry->getValue(),
                                           StructDLEntryPos::Abi);
-    uint64_t newAbi =
+    unsigned newAbi =
         extractStructSpecValue(newEntry.getValue(), StructDLEntryPos::Abi);
     if (abi < newAbi || abi % newAbi != 0)
       return false;
@@ -632,8 +681,6 @@ LogicalResult LLVMStructType::verifyEntries(DataLayoutEntryListRef entries,
              << "expected layout attribute for " << entry.getKey().get<Type>()
              << " to be a dense integer elements attribute of 1 or 2 elements";
     }
-    if (!values.getElementType().isInteger(64))
-      return emitError(loc) << "expected i64 entries for " << key;
 
     if (key.isIdentified() || !key.getBody().empty()) {
       return emitError(loc) << "unexpected layout attribute for struct " << key;
@@ -769,6 +816,8 @@ bool mlir::LLVM::isCompatibleOuterType(Type type) {
       Float64Type,
       Float80Type,
       Float128Type,
+      Float8E4M3FNType,
+      Float8E5M2Type,
       LLVMArrayType,
       LLVMFunctionType,
       LLVMLabelType,
@@ -820,7 +869,11 @@ static bool isCompatibleImpl(Type type, DenseSet<Type> &compatibleTypes) {
             return vecType.getRank() == 1 &&
                    isCompatible(vecType.getElementType());
           })
-          .Case<LLVMPointerType>([&](auto pointerType) { return true; })
+          .Case<LLVMPointerType>([&](auto pointerType) {
+            if (pointerType.isOpaque())
+              return true;
+            return isCompatible(pointerType.getElementType());
+          })
           .Case<LLVMTargetExtType>([&](auto extType) {
             return llvm::all_of(extType.getTypeParams(), isCompatible);
           })
@@ -839,6 +892,8 @@ static bool isCompatibleImpl(Type type, DenseSet<Type> &compatibleTypes) {
             Float64Type,
             Float80Type,
             Float128Type,
+            Float8E4M3FNType,
+            Float8E5M2Type,
             LLVMLabelType,
             LLVMMetadataType,
             LLVMPPCFP128Type,
@@ -984,17 +1039,16 @@ llvm::TypeSize mlir::LLVM::getPrimitiveTypeSizeInBits(Type type) {
 
   return llvm::TypeSwitch<Type, llvm::TypeSize>(type)
       .Case<BFloat16Type, Float16Type>(
-          [](Type) { return llvm::TypeSize::getFixed(16); })
-      .Case<Float32Type>([](Type) { return llvm::TypeSize::getFixed(32); })
+          [](Type) { return llvm::TypeSize::Fixed(16); })
+      .Case<Float32Type>([](Type) { return llvm::TypeSize::Fixed(32); })
       .Case<Float64Type, LLVMX86MMXType>(
-          [](Type) { return llvm::TypeSize::getFixed(64); })
-      .Case<Float80Type>([](Type) { return llvm::TypeSize::getFixed(80); })
-      .Case<Float128Type>([](Type) { return llvm::TypeSize::getFixed(128); })
+          [](Type) { return llvm::TypeSize::Fixed(64); })
+      .Case<Float80Type>([](Type) { return llvm::TypeSize::Fixed(80); })
+      .Case<Float128Type>([](Type) { return llvm::TypeSize::Fixed(128); })
       .Case<IntegerType>([](IntegerType intTy) {
-        return llvm::TypeSize::getFixed(intTy.getWidth());
+        return llvm::TypeSize::Fixed(intTy.getWidth());
       })
-      .Case<LLVMPPCFP128Type>(
-          [](Type) { return llvm::TypeSize::getFixed(128); })
+      .Case<LLVMPPCFP128Type>([](Type) { return llvm::TypeSize::Fixed(128); })
       .Case<LLVMFixedVectorType>([](LLVMFixedVectorType t) {
         llvm::TypeSize elementSize =
             getPrimitiveTypeSizeInBits(t.getElementType());
@@ -1015,7 +1069,7 @@ llvm::TypeSize mlir::LLVM::getPrimitiveTypeSizeInBits(Type type) {
                           LLVMPointerType, LLVMFunctionType, LLVMTargetExtType>(
                    ty)) &&
                "unexpected missing support for primitive type");
-        return llvm::TypeSize::getFixed(0);
+        return llvm::TypeSize::Fixed(0);
       });
 }
 

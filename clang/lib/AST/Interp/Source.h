@@ -14,15 +14,11 @@
 #define LLVM_CLANG_AST_INTERP_SOURCE_H
 
 #include "PrimType.h"
-#include "clang/AST/DeclBase.h"
+#include "clang/AST/Decl.h"
 #include "clang/AST/Stmt.h"
-#include "llvm/ADT/PointerUnion.h"
 #include "llvm/Support/Endian.h"
 
 namespace clang {
-class Expr;
-class SourceLocation;
-class SourceRange;
 namespace interp {
 class Function;
 
@@ -47,7 +43,6 @@ public:
   }
 
   bool operator!=(const CodePtr &RHS) const { return Ptr != RHS.Ptr; }
-  const std::byte *operator*() const { return Ptr; }
 
   operator bool() const { return Ptr; }
 
@@ -55,7 +50,7 @@ public:
   template <typename T> std::enable_if_t<!std::is_pointer<T>::value, T> read() {
     assert(aligned(Ptr));
     using namespace llvm::support;
-    T Value = endian::read<T, llvm::endianness::native>(Ptr);
+    T Value = endian::read<T, endianness::native, 1>(Ptr);
     Ptr += align(sizeof(T));
     return Value;
   }
@@ -76,7 +71,6 @@ public:
   SourceInfo(const Decl *D) : Source(D) {}
 
   SourceLocation getLoc() const;
-  SourceRange getRange() const;
 
   const Stmt *asStmt() const { return Source.dyn_cast<const Stmt *>(); }
   const Decl *asDecl() const { return Source.dyn_cast<const Decl *>(); }
@@ -102,7 +96,6 @@ public:
   const Expr *getExpr(const Function *F, CodePtr PC) const;
   /// Returns the location from which an opcode originates.
   SourceLocation getLocation(const Function *F, CodePtr PC) const;
-  SourceRange getRange(const Function *F, CodePtr PC) const;
 };
 
 } // namespace interp

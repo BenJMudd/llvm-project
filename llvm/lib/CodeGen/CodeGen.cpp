@@ -19,8 +19,7 @@ using namespace llvm;
 /// initializeCodeGen - Initialize all passes linked into the CodeGen library.
 void llvm::initializeCodeGen(PassRegistry &Registry) {
   initializeAssignmentTrackingAnalysisPass(Registry);
-  initializeAtomicExpandLegacyPass(Registry);
-  initializeBasicBlockPathCloningPass(Registry);
+  initializeAtomicExpandPass(Registry);
   initializeBasicBlockSectionsPass(Registry);
   initializeBranchFolderPassPass(Registry);
   initializeBranchRelaxationPass(Registry);
@@ -30,7 +29,7 @@ void llvm::initializeCodeGen(PassRegistry &Registry) {
   initializeCFIFixupPass(Registry);
   initializeCFIInstrInserterPass(Registry);
   initializeCheckDebugMachineModulePass(Registry);
-  initializeCodeGenPrepareLegacyPassPass(Registry);
+  initializeCodeGenPreparePass(Registry);
   initializeDeadMachineInstructionElimPass(Registry);
   initializeDebugifyMachineModulePass(Registry);
   initializeDetectDeadLanesPass(Registry);
@@ -41,7 +40,7 @@ void llvm::initializeCodeGen(PassRegistry &Registry) {
   initializeEarlyTailDuplicatePass(Registry);
   initializeExpandLargeDivRemLegacyPassPass(Registry);
   initializeExpandLargeFpConvertLegacyPassPass(Registry);
-  initializeExpandMemCmpLegacyPassPass(Registry);
+  initializeExpandMemCmpPassPass(Registry);
   initializeExpandPostRAPass(Registry);
   initializeFEntryInserterPass(Registry);
   initializeFinalizeISelPass(Registry);
@@ -53,8 +52,7 @@ void llvm::initializeCodeGen(PassRegistry &Registry) {
   initializeHardwareLoopsLegacyPass(Registry);
   initializeIfConverterPass(Registry);
   initializeImplicitNullChecksPass(Registry);
-  initializeIndirectBrExpandLegacyPassPass(Registry);
-  initializeInitUndefPass(Registry);
+  initializeIndirectBrExpandPassPass(Registry);
   initializeInterleavedLoadCombinePass(Registry);
   initializeInterleavedAccessPass(Registry);
   initializeJMCInstrumenterPass(Registry);

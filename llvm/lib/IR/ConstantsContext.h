@@ -182,30 +182,26 @@ public:
 };
 
 /// GetElementPtrConstantExpr - This class is private to Constants.cpp, and is
-/// used behind the scenes to implement getelementptr constant exprs.
-class GetElementPtrConstantExpr : public ConstantExpr {
+/// used behind the scenes to implement getelementpr constant exprs.
+class GetElementPtrConstantExpr final : public ConstantExpr {
   Type *SrcElementTy;
   Type *ResElementTy;
-  std::optional<ConstantRange> InRange;
 
   GetElementPtrConstantExpr(Type *SrcElementTy, Constant *C,
-                            ArrayRef<Constant *> IdxList, Type *DestTy,
-                            std::optional<ConstantRange> InRange);
+                            ArrayRef<Constant *> IdxList, Type *DestTy);
 
 public:
-  static GetElementPtrConstantExpr *
-  Create(Type *SrcElementTy, Constant *C, ArrayRef<Constant *> IdxList,
-         Type *DestTy, unsigned Flags, std::optional<ConstantRange> InRange) {
+  static GetElementPtrConstantExpr *Create(Type *SrcElementTy, Constant *C,
+                                           ArrayRef<Constant *> IdxList,
+                                           Type *DestTy, unsigned Flags) {
     GetElementPtrConstantExpr *Result = new (IdxList.size() + 1)
-        GetElementPtrConstantExpr(SrcElementTy, C, IdxList, DestTy,
-                                  std::move(InRange));
+        GetElementPtrConstantExpr(SrcElementTy, C, IdxList, DestTy);
     Result->SubclassOptionalData = Flags;
     return Result;
   }
 
   Type *getSourceElementType() const;
   Type *getResultElementType() const;
-  std::optional<ConstantRange> getInRange() const;
 
   /// Transparently provide more efficient getOperand methods.
   DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Value);
@@ -409,7 +405,6 @@ private:
   ArrayRef<Constant *> Ops;
   ArrayRef<int> ShuffleMask;
   Type *ExplicitTy;
-  std::optional<ConstantRange> InRange;
 
   static ArrayRef<int> getShuffleMaskIfValid(const ConstantExpr *CE) {
     if (CE->getOpcode() == Instruction::ShuffleVector)
@@ -423,31 +418,22 @@ private:
     return nullptr;
   }
 
-  static std::optional<ConstantRange>
-  getInRangeIfValid(const ConstantExpr *CE) {
-    if (auto *GEPCE = dyn_cast<GetElementPtrConstantExpr>(CE))
-      return GEPCE->getInRange();
-    return std::nullopt;
-  }
-
 public:
   ConstantExprKeyType(unsigned Opcode, ArrayRef<Constant *> Ops,
                       unsigned short SubclassData = 0,
                       unsigned short SubclassOptionalData = 0,
                       ArrayRef<int> ShuffleMask = std::nullopt,
-                      Type *ExplicitTy = nullptr,
-                      std::optional<ConstantRange> InRange = std::nullopt)
+                      Type *ExplicitTy = nullptr)
       : Opcode(Opcode), SubclassOptionalData(SubclassOptionalData),
         SubclassData(SubclassData), Ops(Ops), ShuffleMask(ShuffleMask),
-        ExplicitTy(ExplicitTy), InRange(std::move(InRange)) {}
+        ExplicitTy(ExplicitTy) {}
 
   ConstantExprKeyType(ArrayRef<Constant *> Operands, const ConstantExpr *CE)
       : Opcode(CE->getOpcode()),
         SubclassOptionalData(CE->getRawSubclassOptionalData()),
         SubclassData(CE->isCompare() ? CE->getPredicate() : 0), Ops(Operands),
         ShuffleMask(getShuffleMaskIfValid(CE)),
-        ExplicitTy(getSourceElementTypeIfValid(CE)),
-        InRange(getInRangeIfValid(CE)) {}
+        ExplicitTy(getSourceElementTypeIfValid(CE)) {}
 
   ConstantExprKeyType(const ConstantExpr *CE,
                       SmallVectorImpl<Constant *> &Storage)
@@ -455,26 +441,17 @@ public:
         SubclassOptionalData(CE->getRawSubclassOptionalData()),
         SubclassData(CE->isCompare() ? CE->getPredicate() : 0),
         ShuffleMask(getShuffleMaskIfValid(CE)),
-        ExplicitTy(getSourceElementTypeIfValid(CE)),
-        InRange(getInRangeIfValid(CE)) {
+        ExplicitTy(getSourceElementTypeIfValid(CE)) {
     assert(Storage.empty() && "Expected empty storage");
     for (unsigned I = 0, E = CE->getNumOperands(); I != E; ++I)
       Storage.push_back(CE->getOperand(I));
     Ops = Storage;
   }
 
-  static bool rangesEqual(const std::optional<ConstantRange> &A,
-                          const std::optional<ConstantRange> &B) {
-    if (!A.has_value() || !B.has_value())
-      return A.has_value() == B.has_value();
-    return A->getBitWidth() == B->getBitWidth() && A == B;
-  }
-
   bool operator==(const ConstantExprKeyType &X) const {
     return Opcode == X.Opcode && SubclassData == X.SubclassData &&
            SubclassOptionalData == X.SubclassOptionalData && Ops == X.Ops &&
-           ShuffleMask == X.ShuffleMask && ExplicitTy == X.ExplicitTy &&
-           rangesEqual(InRange, X.InRange);
+           ShuffleMask == X.ShuffleMask && ExplicitTy == X.ExplicitTy;
   }
 
   bool operator==(const ConstantExpr *CE) const {
@@ -492,8 +469,6 @@ public:
     if (ShuffleMask != getShuffleMaskIfValid(CE))
       return false;
     if (ExplicitTy != getSourceElementTypeIfValid(CE))
-      return false;
-    if (!rangesEqual(InRange, getInRangeIfValid(CE)))
       return false;
     return true;
   }
@@ -524,8 +499,8 @@ public:
     case Instruction::ShuffleVector:
       return new ShuffleVectorConstantExpr(Ops[0], Ops[1], ShuffleMask);
     case Instruction::GetElementPtr:
-      return GetElementPtrConstantExpr::Create(
-          ExplicitTy, Ops[0], Ops.slice(1), Ty, SubclassOptionalData, InRange);
+      return GetElementPtrConstantExpr::Create(ExplicitTy, Ops[0], Ops.slice(1),
+                                               Ty, SubclassOptionalData);
     case Instruction::ICmp:
       return new CompareConstantExpr(Ty, Instruction::ICmp, SubclassData,
                                      Ops[0], Ops[1]);

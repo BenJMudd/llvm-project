@@ -9,12 +9,12 @@
 #ifndef LLVM_LIBC_SRC_FENV_FEGETENV_H
 #define LLVM_LIBC_SRC_FENV_FEGETENV_H
 
-#include "hdr/types/fenv_t.h"
+#include <fenv.h>
 
-namespace LIBC_NAMESPACE {
+namespace __llvm_libc {
 
 int fegetenv(fenv_t *);
 
-} // namespace LIBC_NAMESPACE
+} // namespace __llvm_libc
 
 #endif // LLVM_LIBC_SRC_FENV_FEGETENV_H

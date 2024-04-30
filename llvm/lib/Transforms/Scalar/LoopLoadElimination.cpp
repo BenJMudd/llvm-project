@@ -126,10 +126,8 @@ struct StoreToLoadForwardingCandidate {
 
     // We don't need to check non-wrapping here because forward/backward
     // dependence wouldn't be valid if these weren't monotonic accesses.
-    auto *Dist = dyn_cast<SCEVConstant>(
+    auto *Dist = cast<SCEVConstant>(
         PSE.getSE()->getMinusSCEV(StorePtrSCEV, LoadPtrSCEV));
-    if (!Dist)
-      return false;
     const APInt &Val = Dist->getAPInt();
     return Val == TypeByteSize * StrideLoad;
   }
@@ -197,8 +195,7 @@ public:
       Instruction *Source = Dep.getSource(LAI);
       Instruction *Destination = Dep.getDestination(LAI);
 
-      if (Dep.Type == MemoryDepChecker::Dependence::Unknown ||
-          Dep.Type == MemoryDepChecker::Dependence::IndirectUnsafe) {
+      if (Dep.Type == MemoryDepChecker::Dependence::Unknown) {
         if (isa<LoadInst>(Source))
           LoadsWithUnknownDepedence.insert(Source);
         if (isa<LoadInst>(Destination))
@@ -351,20 +348,19 @@ public:
     // ld0.
 
     LoadInst *LastLoad =
-        llvm::max_element(Candidates,
-                          [&](const StoreToLoadForwardingCandidate &A,
-                              const StoreToLoadForwardingCandidate &B) {
-                            return getInstrIndex(A.Load) <
-                                   getInstrIndex(B.Load);
-                          })
+        std::max_element(Candidates.begin(), Candidates.end(),
+                         [&](const StoreToLoadForwardingCandidate &A,
+                             const StoreToLoadForwardingCandidate &B) {
+                           return getInstrIndex(A.Load) < getInstrIndex(B.Load);
+                         })
             ->Load;
     StoreInst *FirstStore =
-        llvm::min_element(Candidates,
-                          [&](const StoreToLoadForwardingCandidate &A,
-                              const StoreToLoadForwardingCandidate &B) {
-                            return getInstrIndex(A.Store) <
-                                   getInstrIndex(B.Store);
-                          })
+        std::min_element(Candidates.begin(), Candidates.end(),
+                         [&](const StoreToLoadForwardingCandidate &A,
+                             const StoreToLoadForwardingCandidate &B) {
+                           return getInstrIndex(A.Store) <
+                                  getInstrIndex(B.Store);
+                         })
             ->Store;
 
     // We're looking for stores after the first forwarding store until the end
@@ -443,13 +439,12 @@ public:
     assert(PH && "Preheader should exist!");
     Value *InitialPtr = SEE.expandCodeFor(PtrSCEV->getStart(), Ptr->getType(),
                                           PH->getTerminator());
-    Value *Initial =
-        new LoadInst(Cand.Load->getType(), InitialPtr, "load_initial",
-                     /* isVolatile */ false, Cand.Load->getAlign(),
-                     PH->getTerminator()->getIterator());
+    Value *Initial = new LoadInst(
+        Cand.Load->getType(), InitialPtr, "load_initial",
+        /* isVolatile */ false, Cand.Load->getAlign(), PH->getTerminator());
 
-    PHINode *PHI = PHINode::Create(Initial->getType(), 2, "store_forwarded");
-    PHI->insertBefore(L->getHeader()->begin());
+    PHINode *PHI = PHINode::Create(Initial->getType(), 2, "store_forwarded",
+                                   &L->getHeader()->front());
     PHI->addIncoming(Initial, PH);
 
     Type *LoadType = Initial->getType();
@@ -462,9 +457,8 @@ public:
 
     Value *StoreValue = Cand.Store->getValueOperand();
     if (LoadType != StoreType)
-      StoreValue = CastInst::CreateBitOrPointerCast(StoreValue, LoadType,
-                                                    "store_forward_cast",
-                                                    Cand.Store->getIterator());
+      StoreValue = CastInst::CreateBitOrPointerCast(
+          StoreValue, LoadType, "store_forward_cast", Cand.Store);
 
     PHI->addIncoming(StoreValue, L->getLoopLatch());
 

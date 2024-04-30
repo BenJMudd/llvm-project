@@ -23,22 +23,18 @@
 #include "mlir/Dialect/SPIRV/IR/TargetAndABI.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinTypes.h"
-#include "mlir/IR/Matchers.h"
+#include "mlir/IR/FunctionImplementation.h"
 #include "mlir/IR/OpDefinition.h"
 #include "mlir/IR/OpImplementation.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/TypeUtilities.h"
-#include "mlir/Interfaces/FunctionImplementation.h"
-#include "mlir/Support/LogicalResult.h"
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringExtras.h"
-#include "llvm/ADT/TypeSwitch.h"
 #include <cassert>
 #include <numeric>
-#include <optional>
 #include <type_traits>
 
 using namespace mlir;
@@ -364,34 +360,31 @@ LogicalResult spirv::AddressOfOp::verify() {
 //===----------------------------------------------------------------------===//
 
 LogicalResult spirv::CompositeConstructOp::verify() {
+  auto cType = llvm::cast<spirv::CompositeType>(getType());
   operand_range constituents = this->getConstituents();
 
-  // There are 4 cases with varying verification rules:
-  // 1. Cooperative Matrices (1 constituent)
-  // 2. Structs (1 constituent for each member)
-  // 3. Arrays (1 constituent for each array element)
-  // 4. Vectors (1 constituent (sub-)element for each vector element)
-
-  auto coopElementType =
-      llvm::TypeSwitch<Type, Type>(getType())
-          .Case<spirv::CooperativeMatrixType, spirv::JointMatrixINTELType>(
-              [](auto coopType) { return coopType.getElementType(); })
-          .Default([](Type) { return nullptr; });
-
-  // Case 1. -- matrices.
-  if (coopElementType) {
+  if (auto coopType = llvm::dyn_cast<spirv::CooperativeMatrixNVType>(cType)) {
     if (constituents.size() != 1)
       return emitOpError("has incorrect number of operands: expected ")
              << "1, but provided " << constituents.size();
-    if (coopElementType != constituents.front().getType())
+    if (coopType.getElementType() != constituents.front().getType())
       return emitOpError("operand type mismatch: expected operand type ")
-             << coopElementType << ", but provided "
+             << coopType.getElementType() << ", but provided "
              << constituents.front().getType();
     return success();
   }
 
-  // Case 2./3./4. -- number of constituents matches the number of elements.
-  auto cType = llvm::cast<spirv::CompositeType>(getType());
+  if (auto jointType = llvm::dyn_cast<spirv::JointMatrixINTELType>(cType)) {
+    if (constituents.size() != 1)
+      return emitOpError("has incorrect number of operands: expected ")
+             << "1, but provided " << constituents.size();
+    if (jointType.getElementType() != constituents.front().getType())
+      return emitOpError("operand type mismatch: expected operand type ")
+             << jointType.getElementType() << ", but provided "
+             << constituents.front().getType();
+    return success();
+  }
+
   if (constituents.size() == cType.getNumElements()) {
     for (auto index : llvm::seq<uint32_t>(0, constituents.size())) {
       if (constituents[index].getType() != cType.getElementType(index)) {
@@ -403,7 +396,8 @@ LogicalResult spirv::CompositeConstructOp::verify() {
     return success();
   }
 
-  // Case 4. -- check that all constituents add up tp the expected vector type.
+  // If not constructing a cooperative matrix type, then we must be constructing
+  // a vector type.
   auto resultType = llvm::dyn_cast<VectorType>(cType);
   if (!resultType)
     return emitOpError(
@@ -457,14 +451,12 @@ ParseResult spirv::CompositeExtractOp::parse(OpAsmParser &parser,
                                              OperationState &result) {
   OpAsmParser::UnresolvedOperand compositeInfo;
   Attribute indicesAttr;
-  StringRef indicesAttrName =
-      spirv::CompositeExtractOp::getIndicesAttrName(result.name);
   Type compositeType;
   SMLoc attrLocation;
 
   if (parser.parseOperand(compositeInfo) ||
       parser.getCurrentLocation(&attrLocation) ||
-      parser.parseAttribute(indicesAttr, indicesAttrName, result.attributes) ||
+      parser.parseAttribute(indicesAttr, kIndicesAttrName, result.attributes) ||
       parser.parseColonType(compositeType) ||
       parser.resolveOperand(compositeInfo, compositeType, result.operands)) {
     return failure();
@@ -515,13 +507,11 @@ ParseResult spirv::CompositeInsertOp::parse(OpAsmParser &parser,
   SmallVector<OpAsmParser::UnresolvedOperand, 2> operands;
   Type objectType, compositeType;
   Attribute indicesAttr;
-  StringRef indicesAttrName =
-      spirv::CompositeInsertOp::getIndicesAttrName(result.name);
   auto loc = parser.getCurrentLocation();
 
   return failure(
       parser.parseOperandList(operands, 2) ||
-      parser.parseAttribute(indicesAttr, indicesAttrName, result.attributes) ||
+      parser.parseAttribute(indicesAttr, kIndicesAttrName, result.attributes) ||
       parser.parseColonType(objectType) ||
       parser.parseKeywordType("into", compositeType) ||
       parser.resolveOperands(operands, {objectType, compositeType}, loc,
@@ -563,8 +553,7 @@ void spirv::CompositeInsertOp::print(OpAsmPrinter &printer) {
 ParseResult spirv::ConstantOp::parse(OpAsmParser &parser,
                                      OperationState &result) {
   Attribute value;
-  StringRef valueAttrName = spirv::ConstantOp::getValueAttrName(result.name);
-  if (parser.parseAttribute(value, valueAttrName, result.attributes))
+  if (parser.parseAttribute(value, kValueAttrName, result.attributes))
     return failure();
 
   Type type = NoneType::get(parser.getContext());
@@ -827,7 +816,7 @@ ParseResult spirv::EntryPointOp::parse(OpAsmParser &parser,
         }))
       return failure();
   }
-  result.addAttribute(spirv::EntryPointOp::getInterfaceAttrName(result.name),
+  result.addAttribute(kInterfaceAttrName,
                       parser.getBuilder().getArrayAttr(interfaceVars));
   return success();
 }
@@ -880,9 +869,7 @@ ParseResult spirv::ExecutionModeOp::parse(OpAsmParser &parser,
     }
     values.push_back(llvm::cast<IntegerAttr>(value).getInt());
   }
-  StringRef valuesAttrName =
-      spirv::ExecutionModeOp::getValuesAttrName(result.name);
-  result.addAttribute(valuesAttrName,
+  result.addAttribute(kValuesAttrName,
                       parser.getBuilder().getI32ArrayAttr(values));
   return success();
 }
@@ -978,73 +965,8 @@ void spirv::FuncOp::print(OpAsmPrinter &printer) {
 }
 
 LogicalResult spirv::FuncOp::verifyType() {
-  FunctionType fnType = getFunctionType();
-  if (fnType.getNumResults() > 1)
+  if (getFunctionType().getNumResults() > 1)
     return emitOpError("cannot have more than one result");
-
-  auto hasDecorationAttr = [&](spirv::Decoration decoration,
-                               unsigned argIndex) {
-    auto func = llvm::cast<FunctionOpInterface>(getOperation());
-    for (auto argAttr : cast<FunctionOpInterface>(func).getArgAttrs(argIndex)) {
-      if (argAttr.getName() != spirv::DecorationAttr::name)
-        continue;
-      if (auto decAttr = dyn_cast<spirv::DecorationAttr>(argAttr.getValue()))
-        return decAttr.getValue() == decoration;
-    }
-    return false;
-  };
-
-  for (unsigned i = 0, e = this->getNumArguments(); i != e; ++i) {
-    Type param = fnType.getInputs()[i];
-    auto inputPtrType = dyn_cast<spirv::PointerType>(param);
-    if (!inputPtrType)
-      continue;
-
-    auto pointeePtrType =
-        dyn_cast<spirv::PointerType>(inputPtrType.getPointeeType());
-    if (pointeePtrType) {
-      // SPIR-V spec, from SPV_KHR_physical_storage_buffer:
-      // > If an OpFunctionParameter is a pointer (or contains a pointer)
-      // > and the type it points to is a pointer in the PhysicalStorageBuffer
-      // > storage class, the function parameter must be decorated with exactly
-      // > one of AliasedPointer or RestrictPointer.
-      if (pointeePtrType.getStorageClass() !=
-          spirv::StorageClass::PhysicalStorageBuffer)
-        continue;
-
-      bool hasAliasedPtr =
-          hasDecorationAttr(spirv::Decoration::AliasedPointer, i);
-      bool hasRestrictPtr =
-          hasDecorationAttr(spirv::Decoration::RestrictPointer, i);
-      if (!hasAliasedPtr && !hasRestrictPtr)
-        return emitOpError()
-               << "with a pointer points to a physical buffer pointer must "
-                  "be decorated either 'AliasedPointer' or 'RestrictPointer'";
-      continue;
-    }
-    // SPIR-V spec, from SPV_KHR_physical_storage_buffer:
-    // > If an OpFunctionParameter is a pointer (or contains a pointer) in
-    // > the PhysicalStorageBuffer storage class, the function parameter must
-    // > be decorated with exactly one of Aliased or Restrict.
-    if (auto pointeeArrayType =
-            dyn_cast<spirv::ArrayType>(inputPtrType.getPointeeType())) {
-      pointeePtrType =
-          dyn_cast<spirv::PointerType>(pointeeArrayType.getElementType());
-    } else {
-      pointeePtrType = inputPtrType;
-    }
-
-    if (!pointeePtrType || pointeePtrType.getStorageClass() !=
-                               spirv::StorageClass::PhysicalStorageBuffer)
-      continue;
-
-    bool hasAliased = hasDecorationAttr(spirv::Decoration::Aliased, i);
-    bool hasRestrict = hasDecorationAttr(spirv::Decoration::Restrict, i);
-    if (!hasAliased && !hasRestrict)
-      return emitOpError() << "with physical buffer pointer must be decorated "
-                              "either 'Aliased' or 'Restrict'";
-  }
-
   return success();
 }
 
@@ -1087,6 +1009,26 @@ void spirv::FuncOp::build(OpBuilder &builder, OperationState &state,
                      builder.getAttr<spirv::FunctionControlAttr>(control));
   state.attributes.append(attrs.begin(), attrs.end());
   state.addRegion();
+}
+
+// CallableOpInterface
+Region *spirv::FuncOp::getCallableRegion() {
+  return isExternal() ? nullptr : &getBody();
+}
+
+// CallableOpInterface
+ArrayRef<Type> spirv::FuncOp::getCallableResults() {
+  return getFunctionType().getResults();
+}
+
+// CallableOpInterface
+::mlir::ArrayAttr spirv::FuncOp::getCallableArgAttrs() {
+  return getArgAttrs().value_or(nullptr);
+}
+
+// CallableOpInterface
+::mlir::ArrayAttr spirv::FuncOp::getCallableResAttrs() {
+  return getResAttrs().value_or(nullptr);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1157,18 +1099,16 @@ ParseResult spirv::GlobalVariableOp::parse(OpAsmParser &parser,
                                            OperationState &result) {
   // Parse variable name.
   StringAttr nameAttr;
-  StringRef initializerAttrName =
-      spirv::GlobalVariableOp::getInitializerAttrName(result.name);
   if (parser.parseSymbolName(nameAttr, SymbolTable::getSymbolAttrName(),
                              result.attributes)) {
     return failure();
   }
 
   // Parse optional initializer
-  if (succeeded(parser.parseOptionalKeyword(initializerAttrName))) {
+  if (succeeded(parser.parseOptionalKeyword(kInitializerAttrName))) {
     FlatSymbolRefAttr initSymbol;
     if (parser.parseLParen() ||
-        parser.parseAttribute(initSymbol, Type(), initializerAttrName,
+        parser.parseAttribute(initSymbol, Type(), kInitializerAttrName,
                               result.attributes) ||
         parser.parseRParen())
       return failure();
@@ -1179,8 +1119,6 @@ ParseResult spirv::GlobalVariableOp::parse(OpAsmParser &parser,
   }
 
   Type type;
-  StringRef typeAttrName =
-      spirv::GlobalVariableOp::getTypeAttrName(result.name);
   auto loc = parser.getCurrentLocation();
   if (parser.parseColonType(type)) {
     return failure();
@@ -1188,7 +1126,7 @@ ParseResult spirv::GlobalVariableOp::parse(OpAsmParser &parser,
   if (!llvm::isa<spirv::PointerType>(type)) {
     return parser.emitError(loc, "expected spirv.ptr type");
   }
-  result.addAttribute(typeAttrName, TypeAttr::get(type));
+  result.addAttribute(kTypeAttrName, TypeAttr::get(type));
 
   return success();
 }
@@ -1202,17 +1140,15 @@ void spirv::GlobalVariableOp::print(OpAsmPrinter &printer) {
   printer.printSymbolName(getSymName());
   elidedAttrs.push_back(SymbolTable::getSymbolAttrName());
 
-  StringRef initializerAttrName = this->getInitializerAttrName();
   // Print optional initializer
   if (auto initializer = this->getInitializer()) {
-    printer << " " << initializerAttrName << '(';
+    printer << " " << kInitializerAttrName << '(';
     printer.printSymbolName(*initializer);
     printer << ')';
-    elidedAttrs.push_back(initializerAttrName);
+    elidedAttrs.push_back(kInitializerAttrName);
   }
 
-  StringRef typeAttrName = this->getTypeAttrName();
-  elidedAttrs.push_back(typeAttrName);
+  elidedAttrs.push_back(kTypeAttrName);
   spirv::printVariableDecorations(*this, printer, elidedAttrs);
   printer << " : " << getType();
 }
@@ -1232,18 +1168,17 @@ LogicalResult spirv::GlobalVariableOp::verify() {
            << stringifyStorageClass(storageClass) << "'";
   }
 
-  if (auto init = (*this)->getAttrOfType<FlatSymbolRefAttr>(
-          this->getInitializerAttrName())) {
+  if (auto init =
+          (*this)->getAttrOfType<FlatSymbolRefAttr>(kInitializerAttrName)) {
     Operation *initOp = SymbolTable::lookupNearestSymbolFrom(
         (*this)->getParentOp(), init.getAttr());
     // TODO: Currently only variable initialization with specialization
     // constants and other variables is supported. They could be normal
     // constants in the module scope as well.
-    if (!initOp || !isa<spirv::GlobalVariableOp, spirv::SpecConstantOp,
-                        spirv::SpecConstantCompositeOp>(initOp)) {
+    if (!initOp ||
+        !isa<spirv::GlobalVariableOp, spirv::SpecConstantOp>(initOp)) {
       return emitOpError("initializer must be result of a "
-                         "spirv.SpecConstant or spirv.GlobalVariable or "
-                         "spirv.SpecConstantCompositeOp op");
+                         "spirv.SpecConstant or spirv.GlobalVariable op");
     }
   }
 
@@ -1607,8 +1542,6 @@ ParseResult spirv::SpecConstantOp::parse(OpAsmParser &parser,
                                          OperationState &result) {
   StringAttr nameAttr;
   Attribute valueAttr;
-  StringRef defaultValueAttrName =
-      spirv::SpecConstantOp::getDefaultValueAttrName(result.name);
 
   if (parser.parseSymbolName(nameAttr, SymbolTable::getSymbolAttrName(),
                              result.attributes))
@@ -1624,7 +1557,8 @@ ParseResult spirv::SpecConstantOp::parse(OpAsmParser &parser,
   }
 
   if (parser.parseEqual() ||
-      parser.parseAttribute(valueAttr, defaultValueAttrName, result.attributes))
+      parser.parseAttribute(valueAttr, kDefaultValueAttrName,
+                            result.attributes))
     return failure();
 
   return success();
@@ -1688,18 +1622,19 @@ LogicalResult spirv::VectorShuffleOp::verify() {
 //===----------------------------------------------------------------------===//
 
 LogicalResult spirv::MatrixTimesScalarOp::verify() {
-  Type elementType =
-      llvm::TypeSwitch<Type, Type>(getMatrix().getType())
-          .Case<spirv::CooperativeMatrixType, spirv::MatrixType>(
-              [](auto matrixType) { return matrixType.getElementType(); })
-          .Default([](Type) { return nullptr; });
-
-  assert(elementType && "Unhandled type");
+  if (auto inputCoopmat = llvm::dyn_cast<spirv::CooperativeMatrixNVType>(
+          getMatrix().getType())) {
+    if (inputCoopmat.getElementType() != getScalar().getType())
+      return emitError("input matrix components' type and scaling value must "
+                       "have the same type");
+    return success();
+  }
 
   // Check that the scalar type is the same as the matrix element type.
-  if (getScalar().getType() != elementType)
-    return emitOpError("input matrix components' type and scaling value must "
-                       "have the same type");
+  auto inputMatrix = llvm::cast<spirv::MatrixType>(getMatrix().getType());
+  if (getScalar().getType() != inputMatrix.getElementType())
+    return emitError("input matrix components' type and scaling value must "
+                     "have the same type");
 
   return success();
 }
@@ -1797,18 +1732,14 @@ ParseResult spirv::SpecConstantCompositeOp::parse(OpAsmParser &parser,
   if (parser.parseRParen())
     return failure();
 
-  StringAttr compositeSpecConstituentsName =
-      spirv::SpecConstantCompositeOp::getConstituentsAttrName(result.name);
-  result.addAttribute(compositeSpecConstituentsName,
+  result.addAttribute(kCompositeSpecConstituentsName,
                       parser.getBuilder().getArrayAttr(constituents));
 
   Type type;
   if (parser.parseColonType(type))
     return failure();
 
-  StringAttr typeAttrName =
-      spirv::SpecConstantCompositeOp::getTypeAttrName(result.name);
-  result.addAttribute(typeAttrName, TypeAttr::get(type));
+  result.addAttribute(kTypeAttrName, TypeAttr::get(type));
 
   return success();
 }
@@ -1833,7 +1764,7 @@ LogicalResult spirv::SpecConstantCompositeOp::verify() {
     return emitError("result type must be a composite type, but provided ")
            << getType();
 
-  if (llvm::isa<spirv::CooperativeMatrixType>(cType))
+  if (llvm::isa<spirv::CooperativeMatrixNVType>(cType))
     return emitError("unsupported composite type  ") << cType;
   if (llvm::isa<spirv::JointMatrixINTELType>(cType))
     return emitError("unsupported composite type  ") << cType;

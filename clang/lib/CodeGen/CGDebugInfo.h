@@ -337,9 +337,6 @@ class CGDebugInfo {
                                           llvm::DIScope *RecordTy,
                                           const RecordDecl *RD);
 
-  /// Create type for binding declarations.
-  llvm::DIType *CreateBindingDeclType(const BindingDecl *BD);
-
   /// Create an anonnymous zero-size separator for bit-field-decl if needed on
   /// the target.
   llvm::DIDerivedType *createBitFieldSeparatorIfNeeded(
@@ -626,8 +623,7 @@ private:
     llvm::DIType *WrappedType;
   };
 
-  bool HasReconstitutableArgs(ArrayRef<TemplateArgument> Args) const;
-  std::string GetName(const Decl *, bool Qualified = false) const;
+  std::string GetName(const Decl*, bool Qualified = false) const;
 
   /// Build up structure info for the byref.  See \a BuildByRefType.
   BlockByRefType EmitTypeForVarWithBlocksAttr(const VarDecl *VD,
@@ -801,11 +797,6 @@ private:
                            llvm::MDTuple *&TemplateParameters,
                            llvm::DIScope *&VDContext);
 
-  /// Create a DIExpression representing the constant corresponding
-  /// to the specified 'Val'. Returns nullptr on failure.
-  llvm::DIExpression *createConstantValueExpression(const clang::ValueDecl *VD,
-                                                    const APValue &Val);
-
   /// Allocate a copy of \p A using the DebugInfoNames allocator
   /// and return a reference to it. If multiple arguments are given the strings
   /// are concatenated.
@@ -841,10 +832,8 @@ public:
 
   // Define copy assignment operator.
   ApplyDebugLocation &operator=(ApplyDebugLocation &&Other) {
-    if (this != &Other) {
-      CGF = Other.CGF;
-      Other.CGF = nullptr;
-    }
+    CGF = Other.CGF;
+    Other.CGF = nullptr;
     return *this;
   }
 

@@ -34,8 +34,6 @@ MCObjectStreamer::MCObjectStreamer(MCContext &Context,
       EmitEHFrame(true), EmitDebugFrame(false) {
   if (Assembler->getBackendPtr())
     setAllowAutoPadding(Assembler->getBackend().allowAutoPadding());
-  if (Context.getTargetOptions() && Context.getTargetOptions()->MCRelaxAll)
-    Assembler->setRelaxAll(true);
 }
 
 MCObjectStreamer::~MCObjectStreamer() = default;
@@ -799,9 +797,8 @@ MCObjectStreamer::emitRelocDirective(const MCExpr &Offset, StringRef Name,
     return std::make_pair(true, std::string("unknown relocation name"));
 
   MCFixupKind Kind = *MaybeKind;
-  if (Expr)
-    visitUsedExpr(*Expr);
-  else
+
+  if (Expr == nullptr)
     Expr =
         MCSymbolRefExpr::create(getContext().createTempSymbol(), getContext());
 
@@ -900,13 +897,11 @@ void MCObjectStreamer::emitFileDirective(StringRef Filename) {
 }
 
 void MCObjectStreamer::emitFileDirective(StringRef Filename,
-                                         StringRef CompilerVersion,
+                                         StringRef CompilerVerion,
                                          StringRef TimeStamp,
                                          StringRef Description) {
   getAssembler().addFileName(Filename);
-  getAssembler().setCompilerVersion(CompilerVersion.str());
-  // TODO: add TimeStamp and Description to .file symbol table entry
-  // with the integrated assembler.
+  // TODO: add additional info to integrated assembler.
 }
 
 void MCObjectStreamer::emitAddrsig() {

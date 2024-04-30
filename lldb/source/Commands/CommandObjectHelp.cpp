@@ -48,9 +48,20 @@ CommandObjectHelp::CommandObjectHelp(CommandInterpreter &interpreter)
                           "commands, or give details "
                           "about a specific command.",
                           "help [<cmd-name>]") {
+  CommandArgumentEntry arg;
+  CommandArgumentData command_arg;
+
   // A list of command names forming a path to the command we want help on.
   // No names is allowed - in which case we dump the top-level help.
-  AddSimpleArgumentList(eArgTypeCommand, eArgRepeatStar);
+  command_arg.arg_type = eArgTypeCommand;
+  command_arg.arg_repetition = eArgRepeatStar;
+
+  // There is only one variant this argument could be; put it into the argument
+  // entry.
+  arg.push_back(command_arg);
+
+  // Push the data for the first argument into the m_arguments vector.
+  m_arguments.push_back(arg);
 }
 
 CommandObjectHelp::~CommandObjectHelp() = default;
@@ -63,7 +74,7 @@ CommandObjectHelp::CommandOptions::GetDefinitions() {
   return llvm::ArrayRef(g_help_options);
 }
 
-void CommandObjectHelp::DoExecute(Args &command, CommandReturnObject &result) {
+bool CommandObjectHelp::DoExecute(Args &command, CommandReturnObject &result) {
   CommandObject::CommandMap::iterator pos;
   CommandObject *cmd_obj;
   const size_t argc = command.GetArgumentCount();
@@ -131,14 +142,14 @@ void CommandObjectHelp::DoExecute(Args &command, CommandReturnObject &result) {
           }
           s.Printf("\n");
           result.AppendError(s.GetString());
-          return;
+          return false;
         } else if (!sub_cmd_obj) {
           StreamString error_msg_stream;
           GenerateAdditionalHelpAvenuesMessage(
               &error_msg_stream, cmd_string.c_str(),
               m_interpreter.GetCommandPrefix(), sub_command.c_str());
           result.AppendError(error_msg_stream.GetString());
-          return;
+          return false;
         } else {
           GenerateAdditionalHelpAvenuesMessage(
               &result.GetOutputStream(), cmd_string.c_str(),
@@ -186,6 +197,8 @@ void CommandObjectHelp::DoExecute(Args &command, CommandReturnObject &result) {
       }
     }
   }
+
+  return result.Succeeded();
 }
 
 void CommandObjectHelp::HandleCompletion(CompletionRequest &request) {

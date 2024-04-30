@@ -12,6 +12,8 @@ struct Type {
   int Type;
 };
 
+// rdar://8365458
+// rdar://9132143
 typedef char bool; // expected-error {{redeclaration of C++ built-in type 'bool'}}
 
 // PR4451 - We should recover well from the typo of '::' as ':' in a2.
@@ -121,6 +123,7 @@ class Class2 {
 
 typedef Class1<Class2> Type1;
 
+// rdar : // 8307865
 struct CodeCompleteConsumer {
 };
 
@@ -252,6 +255,9 @@ namespace DuplicateFriend {
   struct A {
     friend void friend f(); // expected-warning {{duplicate 'friend' declaration specifier}}
     friend struct B friend; // expected-warning {{duplicate 'friend' declaration specifier}}
+#if __cplusplus >= 201103L
+    // expected-error@-2 {{'friend' must appear first in a non-function declaration}}
+#endif
   };
 }
 

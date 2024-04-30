@@ -57,12 +57,12 @@ int f12(int arg) {
   return arg ? 0 : f10_t();
 }
 
-// CHECK: define{{.*}} i32 @f13() [[NUW_OS_RN:#[0-9]+]]
-int f13(void) __attribute__((const));
-int f13(void){ return 0; }
+// CHECK: define{{.*}} void @f13() [[NUW_OS_RN:#[0-9]+]]
+void f13(void) __attribute__((pure)) __attribute__((const));
+void f13(void){}
 
 
-// [irgen] clang isn't setting the optsize bit on functions
+// <rdar://problem/7102668> [irgen] clang isn't setting the optsize bit on functions
 // CHECK-LABEL: define{{.*}} void @f15
 // CHECK: [[NUW]]
 // CHECK: {

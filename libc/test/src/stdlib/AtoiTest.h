@@ -6,14 +6,14 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "src/__support/CPP/limits.h" // INT_MAX, INT_MIN, LLONG_MAX, LLONG_MIN
 #include "src/__support/CPP/type_traits.h"
 #include "test/UnitTest/Test.h"
 
-using LIBC_NAMESPACE::cpp::is_same_v;
+#include <limits.h>
 
-template <typename ReturnT>
-struct AtoTest : public LIBC_NAMESPACE::testing::Test {
+using __llvm_libc::cpp::is_same_v;
+
+template <typename ReturnT> struct AtoTest : public __llvm_libc::testing::Test {
   using FunctionT = ReturnT (*)(const char *);
 
   void validNumbers(FunctionT func) {

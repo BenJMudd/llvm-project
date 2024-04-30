@@ -132,11 +132,11 @@ namespace {
     llvm::StringRef GroupName;
     std::vector<const Record*> DiagsInGroup;
     std::vector<std::string> SubGroups;
-    unsigned IDNo = 0;
+    unsigned IDNo;
 
     llvm::SmallVector<const Record *, 1> Defs;
 
-    GroupInfo() = default;
+    GroupInfo() : IDNo(0) {}
   };
 } // end anonymous namespace.
 
@@ -873,12 +873,16 @@ struct DiagTextDocPrinter : DiagTextVisitor<DiagTextDocPrinter> {
     auto &S = RST.back();
 
     StringRef T = P->Text;
-    while (T.consume_front(" "))
+    while (!T.empty() && T.front() == ' ') {
       RST.back() += " |nbsp| ";
+      T = T.drop_front();
+    }
 
     std::string Suffix;
-    while (T.consume_back(" "))
+    while (!T.empty() && T.back() == ' ') {
       Suffix += " |nbsp| ";
+      T = T.drop_back();
+    }
 
     if (!T.empty()) {
       S += ':';
@@ -1117,8 +1121,9 @@ Piece *DiagnosticTextBuilder::DiagText::parseDiagText(StringRef &Text,
           if (!isdigit(Text[0]))
             break;
           Sub->Modifiers.push_back(parseModifier(Text));
-          if (!Text.consume_front(","))
+          if (Text.empty() || Text[0] != ',')
             break;
+          Text = Text.drop_front(); // ','
           assert(!Text.empty() && isdigit(Text[0]) &&
                  "expected another modifier");
         }
@@ -1338,7 +1343,7 @@ static std::string getDiagCategoryEnum(llvm::StringRef name) {
   SmallString<256> enumName = llvm::StringRef("DiagCat_");
   for (llvm::StringRef::iterator I = name.begin(), E = name.end(); I != E; ++I)
     enumName += isalnum(*I) ? *I : '_';
-  return std::string(enumName);
+  return std::string(enumName.str());
 }
 
 /// Emit the array of diagnostic subgroups.

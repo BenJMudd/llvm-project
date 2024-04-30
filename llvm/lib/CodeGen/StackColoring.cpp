@@ -7,7 +7,7 @@
 //===----------------------------------------------------------------------===//
 //
 // This pass implements the stack-coloring optimization that looks for
-// lifetime markers machine instructions (LIFETIME_START and LIFETIME_END),
+// lifetime markers machine instructions (LIFESTART_BEGIN and LIFESTART_END),
 // which represent the possible lifetime of stack slots. It attempts to
 // merge disjoint stack slots and reduce the used stack space.
 // NOTE: This pass is not StackSlotColoring, which optimizes spill slots.
@@ -36,7 +36,6 @@
 #include "llvm/CodeGen/MachineMemOperand.h"
 #include "llvm/CodeGen/MachineOperand.h"
 #include "llvm/CodeGen/Passes.h"
-#include "llvm/CodeGen/PseudoSourceValueManager.h"
 #include "llvm/CodeGen/SlotIndexes.h"
 #include "llvm/CodeGen/TargetOpcodes.h"
 #include "llvm/CodeGen/WinEHFuncInfo.h"
@@ -1339,10 +1338,8 @@ bool StackColoring::runOnMachineFunction(MachineFunction &Func) {
 
   // Scan the entire function and update all machine operands that use frame
   // indices to use the remapped frame index.
-  if (!SlotRemap.empty()) {
-    expungeSlotMap(SlotRemap, NumSlots);
-    remapInstructions(SlotRemap);
-  }
+  expungeSlotMap(SlotRemap, NumSlots);
+  remapInstructions(SlotRemap);
 
   return removeAllMarkers();
 }

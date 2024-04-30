@@ -45,7 +45,7 @@ public:
   }
 
   template <class PEHeader> void printPEHeader(const PEHeader &Hdr) const;
-  void printPrivateHeaders() override;
+  void printPrivateHeaders(bool MachOOnlyFirst) override;
 
 private:
   template <typename T> FormattedNumber formatAddr(T V) const {
@@ -771,7 +771,7 @@ void objdump::printCOFFUnwindInfo(const COFFObjectFile *Obj) {
   }
 }
 
-void COFFDumper::printPrivateHeaders() {
+void COFFDumper::printPrivateHeaders(bool MachOOnlyFirst) {
   COFFDumper CD(Obj);
   const uint16_t Cha = Obj.getCharacteristics();
   outs() << "Characteristics 0x" << Twine::utohexstr(Cha) << '\n';
@@ -857,7 +857,7 @@ void objdump::printCOFFSymbolTable(const COFFObjectFile &coff) {
            << "(nx " << unsigned(Symbol->getNumberOfAuxSymbols()) << ") "
            << "0x" << format("%08x", unsigned(Symbol->getValue())) << " "
            << Name;
-    if (Demangle && Name.starts_with("?")) {
+    if (Demangle && Name.startswith("?")) {
       int Status = -1;
       char *DemangledSymbol = microsoftDemangle(Name, nullptr, &Status);
 

@@ -26,9 +26,8 @@ enum class Language : uint8_t {
   /// Assembly: we accept this only so that we can preprocess it.
   Asm,
 
-  /// LLVM IR & CIR: we accept these so that we can run the optimizer on them,
-  /// and compile them to assembly or object code (or LLVM for CIR).
-  CIR,
+  /// LLVM IR: we accept this so that we can run the optimizer on it,
+  /// and compile it to assembly or object code.
   LLVM_IR,
 
   ///@{ Languages that the frontend can parse and compile.
@@ -44,14 +43,13 @@ enum class Language : uint8_t {
   HLSL,
   ///@}
 };
-StringRef languageToString(Language L);
 
 enum LangFeatures {
   LineComment = (1 << 0),
   C99 = (1 << 1),
   C11 = (1 << 2),
   C17 = (1 << 3),
-  C23 = (1 << 4),
+  C2x = (1 << 4),
   CPlusPlus = (1 << 5),
   CPlusPlus11 = (1 << 6),
   CPlusPlus14 = (1 << 7),
@@ -103,8 +101,8 @@ public:
   /// isC17 - Language is a superset of C17.
   bool isC17() const { return Flags & C17; }
 
-  /// isC23 - Language is a superset of C23.
-  bool isC23() const { return Flags & C23; }
+  /// isC2x - Language is a superset of C2x.
+  bool isC2x() const { return Flags & C2x; }
 
   /// isCPlusPlus - Language is a C++ variant.
   bool isCPlusPlus() const { return Flags & CPlusPlus; }
@@ -140,7 +138,6 @@ public:
   bool isOpenCL() const { return Flags & OpenCL; }
 
   static Kind getLangKind(StringRef Name);
-  static Kind getHLSLLangKind(StringRef Name);
   static const LangStandard &getLangStandardForKind(Kind K);
   static const LangStandard *getLangStandardForName(StringRef Name);
 };

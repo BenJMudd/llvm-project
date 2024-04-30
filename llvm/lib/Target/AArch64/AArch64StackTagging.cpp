@@ -11,6 +11,8 @@
 #include "AArch64InstrInfo.h"
 #include "AArch64Subtarget.h"
 #include "AArch64TargetMachine.h"
+#include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/DepthFirstIterator.h"
 #include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/Statistic.h"
@@ -21,6 +23,7 @@
 #include "llvm/Analysis/ScalarEvolution.h"
 #include "llvm/Analysis/ScalarEvolutionExpressions.h"
 #include "llvm/Analysis/StackSafetyAnalysis.h"
+#include "llvm/Analysis/ValueTracking.h"
 #include "llvm/CodeGen/LiveRegUnits.h"
 #include "llvm/CodeGen/MachineBasicBlock.h"
 #include "llvm/CodeGen/MachineFunction.h"
@@ -432,7 +435,7 @@ void AArch64StackTagging::tagAlloca(AllocaInst *AI, Instruction *InsertBefore,
 void AArch64StackTagging::untagAlloca(AllocaInst *AI, Instruction *InsertBefore,
                                       uint64_t Size) {
   IRBuilder<> IRB(InsertBefore);
-  IRB.CreateCall(SetTagFunc, {IRB.CreatePointerCast(AI, IRB.getPtrTy()),
+  IRB.CreateCall(SetTagFunc, {IRB.CreatePointerCast(AI, IRB.getInt8PtrTy()),
                               ConstantInt::get(IRB.getInt64Ty(), Size)});
 }
 
@@ -519,6 +522,7 @@ bool AArch64StackTagging::runOnFunction(Function &Fn) {
   for (auto &I : SInfo.AllocasToInstrument) {
     memtag::AllocaInfo &Info = I.second;
     assert(Info.AI && SIB.isInterestingAlloca(*Info.AI));
+    TrackingVH<Instruction> OldAI = Info.AI;
     memtag::alignAndPadAlloca(Info, kTagGranuleSize);
     AllocaInst *AI = Info.AI;
     int Tag = NextTag;
@@ -532,10 +536,7 @@ bool AArch64StackTagging::runOnFunction(Function &Fn) {
                               ConstantInt::get(IRB.getInt64Ty(), Tag)});
     if (Info.AI->hasName())
       TagPCall->setName(Info.AI->getName() + ".tag");
-    // Does not replace metadata, so we don't have to handle DbgVariableRecords.
-    Info.AI->replaceUsesWithIf(TagPCall, [&](const Use &U) {
-      return !memtag::isLifetimeIntrinsic(U.getUser());
-    });
+    Info.AI->replaceAllUsesWith(TagPCall);
     TagPCall->setOperand(0, Info.AI);
 
     // Calls to functions that may return twice (e.g. setjmp) confuse the
@@ -543,16 +544,16 @@ bool AArch64StackTagging::runOnFunction(Function &Fn) {
     // function return. Work around this by always untagging at every return
     // statement if return_twice functions are called.
     bool StandardLifetime =
-        !SInfo.CallsReturnTwice &&
         SInfo.UnrecognizedLifetimes.empty() &&
         memtag::isStandardLifetime(Info.LifetimeStart, Info.LifetimeEnd, DT, LI,
-                                   ClMaxLifetimes);
+                                   ClMaxLifetimes) &&
+        !SInfo.CallsReturnTwice;
     if (StandardLifetime) {
       IntrinsicInst *Start = Info.LifetimeStart[0];
       uint64_t Size =
           cast<ConstantInt>(Start->getArgOperand(0))->getZExtValue();
       Size = alignTo(Size, kTagGranuleSize);
-      tagAlloca(AI, Start->getNextNode(), TagPCall, Size);
+      tagAlloca(AI, Start->getNextNode(), Start->getArgOperand(1), Size);
 
       auto TagEnd = [&](Instruction *Node) { untagAlloca(AI, Node, Size); };
       if (!DT || !PDT ||
@@ -563,7 +564,7 @@ bool AArch64StackTagging::runOnFunction(Function &Fn) {
       }
     } else {
       uint64_t Size = *Info.AI->getAllocationSize(*DL);
-      Value *Ptr = IRB.CreatePointerCast(TagPCall, IRB.getPtrTy());
+      Value *Ptr = IRB.CreatePointerCast(TagPCall, IRB.getInt8PtrTy());
       tagAlloca(AI, &*IRB.GetInsertPoint(), Ptr, Size);
       for (auto *RI : SInfo.RetVec) {
         untagAlloca(AI, RI, Size);
@@ -575,6 +576,10 @@ bool AArch64StackTagging::runOnFunction(Function &Fn) {
       for (auto *II : Info.LifetimeEnd)
         II->eraseFromParent();
     }
+
+    // Fixup debug intrinsics to point to the new alloca.
+    for (auto *DVI : Info.DbgVariableIntrinsics)
+      DVI->replaceVariableLocationOp(OldAI, Info.AI);
   }
 
   // If we have instrumented at least one alloca, all unrecognized lifetime

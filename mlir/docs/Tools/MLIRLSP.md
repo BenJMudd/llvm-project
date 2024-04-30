@@ -392,8 +392,7 @@ to work:
 
 ### Visual Studio Code
 
-The [MLIR extension](https://marketplace.visualstudio.com/items?itemName=llvm-vs-code-extensions.vscode-mlir)
-provides language IDE features for [MLIR](https://mlir.llvm.org/) related
+Provides language IDE features for [MLIR](https://mlir.llvm.org/) related
 languages: [MLIR](#mlir---mlir-textual-assembly-format),
 [PDLL](#pdll---mlir-pdll-pattern-files), and [TableGen](#td---tablegen-files)
 
@@ -503,7 +502,7 @@ This extension is actively developed within the
 As such, contributions should follow the
 [normal LLVM guidelines](https://llvm.org/docs/Contributing.html), with code
 reviews sent to
-[GitHub](https://llvm.org/docs/Contributing.html#how-to-submit-a-patch).
+[phabricator](https://llvm.org/docs/Contributing.html#how-to-submit-a-patch).
 
 When developing or deploying this extension within the LLVM monorepo, a few
 extra setup steps are required:

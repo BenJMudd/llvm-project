@@ -1,22 +1,22 @@
 // RUN: %check_clang_tidy %s readability-redundant-declaration %t -- \
 // RUN:   -config="{CheckOptions: \
-// RUN:             {readability-redundant-declaration.IgnoreMacros: \
-// RUN:                false}}"
+// RUN:             [{key: readability-redundant-declaration.IgnoreMacros, \
+// RUN:               value: false}]}"
 //
 // With -fms-compatibility and -DEXTERNINLINE, the extern inline shouldn't
 // produce additional diagnostics, so same check suffix as before:
 // RUN: %check_clang_tidy %s readability-redundant-declaration %t -- \
 // RUN:   -config="{CheckOptions: \
-// RUN:             {readability-redundant-declaration.IgnoreMacros: \
-// RUN:                false}}" -- -fms-compatibility -DEXTERNINLINE
+// RUN:             [{key: readability-redundant-declaration.IgnoreMacros, \
+// RUN:               value: false}]}" -- -fms-compatibility -DEXTERNINLINE
 //
 // With -fno-ms-compatibility, DEXTERNINLINE causes additional output.
 // (The leading ',' means "default checks in addition to NOMSCOMPAT checks.)
 // RUN: %check_clang_tidy -check-suffix=,NOMSCOMPAT \
 // RUN:   %s readability-redundant-declaration %t -- \
 // RUN:   -config="{CheckOptions: \
-// RUN:             {readability-redundant-declaration.IgnoreMacros: \
-// RUN:                false}}" -- -fno-ms-compatibility -DEXTERNINLINE
+// RUN:             [{key: readability-redundant-declaration.IgnoreMacros, \
+// RUN:               value: false}]}" -- -fno-ms-compatibility -DEXTERNINLINE
 
 extern int Xyz;
 extern int Xyz; // Xyz

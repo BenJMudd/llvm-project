@@ -15,24 +15,25 @@ using namespace clang::ast_matchers;
 
 namespace clang::tidy::cppcoreguidelines {
 
-void AvoidNonConstGlobalVariablesCheck::registerMatchers(MatchFinder *Finder) {
-  auto GlobalContext =
-      varDecl(hasGlobalStorage(),
-              hasDeclContext(anyOf(namespaceDecl(), translationUnitDecl())));
+namespace {
+AST_MATCHER(VarDecl, isLocalVarDecl) { return Node.isLocalVarDecl(); }
+} // namespace
 
+void AvoidNonConstGlobalVariablesCheck::registerMatchers(MatchFinder *Finder) {
   auto GlobalVariable = varDecl(
-      GlobalContext,
+      hasGlobalStorage(),
       unless(anyOf(
-          isConstexpr(), hasType(isConstQualified()),
+          isLocalVarDecl(), isConstexpr(), hasType(isConstQualified()),
           hasType(referenceType())))); // References can't be changed, only the
                                        // data they reference can be changed.
 
   auto GlobalReferenceToNonConst =
-      varDecl(GlobalContext, hasType(referenceType()),
+      varDecl(hasGlobalStorage(), hasType(referenceType()),
               unless(hasType(references(qualType(isConstQualified())))));
 
-  auto GlobalPointerToNonConst = varDecl(
-      GlobalContext, hasType(pointerType(pointee(unless(isConstQualified())))));
+  auto GlobalPointerToNonConst =
+      varDecl(hasGlobalStorage(),
+              hasType(pointerType(pointee(unless(isConstQualified())))));
 
   Finder->addMatcher(GlobalVariable.bind("non-const_variable"), this);
   Finder->addMatcher(GlobalReferenceToNonConst.bind("indirection_to_non-const"),

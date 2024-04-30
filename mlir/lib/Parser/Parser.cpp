@@ -62,7 +62,7 @@ static LogicalResult loadSourceFileBuffer(llvm::StringRef filename,
                      "only main buffer parsed at the moment");
   }
   auto fileOrErr = llvm::MemoryBuffer::getFileOrSTDIN(filename);
-  if (fileOrErr.getError())
+  if (std::error_code error = fileOrErr.getError())
     return emitError(mlir::UnknownLoc::get(ctx),
                      "could not open input file " + filename);
 
@@ -91,9 +91,7 @@ LogicalResult mlir::parseSourceString(llvm::StringRef sourceStr, Block *block,
                                       const ParserConfig &config,
                                       StringRef sourceName,
                                       LocationAttr *sourceFileLoc) {
-  auto memBuffer =
-      llvm::MemoryBuffer::getMemBuffer(sourceStr, sourceName,
-                                       /*RequiresNullTerminator=*/false);
+  auto memBuffer = llvm::MemoryBuffer::getMemBuffer(sourceStr, sourceName);
   if (!memBuffer)
     return failure();
 

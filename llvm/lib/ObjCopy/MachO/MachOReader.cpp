@@ -11,7 +11,6 @@
 #include "llvm/BinaryFormat/MachO.h"
 #include "llvm/Object/MachO.h"
 #include "llvm/Support/Errc.h"
-#include "llvm/Support/SystemZ/zOSSupport.h"
 #include <memory>
 
 using namespace llvm;
@@ -68,8 +67,7 @@ Expected<std::vector<std::unique_ptr<Section>>> static extractSections(
                                                         LoadCmd.C.cmdsize);
        Curr < End; ++Curr) {
     SectionType Sec;
-    memcpy((void *)&Sec, reinterpret_cast<const char *>(Curr),
-           sizeof(SectionType));
+    memcpy((void *)&Sec, Curr, sizeof(SectionType));
 
     if (MachOObj.isLittleEndian() != sys::IsLittleEndianHost)
       MachO::swapStruct(Sec);

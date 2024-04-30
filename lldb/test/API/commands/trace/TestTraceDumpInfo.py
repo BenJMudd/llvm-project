@@ -55,7 +55,12 @@ class TestTraceDumpInfo(TraceIntelPTTestCaseBase):
   Total number of trace items: 28
 
   Memory usage:
-    Raw trace size: 4 KiB""",
+    Raw trace size: 4 KiB
+    Total approximate memory usage (excluding raw trace): 0.25 KiB
+    Average memory usage per item (excluding raw trace): 9.00 bytes
+
+  Timing for this thread:
+    Decoding instructions: """,
                 """
 
   Events:
@@ -81,7 +86,13 @@ class TestTraceDumpInfo(TraceIntelPTTestCaseBase):
   "traceTechnology": "intel-pt",
   "threadStats": {
     "tid": 3842849,
-    "traceItemsCount": 28,""",
+    "traceItemsCount": 28,
+    "memoryUsage": {
+      "totalInBytes": "252",
+      "avgPerItemInBytes": 9
+    },
+    "timingInSeconds": {
+      "Decoding instructions": 0""",
                 """
     },
     "events": {

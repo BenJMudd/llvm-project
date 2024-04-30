@@ -90,7 +90,7 @@ public:
       : Alloc(std::move(Alloc)) {}
 
   virtual void abandon(OnAbandonedFunction OnAbandoned) override {
-    OnAbandoned(Error::success());
+    llvm_unreachable("unexpected abandoned allocation");
   }
 
   virtual void finalize(OnFinalizedFunction OnFinalized) override {
@@ -120,7 +120,7 @@ void ExecutableFileMemoryManager::updateSection(
   }
 
   if (!IsCode && (SectionName == ".strtab" || SectionName == ".symtab" ||
-                  SectionName == "" || SectionName.starts_with(".rela.")))
+                  SectionName == "" || SectionName.startswith(".rela.")))
     return;
 
   SmallVector<char, 256> Buf;
@@ -139,7 +139,7 @@ void ExecutableFileMemoryManager::updateSection(
   }
 
   BinarySection *Section = nullptr;
-  if (!OrgSecPrefix.empty() && SectionName.starts_with(OrgSecPrefix)) {
+  if (!OrgSecPrefix.empty() && SectionName.startswith(OrgSecPrefix)) {
     // Update the original section contents.
     ErrorOr<BinarySection &> OrgSection =
         BC.getUniqueSectionByName(SectionName.substr(OrgSecPrefix.length()));

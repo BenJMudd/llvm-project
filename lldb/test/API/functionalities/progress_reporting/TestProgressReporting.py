@@ -39,5 +39,3 @@ class TestProgressReporting(TestBase):
         progress_data = lldb.SBDebugger.GetProgressDataFromEvent(event)
         message = progress_data.GetValueForKey("message").GetStringValue(100)
         self.assertGreater(len(message), 0)
-        details = progress_data.GetValueForKey("details").GetStringValue(100)
-        self.assertGreater(len(details), 0)

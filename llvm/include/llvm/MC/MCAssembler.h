@@ -133,8 +133,6 @@ private:
 
   /// List of declared file names
   std::vector<std::pair<std::string, size_t>> FileNames;
-  // Optional compiler version.
-  std::string CompilerVersion;
 
   MCDwarfLineTableParams LTParams;
 
@@ -187,8 +185,7 @@ private:
   /// relocation.
   bool evaluateFixup(const MCAsmLayout &Layout, const MCFixup &Fixup,
                      const MCFragment *DF, MCValue &Target,
-                     const MCSubtargetInfo *STI, uint64_t &Value,
-                     bool &WasForced) const;
+                     uint64_t &Value, bool &WasForced) const;
 
   /// Check whether a fixup can be satisfied, or whether it needs to be relaxed
   /// (increased in size, in order to hold its value correctly).
@@ -224,10 +221,8 @@ private:
   /// finishLayout - Finalize a layout, including fragment lowering.
   void finishLayout(MCAsmLayout &Layout);
 
-  std::tuple<MCValue, uint64_t, bool> handleFixup(const MCAsmLayout &Layout,
-                                                  MCFragment &F,
-                                                  const MCFixup &Fixup,
-                                                  const MCSubtargetInfo *STI);
+  std::tuple<MCValue, uint64_t, bool>
+  handleFixup(const MCAsmLayout &Layout, MCFragment &F, const MCFixup &Fixup);
 
 public:
   struct Symver {
@@ -487,12 +482,6 @@ public:
   void addFileName(StringRef FileName) {
     FileNames.emplace_back(std::string(FileName), Symbols.size());
   }
-
-  void setCompilerVersion(std::string CompilerVers) {
-    if (CompilerVersion.empty())
-      CompilerVersion = std::move(CompilerVers);
-  }
-  StringRef getCompilerVersion() { return CompilerVersion; }
 
   /// Write the necessary bundle padding to \p OS.
   /// Expects a fragment \p F containing instructions and its size \p FSize.

@@ -9,7 +9,6 @@
 #include "AMDGPUCombinerHelper.h"
 #include "GCNSubtarget.h"
 #include "MCTargetDesc/AMDGPUMCTargetDesc.h"
-#include "llvm/CodeGen/GlobalISel/GenericMachineInstrs.h"
 #include "llvm/CodeGen/GlobalISel/MIPatternMatch.h"
 #include "llvm/IR/IntrinsicsAMDGPU.h"
 #include "llvm/Target/TargetMachine.h"
@@ -29,8 +28,6 @@ static bool fnegFoldsIntoMI(const MachineInstr &MI) {
   case AMDGPU::G_FMAXNUM:
   case AMDGPU::G_FMINNUM_IEEE:
   case AMDGPU::G_FMAXNUM_IEEE:
-  case AMDGPU::G_FMINIMUM:
-  case AMDGPU::G_FMAXIMUM:
   case AMDGPU::G_FSIN:
   case AMDGPU::G_FPEXT:
   case AMDGPU::G_INTRINSIC_TRUNC:
@@ -45,7 +42,7 @@ static bool fnegFoldsIntoMI(const MachineInstr &MI) {
   case AMDGPU::G_AMDGPU_FMAX_LEGACY:
     return true;
   case AMDGPU::G_INTRINSIC: {
-    unsigned IntrinsicID = cast<GIntrinsic>(MI).getIntrinsicID();
+    unsigned IntrinsicID = MI.getIntrinsicID();
     switch (IntrinsicID) {
     case Intrinsic::amdgcn_rcp:
     case Intrinsic::amdgcn_rcp_legacy:
@@ -69,7 +66,8 @@ static bool fnegFoldsIntoMI(const MachineInstr &MI) {
 LLVM_READONLY
 static bool opMustUseVOP3Encoding(const MachineInstr &MI,
                                   const MachineRegisterInfo &MRI) {
-  return MI.getNumOperands() > (isa<GIntrinsic>(MI) ? 4u : 3u) ||
+  return MI.getNumOperands() >
+             (MI.getOpcode() == AMDGPU::G_INTRINSIC ? 4u : 3u) ||
          MRI.getType(MI.getOperand(0).getReg()).getScalarSizeInBits() == 64;
 }
 
@@ -87,16 +85,14 @@ static bool hasSourceMods(const MachineInstr &MI) {
   case TargetOpcode::INLINEASM:
   case TargetOpcode::INLINEASM_BR:
   case AMDGPU::G_INTRINSIC_W_SIDE_EFFECTS:
-  case AMDGPU::G_INTRINSIC_CONVERGENT_W_SIDE_EFFECTS:
   case AMDGPU::G_BITCAST:
   case AMDGPU::G_ANYEXT:
   case AMDGPU::G_BUILD_VECTOR:
   case AMDGPU::G_BUILD_VECTOR_TRUNC:
   case AMDGPU::G_PHI:
     return false;
-  case AMDGPU::G_INTRINSIC:
-  case AMDGPU::G_INTRINSIC_CONVERGENT: {
-    unsigned IntrinsicID = cast<GIntrinsic>(MI).getIntrinsicID();
+  case AMDGPU::G_INTRINSIC: {
+    unsigned IntrinsicID = MI.getIntrinsicID();
     switch (IntrinsicID) {
     case Intrinsic::amdgcn_interp_p1:
     case Intrinsic::amdgcn_interp_p2:
@@ -176,10 +172,6 @@ static unsigned inverseMinMax(unsigned Opc) {
     return AMDGPU::G_FMINNUM_IEEE;
   case AMDGPU::G_FMINNUM_IEEE:
     return AMDGPU::G_FMAXNUM_IEEE;
-  case AMDGPU::G_FMAXIMUM:
-    return AMDGPU::G_FMINIMUM;
-  case AMDGPU::G_FMINIMUM:
-    return AMDGPU::G_FMAXIMUM;
   case AMDGPU::G_AMDGPU_FMAX_LEGACY:
     return AMDGPU::G_AMDGPU_FMIN_LEGACY;
   case AMDGPU::G_AMDGPU_FMIN_LEGACY:
@@ -213,8 +205,6 @@ bool AMDGPUCombinerHelper::matchFoldableFneg(MachineInstr &MI,
   case AMDGPU::G_FMAXNUM:
   case AMDGPU::G_FMINNUM_IEEE:
   case AMDGPU::G_FMAXNUM_IEEE:
-  case AMDGPU::G_FMINIMUM:
-  case AMDGPU::G_FMAXIMUM:
   case AMDGPU::G_AMDGPU_FMIN_LEGACY:
   case AMDGPU::G_AMDGPU_FMAX_LEGACY:
     // 0 doesn't have a negated inline immediate.
@@ -237,9 +227,8 @@ bool AMDGPUCombinerHelper::matchFoldableFneg(MachineInstr &MI,
   case AMDGPU::G_FCANONICALIZE:
   case AMDGPU::G_AMDGPU_RCP_IFLAG:
     return true;
-  case AMDGPU::G_INTRINSIC:
-  case AMDGPU::G_INTRINSIC_CONVERGENT: {
-    unsigned IntrinsicID = cast<GIntrinsic>(MatchInfo)->getIntrinsicID();
+  case AMDGPU::G_INTRINSIC: {
+    unsigned IntrinsicID = MatchInfo->getIntrinsicID();
     switch (IntrinsicID) {
     case Intrinsic::amdgcn_rcp:
     case Intrinsic::amdgcn_rcp_legacy:
@@ -312,8 +301,6 @@ void AMDGPUCombinerHelper::applyFoldableFneg(MachineInstr &MI,
   case AMDGPU::G_FMAXNUM:
   case AMDGPU::G_FMINNUM_IEEE:
   case AMDGPU::G_FMAXNUM_IEEE:
-  case AMDGPU::G_FMINIMUM:
-  case AMDGPU::G_FMAXIMUM:
   case AMDGPU::G_AMDGPU_FMIN_LEGACY:
   case AMDGPU::G_AMDGPU_FMAX_LEGACY: {
     NegateOperand(MatchInfo->getOperand(1));
@@ -339,9 +326,8 @@ void AMDGPUCombinerHelper::applyFoldableFneg(MachineInstr &MI,
   case AMDGPU::G_FPTRUNC:
     NegateOperand(MatchInfo->getOperand(1));
     break;
-  case AMDGPU::G_INTRINSIC:
-  case AMDGPU::G_INTRINSIC_CONVERGENT: {
-    unsigned IntrinsicID = cast<GIntrinsic>(MatchInfo)->getIntrinsicID();
+  case AMDGPU::G_INTRINSIC: {
+    unsigned IntrinsicID = MatchInfo->getIntrinsicID();
     switch (IntrinsicID) {
     case Intrinsic::amdgcn_rcp:
     case Intrinsic::amdgcn_rcp_legacy:

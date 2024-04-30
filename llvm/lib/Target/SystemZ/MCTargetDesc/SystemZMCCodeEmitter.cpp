@@ -12,6 +12,7 @@
 
 #include "MCTargetDesc/SystemZMCFixups.h"
 #include "MCTargetDesc/SystemZMCTargetDesc.h"
+#include "SystemZInstrInfo.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/MC/MCCodeEmitter.h"
 #include "llvm/MC/MCContext.h"
@@ -22,6 +23,7 @@
 #include "llvm/MC/MCRegisterInfo.h"
 #include "llvm/MC/MCSubtargetInfo.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/raw_ostream.h"
 #include <cassert>
 #include <cstdint>
 
@@ -36,8 +38,9 @@ class SystemZMCCodeEmitter : public MCCodeEmitter {
   MCContext &Ctx;
 
 public:
-  SystemZMCCodeEmitter(const MCInstrInfo &MCII, MCContext &Ctx)
-      : MCII(MCII), Ctx(Ctx) {}
+  SystemZMCCodeEmitter(const MCInstrInfo &mcii, MCContext &ctx)
+    : MCII(mcii), Ctx(ctx) {
+  }
 
   ~SystemZMCCodeEmitter() override = default;
 

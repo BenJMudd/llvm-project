@@ -27,7 +27,8 @@
 #include <utility>
 
 namespace mlir {
-#define GEN_PASS_DEF_LINALGELEMENTWISEOPFUSIONPASS
+#define GEN_PASS_DEF_LINALGFOLDUNITEXTENTDIMS
+#define GEN_PASS_DEF_LINALGELEMENTWISEOPFUSION
 #include "mlir/Dialect/Linalg/Passes.h.inc"
 } // namespace mlir
 
@@ -70,25 +71,6 @@ static AffineMap getIndexingMapOfProducerOperandsInCoordinatesOfFusedOp(
   return t1.compose(fusedConsumerArgIndexMap);
 }
 
-/// Returns a set of indices of the producer's results which would
-/// be preserved after the fusion.
-llvm::SmallDenseSet<int>
-ElementwiseOpFusionResult::getPreservedProducerResults(GenericOp producer,
-                                                       GenericOp consumer) {
-  llvm::SmallDenseSet<int> preservedProducerResults;
-  for (const auto &producerResult : llvm::enumerate(producer->getResults())) {
-    auto *outputOperand = producer.getDpsInitOperand(producerResult.index());
-    if (producer.payloadUsesValueFromOperand(outputOperand) ||
-        !producer.canOpOperandsBeDropped(outputOperand) ||
-        llvm::any_of(producerResult.value().getUsers(), [&](Operation *user) {
-          return user != consumer.getOperation();
-        })) {
-      preservedProducerResults.insert(producerResult.index());
-    }
-  }
-  return preservedProducerResults;
-}
-
 /// Conditions for elementwise fusion of generic operations.
 bool mlir::linalg::areElementwiseOpsFusable(OpOperand *fusedOperand) {
   if (!fusedOperand)
@@ -104,7 +86,7 @@ bool mlir::linalg::areElementwiseOpsFusable(OpOperand *fusedOperand) {
   // Consumer can have mixed semantics, just check operand itself has tensor
   // type. Producer must have full tensor semantics to avoid potential
   // aliasing between producer and consumer memrefs.
-  if (!producer.hasPureTensorSemantics() ||
+  if (!producer.hasTensorSemantics() ||
       !isa<RankedTensorType>(fusedOperand->get().getType()))
     return false;
 
@@ -140,7 +122,7 @@ bool mlir::linalg::areElementwiseOpsFusable(OpOperand *fusedOperand) {
 
     auto addToCoveredDims = [&](AffineMap map) {
       for (auto result : map.getResults())
-        if (auto dimExpr = dyn_cast<AffineDimExpr>(result))
+        if (auto dimExpr = result.dyn_cast<AffineDimExpr>())
           coveredDims[dimExpr.getPosition()] = true;
     };
 
@@ -177,9 +159,11 @@ static void generateFusedElementwiseOpRegion(
   // Build the region of the fused op.
   Block &producerBlock = producer->getRegion(0).front();
   Block &consumerBlock = consumer->getRegion(0).front();
-  OpBuilder::InsertionGuard guard(rewriter);
-  Block *fusedBlock = rewriter.createBlock(&fusedOp.getRegion());
+  Block *fusedBlock = new Block();
+  fusedOp.getRegion().push_back(fusedBlock);
   IRMapping mapper;
+  OpBuilder::InsertionGuard guard(rewriter);
+  rewriter.setInsertionPointToStart(fusedBlock);
 
   // 2. Add an index operation for every fused loop dimension and use the
   // `consumerToProducerLoopsMap` to map the producer indices.
@@ -301,9 +285,17 @@ mlir::linalg::fuseElementwiseOps(RewriterBase &rewriter,
   assert(consumer.isDpsInput(fusedOperand) &&
          "expected producer of input operand");
   /// Find the results of the producer that have uses outside of the consumer.
-  llvm::SmallDenseSet<int> preservedProducerResults =
-      ElementwiseOpFusionResult::getPreservedProducerResults(producer,
-                                                             consumer);
+  llvm::SmallDenseSet<int> preservedProducerResults;
+  for (const auto &producerResult : llvm::enumerate(producer->getResults())) {
+    auto *outputOperand = producer.getDpsInitOperand(producerResult.index());
+    if (producer.payloadUsesValueFromOperand(outputOperand) ||
+        !producer.canOpOperandsBeDropped(outputOperand) ||
+        llvm::any_of(producerResult.value().getUsers(), [&](Operation *user) {
+          return user != consumer.getOperation();
+        })) {
+      preservedProducerResults.insert(producerResult.index());
+    }
+  }
 
   // Compute the fused operands list and indexing maps.
   SmallVector<Value> fusedInputOperands, fusedOutputOperands;
@@ -348,23 +340,23 @@ mlir::linalg::fuseElementwiseOps(RewriterBase &rewriter,
   }
 
   // 6. Collect all of the producer outputs.
-  for (const auto &opOperand : llvm::enumerate(producer.getDpsInitsMutable())) {
+  for (const auto &opOperand : llvm::enumerate(producer.getDpsInitOperands())) {
     if (!preservedProducerResults.count(opOperand.index()))
       continue;
 
-    fusedOutputOperands.push_back(opOperand.value().get());
+    fusedOutputOperands.push_back(opOperand.value()->get());
     AffineMap map = getIndexingMapOfProducerOperandsInCoordinatesOfFusedOp(
-        &opOperand.value(), producerResultIndexMap,
+        opOperand.value(), producerResultIndexMap,
         consumer.getMatchingIndexingMap(fusedOperand));
     fusedIndexMaps.push_back(map);
-    fusedResultTypes.push_back(opOperand.value().get().getType());
+    fusedResultTypes.push_back(opOperand.value()->get().getType());
   }
 
   // 7. All of consumer's output operands (skip operands: added by the builder).
-  for (OpOperand &opOperand : consumer.getDpsInitsMutable()) {
-    fusedOutputOperands.push_back(opOperand.get());
-    fusedIndexMaps.push_back(consumer.getMatchingIndexingMap(&opOperand));
-    Type resultType = opOperand.get().getType();
+  for (OpOperand *opOperand : consumer.getDpsInitOperands()) {
+    fusedOutputOperands.push_back(opOperand->get());
+    fusedIndexMaps.push_back(consumer.getMatchingIndexingMap(opOperand));
+    Type resultType = opOperand->get().getType();
     if (!isa<MemRefType>(resultType))
       fusedResultTypes.push_back(resultType);
   }
@@ -430,6 +422,11 @@ public:
       if (!controlFn(&opOperand))
         continue;
 
+      // Find the producer of the operand.
+      FailureOr<ElementwiseOpFusionResult> fusionResult =
+          fuseElementwiseOps(rewriter, &opOperand);
+      if (failed(fusionResult))
+        return rewriter.notifyMatchFailure(genericOp, "fusion failed");
       Operation *producer = opOperand.get().getDefiningOp();
 
       // Do not fuse a sparse-in/dense-out operation, as the
@@ -437,12 +434,6 @@ public:
       if (sparse_tensor::hasAnySparseOperand(producer) &&
           !sparse_tensor::hasAnySparseResult(producer))
         return failure();
-
-      // Find the producer of the operand.
-      FailureOr<ElementwiseOpFusionResult> fusionResult =
-          fuseElementwiseOps(rewriter, &opOperand);
-      if (failed(fusionResult))
-        return rewriter.notifyMatchFailure(genericOp, "fusion failed");
 
       // Perform the fusion.
       for (auto [origVal, replacement] : fusionResult->replacements) {
@@ -467,10 +458,10 @@ private:
 // expanding the dimensionality of the elementwise operations.
 //===---------------------------------------------------------------------===//
 
-/// Conditions for folding a structured linalg operation with a reshape op by
-/// expanding the iteration space dimensionality for tensor operations. These
-/// are preconditions assumed by `foldReshapeByDimExpansion` which implements
-/// the following fusion pattern.
+/// Conditions for folding a generic operation with a reshape op by expanding
+/// the iteration space dimensionality for tensor operations. These are
+/// preconditions assumed by `foldReshapeByDimExpansion` which implements the
+/// following fusion pattern.
 ///
 ///  Consider
 ///
@@ -481,9 +472,9 @@ private:
 ///  %d = tensor.expand_shape %c [[0, 1], [2], [3, 4, 5]]
 ///       : tensor<?x?x?xf32> into tensor<?x?x?x?x?x?xf32>
 ///
-///  The reshape can be folded into the `linalgOp` if its loop dimensionality
+///  The reshape can be folded into the `genericOp` if its loop dimensionality
 ///  is increased to match the result (operand) of the tensor.expand_shape.
-///  The indexing_map of the fused tensor in the `linalgOp` and the
+///  The indexing_map of the fused tensor in the `genericOp` and the
 ///  reassociation map helps compute the indexing maps of the modified op.
 ///  For the above example, based on the reassociation map it
 ///  can be concluded that
@@ -502,7 +493,7 @@ private:
 ///   d1 -> e2, e3, e4
 ///   d2 -> e5
 ///
-///  substituting this, the structured op can be rewritten as
+///  substituting this, the generic op can be rewritten as
 ///
 ///  %d = linalg.generic ins(%0, %1 : )
 ///        indexing_maps =
@@ -520,28 +511,23 @@ private:
 ///
 ///  The added reshapes are again expanding patterns, so they will get fused
 ///  with its producers if possible.
-static bool isFusableWithReshapeByDimExpansion(LinalgOp linalgOp,
+static bool isFusableWithReshapeByDimExpansion(GenericOp genericOp,
                                                OpOperand *fusableOpOperand) {
   // Is fusable only if:
   // - All the indexing maps for operands and results are projected
   //   permutations.
   // - The fused tensor is not a scalar.
-  // - All the loops for the reshaped operand are parallel loops.
-  SmallVector<utils::IteratorType> iteratorTypes =
-      linalgOp.getIteratorTypesArray();
-  AffineMap operandMap = linalgOp.getMatchingIndexingMap(fusableOpOperand);
-  return linalgOp.hasPureTensorSemantics() &&
-         llvm::all_of(linalgOp.getIndexingMaps().getValue(),
+  // - All the loops are parallel loops.
+  return genericOp.hasTensorSemantics() &&
+         llvm::all_of(genericOp.getIndexingMaps().getValue(),
                       [](Attribute attr) {
                         return cast<AffineMapAttr>(attr)
                             .getValue()
                             .isProjectedPermutation();
                       }) &&
-         operandMap.getNumResults() > 0 &&
-         llvm::all_of(operandMap.getResults(), [&](AffineExpr expr) {
-           return isParallelIterator(
-               iteratorTypes[cast<AffineDimExpr>(expr).getPosition()]);
-         });
+         genericOp.getMatchingIndexingMap(fusableOpOperand).getNumResults() >
+             0 &&
+         llvm::all_of(genericOp.getIteratorTypesArray(), isParallelIterator);
 }
 
 namespace {
@@ -601,7 +587,7 @@ LogicalResult ExpansionInfo::compute(LinalgOp linalgOp,
   SmallVector<unsigned> numExpandedDims(fusedIndexMap.getNumDims(), 1);
   expandedShapeMap.resize(fusedIndexMap.getNumDims());
   for (const auto &resultExpr : llvm::enumerate(fusedIndexMap.getResults())) {
-    unsigned pos = cast<AffineDimExpr>(resultExpr.value()).getPosition();
+    unsigned pos = resultExpr.value().cast<AffineDimExpr>().getPosition();
     AffineMap foldedDims = reassociationMaps[resultExpr.index()];
     numExpandedDims[pos] = foldedDims.getNumResults();
     ArrayRef<int64_t> shape =
@@ -633,10 +619,10 @@ LogicalResult ExpansionInfo::compute(LinalgOp linalgOp,
 /// Note that this could be extended to handle dynamic case, but the
 /// implementation below uses `affine.apply` which seems to have issues when the
 /// shapes are not static.
-static LogicalResult isLinalgOpExpandable(LinalgOp linalgOp,
-                                          const ExpansionInfo &expansionInfo,
-                                          PatternRewriter &rewriter) {
-  if (!linalgOp.hasIndexSemantics())
+static LogicalResult isGenericOpExpandable(GenericOp genericOp,
+                                           const ExpansionInfo &expansionInfo,
+                                           PatternRewriter &rewriter) {
+  if (!genericOp.hasIndexSemantics())
     return success();
   for (unsigned i : llvm::seq<unsigned>(0, expansionInfo.getOrigOpNumDims())) {
     ArrayRef<int64_t> expandedShape = expansionInfo.getExpandedShapeOfDim(i);
@@ -645,7 +631,7 @@ static LogicalResult isLinalgOpExpandable(LinalgOp linalgOp,
     for (int64_t shape : expandedShape.drop_front()) {
       if (ShapedType::isDynamic(shape)) {
         return rewriter.notifyMatchFailure(
-            linalgOp, "cannot expand due to index semantics and dynamic dims");
+            genericOp, "cannot expand due to index semantics and dynamic dims");
       }
     }
   }
@@ -659,7 +645,7 @@ getIndexingMapInExpandedOp(OpBuilder &builder, AffineMap indexingMap,
                            const ExpansionInfo &expansionInfo) {
   SmallVector<AffineExpr> newExprs;
   for (AffineExpr expr : indexingMap.getResults()) {
-    unsigned pos = cast<AffineDimExpr>(expr).getPosition();
+    unsigned pos = expr.cast<AffineDimExpr>().getPosition();
     SmallVector<AffineExpr, 4> expandedExprs = llvm::to_vector<4>(
         llvm::map_range(expansionInfo.getExpandedDims(pos), [&](int64_t v) {
           return builder.getAffineDimExpr(static_cast<unsigned>(v));
@@ -678,7 +664,7 @@ static RankedTensorType getExpandedType(RankedTensorType originalType,
                                         const ExpansionInfo &expansionInfo) {
   SmallVector<int64_t> expandedShape;
   for (AffineExpr expr : indexingMap.getResults()) {
-    unsigned dim = cast<AffineDimExpr>(expr).getPosition();
+    unsigned dim = expr.cast<AffineDimExpr>().getPosition();
     auto dimExpansion = expansionInfo.getExpandedShapeOfDim(dim);
     expandedShape.append(dimExpansion.begin(), dimExpansion.end());
   }
@@ -697,7 +683,7 @@ getReassociationForExpansion(AffineMap indexingMap,
   SmallVector<ReassociationIndices> reassociation;
   unsigned numReshapeDims = 0;
   for (AffineExpr expr : indexingMap.getResults()) {
-    unsigned dim = cast<AffineDimExpr>(expr).getPosition();
+    unsigned dim = expr.cast<AffineDimExpr>().getPosition();
     auto numExpandedDims = expansionInfo.getExpandedDims(dim).size();
     SmallVector<int64_t, 2> indices = llvm::to_vector<2>(
         llvm::seq<int64_t>(numReshapeDims, numReshapeDims + numExpandedDims));
@@ -754,10 +740,10 @@ static void updateExpandedGenericOpRegion(PatternRewriter &rewriter,
 /// and a generic op as explained in `isFusableWithReshapeByExpansion`. Assumes
 /// that those conditions have been satisfied.
 static std::optional<SmallVector<Value>>
-fuseWithReshapeByExpansion(LinalgOp linalgOp, Operation *reshapeOp,
+fuseWithReshapeByExpansion(GenericOp genericOp, Operation *reshapeOp,
                            OpOperand *fusableOpOperand,
                            PatternRewriter &rewriter) {
-  assert(isFusableWithReshapeByDimExpansion(linalgOp, fusableOpOperand) &&
+  assert(isFusableWithReshapeByDimExpansion(genericOp, fusableOpOperand) &&
          "preconditions for fuse operation failed");
   // Check if reshape is expanding or collapsing.
   auto expandingReshapeOp = dyn_cast<tensor::ExpandShapeOp>(*reshapeOp);
@@ -772,27 +758,27 @@ fuseWithReshapeByExpansion(LinalgOp linalgOp, Operation *reshapeOp,
 
   ExpansionInfo expansionInfo;
   if (failed(expansionInfo.compute(
-          linalgOp, fusableOpOperand,
+          genericOp, fusableOpOperand,
           isExpanding ? expandingReshapeOp.getReassociationMaps()
                       : collapsingReshapeOp.getReassociationMaps(),
           expandedType.getShape(), collapsedType.getShape(), rewriter)))
     return std::nullopt;
 
-  if (failed(isLinalgOpExpandable(linalgOp, expansionInfo, rewriter)))
+  if (failed(isGenericOpExpandable(genericOp, expansionInfo, rewriter)))
     return std::nullopt;
 
   SmallVector<AffineMap, 4> expandedOpIndexingMaps = llvm::to_vector<4>(
-      llvm::map_range(linalgOp.getIndexingMapsArray(), [&](AffineMap m) {
+      llvm::map_range(genericOp.getIndexingMapsArray(), [&](AffineMap m) {
         return getIndexingMapInExpandedOp(rewriter, m, expansionInfo);
       }));
 
   // Set insertion point to the generic op.
   OpBuilder::InsertionGuard g(rewriter);
-  rewriter.setInsertionPoint(linalgOp);
+  rewriter.setInsertionPoint(genericOp);
 
   SmallVector<Value> expandedOpOperands;
-  expandedOpOperands.reserve(linalgOp.getNumDpsInputs());
-  for (OpOperand *opOperand : linalgOp.getDpsInputOperands()) {
+  expandedOpOperands.reserve(genericOp.getNumDpsInputs());
+  for (OpOperand *opOperand : genericOp.getDpsInputOperands()) {
     if (opOperand == fusableOpOperand) {
       expandedOpOperands.push_back(isExpanding ? expandingReshapeOp.getSrc()
                                                : collapsingReshapeOp.getSrc());
@@ -800,7 +786,7 @@ fuseWithReshapeByExpansion(LinalgOp linalgOp, Operation *reshapeOp,
     }
     if (auto opOperandType =
             dyn_cast<RankedTensorType>(opOperand->get().getType())) {
-      AffineMap indexingMap = linalgOp.getMatchingIndexingMap(opOperand);
+      AffineMap indexingMap = genericOp.getMatchingIndexingMap(opOperand);
       RankedTensorType expandedOperandType =
           getExpandedType(opOperandType, indexingMap, expansionInfo);
       if (expandedOperandType != opOperand->get().getType()) {
@@ -809,14 +795,14 @@ fuseWithReshapeByExpansion(LinalgOp linalgOp, Operation *reshapeOp,
             getReassociationForExpansion(indexingMap, expansionInfo);
         if (failed(reshapeLikeShapesAreCompatible(
                 [&](const Twine &msg) {
-                  return rewriter.notifyMatchFailure(linalgOp, msg);
+                  return rewriter.notifyMatchFailure(genericOp, msg);
                 },
                 opOperandType.getShape(), expandedOperandType.getShape(),
                 reassociation,
                 /*isExpandingReshape=*/true)))
           return std::nullopt;
         expandedOpOperands.push_back(rewriter.create<tensor::ExpandShapeOp>(
-            linalgOp.getLoc(), expandedOperandType, opOperand->get(),
+            genericOp.getLoc(), expandedOperandType, opOperand->get(),
             reassociation));
         continue;
       }
@@ -824,46 +810,43 @@ fuseWithReshapeByExpansion(LinalgOp linalgOp, Operation *reshapeOp,
     expandedOpOperands.push_back(opOperand->get());
   }
 
-  Location loc = linalgOp.getLoc();
+  Location loc = genericOp.getLoc();
   SmallVector<Value> outputs;
-  for (OpOperand &opOperand : linalgOp.getDpsInitsMutable()) {
-    AffineMap indexingMap = linalgOp.getMatchingIndexingMap(&opOperand);
-    auto opOperandType = cast<RankedTensorType>(opOperand.get().getType());
+  for (OpOperand *opOperand : genericOp.getDpsInitOperands()) {
+    AffineMap indexingMap = genericOp.getMatchingIndexingMap(opOperand);
+    auto opOperandType = cast<RankedTensorType>(opOperand->get().getType());
     RankedTensorType expandedOutputType =
         getExpandedType(opOperandType, indexingMap, expansionInfo);
-    if (expandedOutputType != opOperand.get().getType()) {
+    if (expandedOutputType != opOperand->get().getType()) {
       SmallVector<ReassociationIndices> reassociation =
           getReassociationForExpansion(indexingMap, expansionInfo);
       if (failed(reshapeLikeShapesAreCompatible(
               [&](const Twine &msg) {
-                return rewriter.notifyMatchFailure(linalgOp, msg);
+                return rewriter.notifyMatchFailure(genericOp, msg);
               },
               opOperandType.getShape(), expandedOutputType.getShape(),
               reassociation,
               /*isExpandingReshape=*/true)))
         return std::nullopt;
       outputs.push_back(rewriter.create<tensor::ExpandShapeOp>(
-          linalgOp.getLoc(), expandedOutputType, opOperand.get(),
+          genericOp.getLoc(), expandedOutputType, opOperand->get(),
           reassociation));
     } else {
-      outputs.push_back(opOperand.get());
+      outputs.push_back(opOperand->get());
     }
   }
 
   // The iterator types of the expanded op are all parallel.
   SmallVector<utils::IteratorType> iteratorTypes(
       expansionInfo.getExpandedOpNumDims(), utils::IteratorType::parallel);
-  for (auto [i, type] : llvm::enumerate(linalgOp.getIteratorTypesArray()))
-    for (auto j : expansionInfo.getExpandedDims(i))
-      iteratorTypes[j] = type;
 
   TypeRange resultTypes = ValueRange(outputs).getTypes();
   auto fusedOp =
-      rewriter.create<GenericOp>(linalgOp.getLoc(), resultTypes,
+      rewriter.create<GenericOp>(genericOp.getLoc(), resultTypes,
                                  /*inputs=*/expandedOpOperands, outputs,
                                  expandedOpIndexingMaps, iteratorTypes);
   Region &fusedRegion = fusedOp->getRegion(0);
-  Region &originalRegion = linalgOp->getRegion(0);
+  Region &originalRegion = genericOp->getRegion(0);
   rewriter.cloneRegionBefore(originalRegion, fusedRegion, fusedRegion.begin());
 
   // Update the index accesses after the expansion.
@@ -872,16 +855,16 @@ fuseWithReshapeByExpansion(LinalgOp linalgOp, Operation *reshapeOp,
   // Reshape the result values to their original shape if this is a collapsing
   // reshape folded into its consumer.
   SmallVector<Value> resultVals;
-  for (OpResult opResult : linalgOp->getOpResults()) {
+  for (OpResult opResult : genericOp->getOpResults()) {
     int64_t resultNumber = opResult.getResultNumber();
     if (resultTypes[resultNumber] != opResult.getType()) {
       SmallVector<ReassociationIndices> reassociation =
           getReassociationForExpansion(
-              linalgOp.getMatchingIndexingMap(
-                  linalgOp.getDpsInitOperand(resultNumber)),
+              genericOp.getMatchingIndexingMap(
+                  genericOp.getDpsInitOperand(resultNumber)),
               expansionInfo);
       resultVals.push_back(rewriter.create<tensor::CollapseShapeOp>(
-          linalgOp.getLoc(), opResult.getType(),
+          genericOp.getLoc(), opResult.getType(),
           fusedOp->getResult(resultNumber), reassociation));
     } else {
       resultVals.push_back(fusedOp->getResult(resultNumber));
@@ -893,21 +876,21 @@ fuseWithReshapeByExpansion(LinalgOp linalgOp, Operation *reshapeOp,
 
 namespace {
 
-/// Pattern to fuse a tensor.collapse_shape op with its consumer structured op,
+/// Pattern to fuse a tensor.collapse_shape op with its consumer generic op,
 /// when the reshape op is collapsing dimensions. The dimensionality of the loop
 /// in the consumer is expanded.
 class FoldWithProducerReshapeOpByExpansion
-    : public OpInterfaceRewritePattern<LinalgOp> {
+    : public OpRewritePattern<GenericOp> {
 public:
   FoldWithProducerReshapeOpByExpansion(MLIRContext *context,
                                        ControlFusionFn foldReshapes,
                                        PatternBenefit benefit = 1)
-      : OpInterfaceRewritePattern<LinalgOp>(context, benefit),
+      : OpRewritePattern<GenericOp>(context, benefit),
         controlFoldingReshapes(std::move(foldReshapes)) {}
 
-  LogicalResult matchAndRewrite(LinalgOp linalgOp,
+  LogicalResult matchAndRewrite(GenericOp genericOp,
                                 PatternRewriter &rewriter) const override {
-    for (OpOperand *opOperand : linalgOp.getDpsInputOperands()) {
+    for (OpOperand *opOperand : genericOp.getDpsInputOperands()) {
       tensor::CollapseShapeOp reshapeOp =
           opOperand->get().getDefiningOp<tensor::CollapseShapeOp>();
       if (!reshapeOp)
@@ -915,15 +898,15 @@ public:
       // Fold only if
       // - The tensor reshape op is folding.
       // - All constraints of fusing with reshape by expansion are met.
-      if (!isFusableWithReshapeByDimExpansion(linalgOp, opOperand) ||
+      if (!isFusableWithReshapeByDimExpansion(genericOp, opOperand) ||
           (!controlFoldingReshapes(opOperand)))
         continue;
 
       std::optional<SmallVector<Value>> replacementValues =
-          fuseWithReshapeByExpansion(linalgOp, reshapeOp, opOperand, rewriter);
+          fuseWithReshapeByExpansion(genericOp, reshapeOp, opOperand, rewriter);
       if (!replacementValues)
         return failure();
-      rewriter.replaceOp(linalgOp, *replacementValues);
+      rewriter.replaceOp(genericOp, *replacementValues);
       return success();
     }
     return failure();
@@ -953,7 +936,7 @@ struct FoldReshapeWithGenericOpByExpansion
                                          "source not produced by an operation");
     }
 
-    auto producer = dyn_cast<LinalgOp>(producerResult.getOwner());
+    auto producer = dyn_cast<GenericOp>(producerResult.getOwner());
     if (!producer) {
       return rewriter.notifyMatchFailure(reshapeOp,
                                          "producer not a generic op");
@@ -966,7 +949,7 @@ struct FoldReshapeWithGenericOpByExpansion
           reshapeOp, "failed preconditions of fusion with producer generic op");
     }
 
-    if (!controlFoldingReshapes(&reshapeOp.getSrcMutable())) {
+    if (!controlFoldingReshapes(&reshapeOp->getOpOperand(0))) {
       return rewriter.notifyMatchFailure(reshapeOp,
                                          "fusion blocked by control function");
     }
@@ -1019,7 +1002,9 @@ getDomainReassociation(AffineMap indexingMap,
 
   ReassociationIndices domainReassociation = llvm::to_vector<4>(
       llvm::map_range(rangeReassociation, [&](int64_t pos) -> int64_t {
-        return cast<AffineDimExpr>(indexingMap.getResults()[pos]).getPosition();
+        return indexingMap.getResults()[pos]
+            .cast<AffineDimExpr>()
+            .getPosition();
       }));
   // The projected permutation semantics ensures that there is no repetition of
   // the domain indices.
@@ -1041,7 +1026,7 @@ bool mlir::linalg::isDimSequencePreserved(AffineMap indexingMap,
 
   unsigned dimSequenceStart = dimSequence[0];
   for (const auto &expr : enumerate(indexingMap.getResults())) {
-    unsigned dimInMapStart = cast<AffineDimExpr>(expr.value()).getPosition();
+    unsigned dimInMapStart = expr.value().cast<AffineDimExpr>().getPosition();
     // 1.  Check if this start of the sequence.
     if (dimInMapStart == dimSequenceStart) {
       if (expr.index() + dimSequence.size() > indexingMap.getNumResults())
@@ -1049,8 +1034,8 @@ bool mlir::linalg::isDimSequencePreserved(AffineMap indexingMap,
       // 1a. Check if sequence is preserved.
       for (const auto &dimInSequence : enumerate(dimSequence)) {
         unsigned dimInMap =
-            cast<AffineDimExpr>(
-                indexingMap.getResult(expr.index() + dimInSequence.index()))
+            indexingMap.getResult(expr.index() + dimInSequence.index())
+                .cast<AffineDimExpr>()
                 .getPosition();
         if (dimInMap != dimInSequence.value())
           return false;
@@ -1129,7 +1114,7 @@ static SmallVector<ReassociationIndices>
 getCollapsableIterationSpaceDims(GenericOp genericOp, OpOperand *fusableOperand,
                                  ArrayRef<ReassociationIndices> reassociation) {
   // Some basic checks for this fusion to be valid.
-  if (!genericOp.hasPureTensorSemantics() || genericOp.getNumDpsInits() != 1)
+  if (!genericOp.hasTensorSemantics() || genericOp.getNumDpsInits() != 1)
     return {};
 
   if (!llvm::all_of(genericOp.getIndexingMapsArray(), [](AffineMap map) {
@@ -1345,7 +1330,7 @@ getCollapsedOpIndexingMap(AffineMap indexingMap,
   auto origOpToCollapsedOpMapping =
       collapsingInfo.getOrigOpToCollapsedOpMapping();
   for (auto expr : indexingMap.getResults()) {
-    unsigned dim = cast<AffineDimExpr>(expr).getPosition();
+    unsigned dim = expr.cast<AffineDimExpr>().getPosition();
     // If the dim is not the first of the collapsed dim, do nothing.
     if (origOpToCollapsedOpMapping[dim].second != 0)
       continue;
@@ -1371,7 +1356,7 @@ getOperandReassociation(AffineMap indexingMap,
       collapsingInfo.getCollapsedOpToOrigOpMapping();
   while (counter < indexingMap.getNumResults()) {
     unsigned dim =
-        cast<AffineDimExpr>(indexingMap.getResult(counter)).getPosition();
+        indexingMap.getResult(counter).cast<AffineDimExpr>().getPosition();
     // This is the start of a collapsed dimensions of the iteration that
     // is gauranteed to be preserved in the indexing map. The number of folded
     // dims is obtained from the collapsed op to original op mapping.
@@ -1388,30 +1373,24 @@ getOperandReassociation(AffineMap indexingMap,
 }
 
 /// Get the new value to use for a given `OpOperand` in the collapsed operation.
-static Value getCollapsedOpOperand(Location loc, LinalgOp op,
+static Value getCollapsedOpOperand(Location loc, GenericOp genericOp,
                                    OpOperand *opOperand,
                                    const CollapsingInfo &collapsingInfo,
                                    OpBuilder &builder) {
-  AffineMap indexingMap = op.getMatchingIndexingMap(opOperand);
+  AffineMap indexingMap = genericOp.getMatchingIndexingMap(opOperand);
   SmallVector<ReassociationIndices> operandReassociation =
       getOperandReassociation(indexingMap, collapsingInfo);
 
-  // If the number of entries in the reassociation for the operand is same as
-  // the number of results of the indexing map, then nothing to do for this
-  // operand.
+  // If the number of entries in the reassocation for the operand is same as the
+  // number of results of the indexing map, then nothing to do for this operand.
   Value operand = opOperand->get();
   if (operandReassociation.size() == indexingMap.getNumResults())
     return operand;
 
   // Insert a reshape to collapse the dimensions.
-  if (isa<MemRefType>(operand.getType())) {
-    return builder
-        .create<memref::CollapseShapeOp>(loc, operand, operandReassociation)
-        .getResult();
-  }
-  return builder
-      .create<tensor::CollapseShapeOp>(loc, operand, operandReassociation)
-      .getResult();
+  auto reshapeOp = builder.create<tensor::CollapseShapeOp>(
+      loc, operand, operandReassociation);
+  return reshapeOp.getResult();
 }
 
 /// Modify the `linalg.index` operations in the original generic op, to its
@@ -1454,124 +1433,28 @@ void generateCollapsedIndexingRegion(Location loc, Block *block,
   }
 }
 
-void collapseOperandsAndResults(LinalgOp op,
-                                const CollapsingInfo &collapsingInfo,
-                                RewriterBase &rewriter,
-                                SmallVectorImpl<Value> &inputOperands,
-                                SmallVectorImpl<Value> &outputOperands,
-                                SmallVectorImpl<Type> &resultTypes) {
-  Location loc = op->getLoc();
-  inputOperands =
-      llvm::map_to_vector(op.getDpsInputOperands(), [&](OpOperand *opOperand) {
-        return getCollapsedOpOperand(loc, op, opOperand, collapsingInfo,
-                                     rewriter);
-      });
-
-  // Get the output operands and result types.
-  resultTypes.reserve(op.getNumDpsInits());
-  outputOperands.reserve(op.getNumDpsInits());
-  for (OpOperand &output : op.getDpsInitsMutable()) {
-    Value newOutput =
-        getCollapsedOpOperand(loc, op, &output, collapsingInfo, rewriter);
-    outputOperands.push_back(newOutput);
-    // If the op has "buffer semantics", then the init operands are ranked
-    // memrefs and the op has no results.
-    if (!op.hasPureBufferSemantics())
-      resultTypes.push_back(newOutput.getType());
-  }
-}
-
-/// Clone a `LinalgOp` to a collapsed version of same name
-template <typename OpTy>
-OpTy cloneToCollapsedOp(RewriterBase &rewriter, OpTy origOp,
-                        const CollapsingInfo &collapsingInfo) {
-  return nullptr;
-}
-
-/// Collapse any `LinalgOp` that does not require any specialization such as
-/// indexing_maps, iterator_types, etc.
-template <>
-LinalgOp cloneToCollapsedOp<LinalgOp>(RewriterBase &rewriter, LinalgOp origOp,
-                                      const CollapsingInfo &collapsingInfo) {
-  SmallVector<Value> inputOperands, outputOperands;
-  SmallVector<Type> resultTypes;
-  collapseOperandsAndResults(origOp, collapsingInfo, rewriter, inputOperands,
-                             outputOperands, resultTypes);
-
-  return clone(
-      rewriter, origOp, resultTypes,
-      llvm::to_vector(llvm::concat<Value>(inputOperands, outputOperands)));
-}
-
-/// Collapse a `GenericOp`
-template <>
-GenericOp cloneToCollapsedOp<GenericOp>(RewriterBase &rewriter,
-                                        GenericOp origOp,
-                                        const CollapsingInfo &collapsingInfo) {
-  SmallVector<Value> inputOperands, outputOperands;
-  SmallVector<Type> resultTypes;
-  collapseOperandsAndResults(origOp, collapsingInfo, rewriter, inputOperands,
-                             outputOperands, resultTypes);
-  SmallVector<AffineMap> indexingMaps(
-      llvm::map_range(origOp.getIndexingMapsArray(), [&](AffineMap map) {
-        return getCollapsedOpIndexingMap(map, collapsingInfo);
-      }));
-
-  SmallVector<utils::IteratorType> iteratorTypes(getCollapsedOpIteratorTypes(
-      origOp.getIteratorTypesArray(), collapsingInfo));
-
-  GenericOp collapsedOp = rewriter.create<linalg::GenericOp>(
-      origOp.getLoc(), resultTypes, inputOperands, outputOperands, indexingMaps,
-      iteratorTypes, [](OpBuilder &builder, Location loc, ValueRange args) {});
-  Block *origOpBlock = &origOp->getRegion(0).front();
-  Block *collapsedOpBlock = &collapsedOp->getRegion(0).front();
-  rewriter.mergeBlocks(origOpBlock, collapsedOpBlock,
-                       collapsedOpBlock->getArguments());
-  return collapsedOp;
-}
-
-LinalgOp createCollapsedOp(LinalgOp op, const CollapsingInfo &collapsingInfo,
-                           RewriterBase &rewriter) {
-  if (GenericOp genericOp = dyn_cast<GenericOp>(op.getOperation())) {
-    return cloneToCollapsedOp(rewriter, genericOp, collapsingInfo);
-  } else {
-    return cloneToCollapsedOp(rewriter, op, collapsingInfo);
-  }
-}
-
 /// Implementation of fusion with reshape operation by collapsing dimensions.
-FailureOr<CollapseResult> mlir::linalg::collapseOpIterationDims(
-    LinalgOp op, ArrayRef<ReassociationIndices> foldedIterationDims,
+FailureOr<SmallVector<Value>> mlir::linalg::collapseGenericOpIterationDims(
+    GenericOp genericOp, ArrayRef<ReassociationIndices> foldedIterationDims,
     RewriterBase &rewriter) {
   // Bail on trivial no-op cases.
-  if (op.getNumLoops() <= 1 || foldedIterationDims.empty() ||
+  if (genericOp.getNumLoops() <= 1 || foldedIterationDims.empty() ||
       llvm::all_of(foldedIterationDims, [](ReassociationIndicesRef foldedDims) {
         return foldedDims.size() <= 1;
       }))
     return failure();
 
-  bool hasPureBufferSemantics = op.hasPureBufferSemantics();
-  if (hasPureBufferSemantics &&
-      !llvm::all_of(op->getOperands(), [&](Value operand) -> bool {
-        MemRefType memRefToCollapse = dyn_cast<MemRefType>(operand.getType());
-        if (!memRefToCollapse)
-          return true;
-
-        return memref::CollapseShapeOp::isGuaranteedCollapsible(
-            memRefToCollapse, foldedIterationDims);
-      }))
-    return rewriter.notifyMatchFailure(op,
-                                       "memref is not guaranteed collapsible");
-
   CollapsingInfo collapsingInfo;
-  if (failed(
-          collapsingInfo.initialize(op.getNumLoops(), foldedIterationDims))) {
+  if (failed(collapsingInfo.initialize(genericOp.getNumLoops(),
+                                       foldedIterationDims))) {
     return rewriter.notifyMatchFailure(
-        op, "illegal to collapse specified dimensions");
+        genericOp, "illegal to collapse specified dimensions");
   }
 
   // Bail on non-canonical ranges.
-  SmallVector<Range> loopRanges = op.createLoopRanges(rewriter, op.getLoc());
+  SmallVector<Range> loopRanges =
+      cast<LinalgOp>(genericOp.getOperation())
+          .createLoopRanges(rewriter, genericOp.getLoc());
   auto opFoldIsConstantValue = [](OpFoldResult ofr, int64_t value) {
     if (auto attr = llvm::dyn_cast_if_present<Attribute>(ofr))
       return cast<IntegerAttr>(attr).getInt() == value;
@@ -1584,51 +1467,85 @@ FailureOr<CollapseResult> mlir::linalg::collapseOpIterationDims(
                opFoldIsConstantValue(range.stride, 1);
       })) {
     return rewriter.notifyMatchFailure(
-        op, "expected all loop ranges to have zero start and unit stride");
+        genericOp,
+        "expected all loop ranges to have zero start and unit stride");
   }
 
-  LinalgOp collapsedOp = createCollapsedOp(op, collapsingInfo, rewriter);
+  // Get the iterator types for the operand.
+  SmallVector<utils::IteratorType> iteratorTypes = getCollapsedOpIteratorTypes(
+      genericOp.getIteratorTypesArray(), collapsingInfo);
 
-  Location loc = op->getLoc();
-  if (collapsedOp.hasIndexSemantics()) {
+  // Get the indexing maps.
+  auto indexingMaps = llvm::to_vector(
+      llvm::map_range(genericOp.getIndexingMapsArray(), [&](AffineMap map) {
+        return getCollapsedOpIndexingMap(map, collapsingInfo);
+      }));
+
+  Location loc = genericOp->getLoc();
+
+  // Get the input operands.
+  auto inputOperands = llvm::to_vector(llvm::map_range(
+      genericOp.getDpsInputOperands(), [&](OpOperand *opOperand) {
+        return getCollapsedOpOperand(loc, genericOp, opOperand, collapsingInfo,
+                                     rewriter);
+      }));
+
+  // Get the output operands and result types.
+  SmallVector<Type> resultTypes;
+  SmallVector<Value> outputOperands;
+  resultTypes.reserve(genericOp.getNumDpsInits());
+  outputOperands.reserve(genericOp.getNumDpsInits());
+  for (OpOperand *output : genericOp.getDpsInitOperands()) {
+    Value newOutput =
+        getCollapsedOpOperand(loc, genericOp, output, collapsingInfo, rewriter);
+    outputOperands.push_back(newOutput);
+    resultTypes.push_back(newOutput.getType());
+  }
+
+  // Create the generic op.
+  auto collapsedGenericOp = rewriter.create<linalg::GenericOp>(
+      loc, resultTypes, inputOperands, outputOperands, indexingMaps,
+      iteratorTypes, [](OpBuilder &builder, Location loc, ValueRange args) {});
+  Block *origOpBlock = &genericOp->getRegion(0).front();
+  Block *collapsedOpBlock = &collapsedGenericOp->getRegion(0).front();
+  rewriter.mergeBlocks(origOpBlock, collapsedOpBlock,
+                       collapsedOpBlock->getArguments());
+
+  if (collapsedGenericOp.hasIndexSemantics()) {
     // Collect the loop range of the generic op.
     OpBuilder::InsertionGuard g(rewriter);
-    rewriter.setInsertionPoint(collapsedOp);
+    rewriter.setInsertionPoint(collapsedGenericOp);
     SmallVector<Value> loopBound =
-        llvm::map_to_vector(loopRanges, [&](Range range) {
+        llvm::to_vector(llvm::map_range(loopRanges, [&](Range range) {
           return getValueOrCreateConstantIndexOp(rewriter, loc, range.size);
-        });
-    generateCollapsedIndexingRegion(loc, &collapsedOp->getRegion(0).front(),
+        }));
+    generateCollapsedIndexingRegion(loc,
+                                    &collapsedGenericOp->getRegion(0).front(),
                                     collapsingInfo, loopBound, rewriter);
   }
 
   // Insert expanding reshape for the result to get back the original result
   // type.
   SmallVector<Value> results;
-  for (const auto &originalResult : llvm::enumerate(op->getResults())) {
-    Value collapsedOpResult = collapsedOp->getResult(originalResult.index());
+  for (const auto &originalResult : llvm::enumerate(genericOp->getResults())) {
+    Value collapsedOpResult =
+        collapsedGenericOp->getResult(originalResult.index());
     auto originalResultType =
         cast<ShapedType>(originalResult.value().getType());
     auto collapsedOpResultType = cast<ShapedType>(collapsedOpResult.getType());
     if (collapsedOpResultType.getRank() != originalResultType.getRank()) {
       AffineMap indexingMap =
-          op.getIndexingMapMatchingResult(originalResult.value());
+          genericOp.getIndexingMapMatchingResult(originalResult.value());
       SmallVector<ReassociationIndices> reassociation =
           getOperandReassociation(indexingMap, collapsingInfo);
-      if (isa<MemRefType>(collapsedOpResult.getType())) {
-        Value result = rewriter.create<memref::ExpandShapeOp>(
-            loc, originalResultType, collapsedOpResult, reassociation);
-        results.push_back(result);
-      } else {
-        Value result = rewriter.create<tensor::ExpandShapeOp>(
-            loc, originalResultType, collapsedOpResult, reassociation);
-        results.push_back(result);
-      }
+      Value result = rewriter.create<tensor::ExpandShapeOp>(
+          loc, originalResultType, collapsedOpResult, reassociation);
+      results.push_back(result);
     } else {
       results.push_back(collapsedOpResult);
     }
   }
-  return CollapseResult{results, collapsedOp};
+  return results;
 }
 
 namespace {
@@ -1660,14 +1577,15 @@ public:
         continue;
       }
 
-      std::optional<CollapseResult> collapseResult = collapseOpIterationDims(
-          genericOp, collapsableIterationDims, rewriter);
-      if (!collapseResult) {
+      std::optional<SmallVector<Value>> replacements =
+          collapseGenericOpIterationDims(genericOp, collapsableIterationDims,
+                                         rewriter);
+      if (!replacements) {
         return rewriter.notifyMatchFailure(
             genericOp, "failed to do the fusion by collapsing transformation");
       }
 
-      rewriter.replaceOp(genericOp, collapseResult->results);
+      rewriter.replaceOp(genericOp, *replacements);
       return success();
     }
     return failure();
@@ -1678,35 +1596,36 @@ private:
 };
 
 /// Pattern to collapse dimensions.
-template <typename LinalgType>
-class CollapseLinalgDimensions : public OpRewritePattern<LinalgType> {
+class CollapseLinalgDimensions : public OpRewritePattern<GenericOp> {
 public:
   CollapseLinalgDimensions(MLIRContext *context,
                            GetCollapsableDimensionsFn collapseDimensions,
                            PatternBenefit benefit = 1)
-      : OpRewritePattern<LinalgType>(context, benefit),
+      : OpRewritePattern<GenericOp>(context, benefit),
         controlCollapseDimension(std::move(collapseDimensions)) {}
 
-  LogicalResult matchAndRewrite(LinalgType op,
+  LogicalResult matchAndRewrite(GenericOp genericOp,
                                 PatternRewriter &rewriter) const override {
     SmallVector<ReassociationIndices> collapsableIterationDims =
-        controlCollapseDimension(op);
+        controlCollapseDimension(genericOp);
     if (collapsableIterationDims.empty())
       return failure();
 
     // Check if the specified list of dimensions to collapse is a valid list.
-    if (!areDimSequencesPreserved(op.getIndexingMapsArray(),
+    if (!areDimSequencesPreserved(genericOp.getIndexingMapsArray(),
                                   collapsableIterationDims)) {
       return rewriter.notifyMatchFailure(
-          op, "specified dimensions cannot be collapsed");
+          genericOp, "specified dimensions cannot be collapsed");
     }
 
-    std::optional<CollapseResult> collapseResult =
-        collapseOpIterationDims(op, collapsableIterationDims, rewriter);
-    if (!collapseResult) {
-      return rewriter.notifyMatchFailure(op, "failed to collapse dimensions");
+    std::optional<SmallVector<Value>> replacements =
+        collapseGenericOpIterationDims(genericOp, collapsableIterationDims,
+                                       rewriter);
+    if (!replacements) {
+      return rewriter.notifyMatchFailure(genericOp,
+                                         "failed to collapse dimensions");
     }
-    rewriter.replaceOp(op, collapseResult->results);
+    rewriter.replaceOp(genericOp, *replacements);
     return success();
   }
 
@@ -1730,7 +1649,7 @@ public:
 
   LogicalResult matchAndRewrite(GenericOp genericOp,
                                 PatternRewriter &rewriter) const override {
-    if (!genericOp.hasPureTensorSemantics())
+    if (!genericOp.hasTensorSemantics())
       return failure();
     for (OpOperand *opOperand : genericOp.getDpsInputOperands()) {
       Operation *def = opOperand->get().getDefiningOp();
@@ -1784,9 +1703,9 @@ public:
         fusedOperands.push_back(inputValue);
         fusedLocs.push_back(inputValue.getLoc());
       }
-      for (OpOperand &outputOperand : genericOp.getDpsInitsMutable())
+      for (OpOperand *outputOperand : genericOp.getDpsInitOperands())
         fusedIndexMaps.push_back(
-            genericOp.getMatchingIndexingMap(&outputOperand));
+            genericOp.getMatchingIndexingMap(outputOperand));
 
       // Check if the operation shapes to loops map is computable.
       if (!inversePermutation(concatAffineMaps(fusedIndexMaps))) {
@@ -1841,17 +1760,17 @@ struct RemoveOutsDependency : public OpRewritePattern<GenericOp> {
 
   LogicalResult matchAndRewrite(GenericOp op,
                                 PatternRewriter &rewriter) const override {
-    rewriter.startOpModification(op);
+    rewriter.startRootUpdate(op);
     bool modifiedOutput = false;
     Location loc = op.getLoc();
-    for (OpOperand &opOperand : op.getDpsInitsMutable()) {
-      if (!op.payloadUsesValueFromOperand(&opOperand)) {
-        Value operandVal = opOperand.get();
+    for (OpOperand *opOperand : op.getDpsInitOperands()) {
+      if (!op.payloadUsesValueFromOperand(opOperand)) {
+        Value operandVal = opOperand->get();
         auto operandType = dyn_cast<RankedTensorType>(operandVal.getType());
         if (!operandType)
           continue;
 
-        // If outs is sparse, leave it to the sparsifier.
+        // If outs is sparse, leave it to the sparse compiler.
         if (sparse_tensor::getSparseTensorEncoding(operandVal.getType()))
           continue;
 
@@ -1864,14 +1783,14 @@ struct RemoveOutsDependency : public OpRewritePattern<GenericOp> {
             tensor::getMixedSizes(rewriter, loc, operandVal);
         Value emptyTensor = rewriter.create<tensor::EmptyOp>(
             loc, mixedSizes, operandType.getElementType());
-        op->setOperand(opOperand.getOperandNumber(), emptyTensor);
+        op->setOperand(opOperand->getOperandNumber(), emptyTensor);
       }
     }
     if (!modifiedOutput) {
-      rewriter.cancelOpModification(op);
+      rewriter.cancelRootUpdate(op);
       return failure();
     }
-    rewriter.finalizeOpModification(op);
+    rewriter.finalizeRootUpdate(op);
     return success();
   }
 };
@@ -1882,7 +1801,7 @@ struct FoldFillWithGenericOp : public OpRewritePattern<GenericOp> {
 
   LogicalResult matchAndRewrite(GenericOp genericOp,
                                 PatternRewriter &rewriter) const override {
-    if (!genericOp.hasPureTensorSemantics())
+    if (!genericOp.hasTensorSemantics())
       return failure();
     bool fillFound = false;
     Block &payload = genericOp.getRegion().front();
@@ -1937,9 +1856,8 @@ void mlir::linalg::populateElementwiseOpsFusionPatterns(
 void mlir::linalg::populateCollapseDimensions(
     RewritePatternSet &patterns,
     const GetCollapsableDimensionsFn &controlCollapseDimensions) {
-  patterns.add<CollapseLinalgDimensions<linalg::GenericOp>,
-               CollapseLinalgDimensions<linalg::CopyOp>>(
-      patterns.getContext(), controlCollapseDimensions);
+  patterns.add<CollapseLinalgDimensions>(patterns.getContext(),
+                                         controlCollapseDimensions);
 }
 
 //===---------------------------------------------------------------------===//
@@ -1955,10 +1873,8 @@ namespace {
 // favor of test passes that check the functionality of each of the patterns
 // added here individually.
 struct LinalgElementwiseOpFusionPass
-    : public impl::LinalgElementwiseOpFusionPassBase<
+    : public impl::LinalgElementwiseOpFusionBase<
           LinalgElementwiseOpFusionPass> {
-  using impl::LinalgElementwiseOpFusionPassBase<
-      LinalgElementwiseOpFusionPass>::LinalgElementwiseOpFusionPassBase;
   void runOnOperation() override {
     Operation *op = getOperation();
     MLIRContext *context = op->getContext();
@@ -1993,3 +1909,7 @@ struct LinalgElementwiseOpFusionPass
 };
 
 } // namespace
+
+std::unique_ptr<Pass> mlir::createLinalgElementwiseOpFusionPass() {
+  return std::make_unique<LinalgElementwiseOpFusionPass>();
+}

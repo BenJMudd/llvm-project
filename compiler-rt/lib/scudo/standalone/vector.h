@@ -9,20 +9,26 @@
 #ifndef SCUDO_VECTOR_H_
 #define SCUDO_VECTOR_H_
 
-#include "mem_map.h"
+#include "common.h"
 
 #include <string.h>
 
 namespace scudo {
 
-// A low-level vector based on map. It stores the contents inline up to a fixed
-// capacity, or in an external memory buffer if it grows bigger than that. May
-// incur a significant memory overhead for small vectors. The current
-// implementation supports only POD types.
-//
-// NOTE: This class is not meant to be used directly, use Vector<T> instead.
+// A low-level vector based on map. May incur a significant memory overhead for
+// small vectors. The current implementation supports only POD types.
 template <typename T> class VectorNoCtor {
 public:
+  constexpr void init(uptr InitialCapacity = 0) {
+    Data = &LocalData[0];
+    CapacityBytes = sizeof(LocalData);
+    if (InitialCapacity > capacity())
+      reserve(InitialCapacity);
+  }
+  void destroy() {
+    if (Data != &LocalData[0])
+      unmap(Data, CapacityBytes, 0, &MapData);
+  }
   T &operator[](uptr I) {
     DCHECK_LT(I, Size);
     return Data[I];
@@ -35,9 +41,7 @@ public:
     DCHECK_LE(Size, capacity());
     if (Size == capacity()) {
       const uptr NewCapacity = roundUpPowerOfTwo(Size + 1);
-      if (!reallocate(NewCapacity)) {
-        return;
-      }
+      reallocate(NewCapacity);
     }
     memcpy(&Data[Size++], &Element, sizeof(T));
   }
@@ -53,17 +57,14 @@ public:
   const T *data() const { return Data; }
   T *data() { return Data; }
   constexpr uptr capacity() const { return CapacityBytes / sizeof(T); }
-  bool reserve(uptr NewSize) {
+  void reserve(uptr NewSize) {
     // Never downsize internal buffer.
     if (NewSize > capacity())
-      return reallocate(NewSize);
-    return true;
+      reallocate(NewSize);
   }
   void resize(uptr NewSize) {
     if (NewSize > Size) {
-      if (!reserve(NewSize)) {
-        return;
-      }
+      reserve(NewSize);
       memset(&Data[Size], 0, sizeof(T) * (NewSize - Size));
     }
     Size = NewSize;
@@ -77,47 +78,24 @@ public:
   const T *end() const { return data() + size(); }
   T *end() { return data() + size(); }
 
-protected:
-  constexpr void init(uptr InitialCapacity = 0) {
-    Data = &LocalData[0];
-    CapacityBytes = sizeof(LocalData);
-    if (InitialCapacity > capacity())
-      reserve(InitialCapacity);
-  }
-  void destroy() {
-    if (Data != &LocalData[0])
-      ExternalBuffer.unmap(ExternalBuffer.getBase(),
-                           ExternalBuffer.getCapacity());
-  }
-
 private:
-  bool reallocate(uptr NewCapacity) {
+  void reallocate(uptr NewCapacity) {
     DCHECK_GT(NewCapacity, 0);
     DCHECK_LE(Size, NewCapacity);
-
-    MemMapT NewExternalBuffer;
     NewCapacity = roundUp(NewCapacity * sizeof(T), getPageSizeCached());
-    if (!NewExternalBuffer.map(/*Addr=*/0U, NewCapacity, "scudo:vector",
-                               MAP_ALLOWNOMEM)) {
-      return false;
-    }
-    T *NewExternalData = reinterpret_cast<T *>(NewExternalBuffer.getBase());
-
-    memcpy(NewExternalData, Data, Size * sizeof(T));
+    T *NewData = reinterpret_cast<T *>(
+        map(nullptr, NewCapacity, "scudo:vector", 0, &MapData));
+    memcpy(NewData, Data, Size * sizeof(T));
     destroy();
-
-    Data = NewExternalData;
+    Data = NewData;
     CapacityBytes = NewCapacity;
-    ExternalBuffer = NewExternalBuffer;
-    return true;
   }
 
   T *Data = nullptr;
+  T LocalData[256 / sizeof(T)] = {};
   uptr CapacityBytes = 0;
   uptr Size = 0;
-
-  T LocalData[256 / sizeof(T)] = {};
-  MemMapT ExternalBuffer;
+  [[no_unique_address]] MapPlatformData MapData = {};
 };
 
 template <typename T> class Vector : public VectorNoCtor<T> {

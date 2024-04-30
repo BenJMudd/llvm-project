@@ -188,9 +188,9 @@ void DereferenceChecker::reportBug(DerefKind K, ProgramStateRef State,
     os << DerefStr1;
     break;
   }
-  case Stmt::ArraySectionExprClass: {
+  case Stmt::OMPArraySectionExprClass: {
     os << "Array access";
-    const ArraySectionExpr *AE = cast<ArraySectionExpr>(S);
+    const OMPArraySectionExpr *AE = cast<OMPArraySectionExpr>(S);
     AddDerefSource(os, Ranges, AE->getBase()->IgnoreParenCasts(),
                    State.get(), N->getLocationContext());
     os << DerefStr1;

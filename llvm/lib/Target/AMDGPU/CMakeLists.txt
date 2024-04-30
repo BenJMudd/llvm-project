@@ -17,11 +17,11 @@ tablegen(LLVM AMDGPUGenSubtargetInfo.inc -gen-subtarget)
 
 set(LLVM_TARGET_DEFINITIONS AMDGPUGISel.td)
 tablegen(LLVM AMDGPUGenGlobalISel.inc -gen-global-isel)
-tablegen(LLVM AMDGPUGenPreLegalizeGICombiner.inc -gen-global-isel-combiner
+tablegen(LLVM AMDGPUGenPreLegalizeGICombiner.inc -gen-global-isel-combiner-matchtable
               -combiners="AMDGPUPreLegalizerCombiner")
-tablegen(LLVM AMDGPUGenPostLegalizeGICombiner.inc -gen-global-isel-combiner
+tablegen(LLVM AMDGPUGenPostLegalizeGICombiner.inc -gen-global-isel-combiner-matchtable
               -combiners="AMDGPUPostLegalizerCombiner")
-tablegen(LLVM AMDGPUGenRegBankGICombiner.inc -gen-global-isel-combiner
+tablegen(LLVM AMDGPUGenRegBankGICombiner.inc -gen-global-isel-combiner-matchtable
               -combiners="AMDGPURegBankCombiner")
 
 set(LLVM_TARGET_DEFINITIONS R600.td)
@@ -55,7 +55,6 @@ add_llvm_target(AMDGPUCodeGen
   AMDGPUCtorDtorLowering.cpp
   AMDGPUExportClustering.cpp
   AMDGPUFrameLowering.cpp
-  AMDGPUGlobalISelDivergenceLowering.cpp
   AMDGPUGlobalISelUtils.cpp
   AMDGPUHSAMetadataStreamer.cpp
   AMDGPUInsertDelayAlu.cpp
@@ -67,9 +66,7 @@ add_llvm_target(AMDGPUCodeGen
   AMDGPULateCodeGenPrepare.cpp
   AMDGPULegalizerInfo.cpp
   AMDGPULibCalls.cpp
-  AMDGPUImageIntrinsicOptimizer.cpp
   AMDGPULibFunc.cpp
-  AMDGPULowerBufferFatPointers.cpp
   AMDGPULowerKernelArguments.cpp
   AMDGPULowerKernelAttributes.cpp
   AMDGPULowerModuleLDSPass.cpp
@@ -79,8 +76,6 @@ add_llvm_target(AMDGPUCodeGen
   AMDGPUMacroFusion.cpp
   AMDGPUMCInstLower.cpp
   AMDGPUIGroupLP.cpp
-  AMDGPUInsertSingleUseVDST.cpp
-  AMDGPUMarkLastScratchLoad.cpp
   AMDGPUMIRFormatter.cpp
   AMDGPUOpenCLEnqueuedBlockLowering.cpp
   AMDGPUPerfHintAnalysis.cpp
@@ -150,7 +145,6 @@ add_llvm_target(AMDGPUCodeGen
   SILoadStoreOptimizer.cpp
   SILowerControlFlow.cpp
   SILowerI1Copies.cpp
-  SILowerWWMCopies.cpp
   SILowerSGPRSpills.cpp
   SIMachineFunctionInfo.cpp
   SIMachineScheduler.cpp
@@ -180,7 +174,6 @@ add_llvm_target(AMDGPUCodeGen
   CodeGenTypes
   Core
   GlobalISel
-  HipStdPar
   IPO
   MC
   MIRParser

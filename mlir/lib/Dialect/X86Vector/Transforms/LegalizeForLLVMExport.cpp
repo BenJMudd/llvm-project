@@ -40,8 +40,8 @@ struct LowerToIntrinsic : public OpConversionPattern<OpTy> {
   explicit LowerToIntrinsic(LLVMTypeConverter &converter)
       : OpConversionPattern<OpTy>(converter, &converter.getContext()) {}
 
-  const LLVMTypeConverter &getTypeConverter() const {
-    return *static_cast<const LLVMTypeConverter *>(
+  LLVMTypeConverter &getTypeConverter() const {
+    return *static_cast<LLVMTypeConverter *>(
         OpConversionPattern<OpTy>::getTypeConverter());
   }
 

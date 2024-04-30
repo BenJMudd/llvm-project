@@ -10,63 +10,21 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "mlir/Dialect/SPIRV/IR/SPIRVEnums.h"
 #include "mlir/Dialect/SPIRV/IR/SPIRVOps.h"
 
 #include "SPIRVOpUtils.h"
 #include "SPIRVParsingUtils.h"
-#include "mlir/Dialect/SPIRV/IR/SPIRVTypes.h"
-#include "mlir/IR/Diagnostics.h"
 
 #include "llvm/ADT/StringExtras.h"
-#include "llvm/Support/Casting.h"
 
 using namespace mlir::spirv::AttrNames;
 
 namespace mlir::spirv {
 
-/// Parses optional memory access (a.k.a. memory operand) attributes attached to
-/// a memory access operand/pointer. Specifically, parses the following syntax:
-///     (`[` memory-access `]`)?
-/// where:
-///     memory-access ::= `"None"` | `"Volatile"` | `"Aligned", `
-///         integer-literal | `"NonTemporal"`
-template <typename MemoryOpTy>
-ParseResult parseMemoryAccessAttributes(OpAsmParser &parser,
-                                        OperationState &state) {
-  // Parse an optional list of attributes staring with '['
-  if (parser.parseOptionalLSquare()) {
-    // Nothing to do
-    return success();
-  }
-
-  spirv::MemoryAccess memoryAccessAttr;
-  StringAttr memoryAccessAttrName =
-      MemoryOpTy::getMemoryAccessAttrName(state.name);
-  if (spirv::parseEnumStrAttr<spirv::MemoryAccessAttr>(
-          memoryAccessAttr, parser, state, memoryAccessAttrName))
-    return failure();
-
-  if (spirv::bitEnumContainsAll(memoryAccessAttr,
-                                spirv::MemoryAccess::Aligned)) {
-    // Parse integer attribute for alignment.
-    Attribute alignmentAttr;
-    StringAttr alignmentAttrName = MemoryOpTy::getAlignmentAttrName(state.name);
-    Type i32Type = parser.getBuilder().getIntegerType(32);
-    if (parser.parseComma() ||
-        parser.parseAttribute(alignmentAttr, i32Type, alignmentAttrName,
-                              state.attributes)) {
-      return failure();
-    }
-  }
-  return parser.parseRSquare();
-}
-
 // TODO Make sure to merge this and the previous function into one template
 // parameterized by memory access attribute name and alignment. Doing so now
 // results in VS2017 in producing an internal error (at the call site) that's
 // not detailed enough to understand what is happening.
-template <typename MemoryOpTy>
 static ParseResult parseSourceMemoryAccessAttributes(OpAsmParser &parser,
                                                      OperationState &state) {
   // Parse an optional list of attributes staring with '['
@@ -76,21 +34,17 @@ static ParseResult parseSourceMemoryAccessAttributes(OpAsmParser &parser,
   }
 
   spirv::MemoryAccess memoryAccessAttr;
-  StringRef memoryAccessAttrName =
-      MemoryOpTy::getSourceMemoryAccessAttrName(state.name);
   if (spirv::parseEnumStrAttr<spirv::MemoryAccessAttr>(
-          memoryAccessAttr, parser, state, memoryAccessAttrName))
+          memoryAccessAttr, parser, state, kSourceMemoryAccessAttrName))
     return failure();
 
   if (spirv::bitEnumContainsAll(memoryAccessAttr,
                                 spirv::MemoryAccess::Aligned)) {
     // Parse integer attribute for alignment.
     Attribute alignmentAttr;
-    StringAttr alignmentAttrName =
-        MemoryOpTy::getSourceAlignmentAttrName(state.name);
     Type i32Type = parser.getBuilder().getIntegerType(32);
     if (parser.parseComma() ||
-        parser.parseAttribute(alignmentAttr, i32Type, alignmentAttrName,
+        parser.parseAttribute(alignmentAttr, i32Type, kSourceAlignmentAttrName,
                               state.attributes)) {
       return failure();
     }
@@ -114,7 +68,7 @@ static void printSourceMemoryAccessAttribute(
   // Print optional memory access attribute.
   if (auto memAccess = (memoryAccessAtrrValue ? memoryAccessAtrrValue
                                               : memoryOp.getMemoryAccess())) {
-    elidedAttrs.push_back(memoryOp.getSourceMemoryAccessAttrName());
+    elidedAttrs.push_back(kSourceMemoryAccessAttrName);
 
     printer << " [\"" << stringifyMemoryAccess(*memAccess) << "\"";
 
@@ -122,7 +76,7 @@ static void printSourceMemoryAccessAttribute(
       // Print integer alignment attribute.
       if (auto alignment = (alignmentAttrValue ? alignmentAttrValue
                                                : memoryOp.getAlignment())) {
-        elidedAttrs.push_back(memoryOp.getSourceAlignmentAttrName());
+        elidedAttrs.push_back(kSourceAlignmentAttrName);
         printer << ", " << *alignment;
       }
     }
@@ -140,7 +94,7 @@ static void printMemoryAccessAttribute(
   // Print optional memory access attribute.
   if (auto memAccess = (memoryAccessAtrrValue ? memoryAccessAtrrValue
                                               : memoryOp.getMemoryAccess())) {
-    elidedAttrs.push_back(memoryOp.getMemoryAccessAttrName());
+    elidedAttrs.push_back(kMemoryAccessAttrName);
 
     printer << " [\"" << stringifyMemoryAccess(*memAccess) << "\"";
 
@@ -148,7 +102,7 @@ static void printMemoryAccessAttribute(
       // Print integer alignment attribute.
       if (auto alignment = (alignmentAttrValue ? alignmentAttrValue
                                                : memoryOp.getAlignment())) {
-        elidedAttrs.push_back(memoryOp.getAlignmentAttrName());
+        elidedAttrs.push_back(kAlignmentAttrName);
         printer << ", " << *alignment;
       }
     }
@@ -178,11 +132,11 @@ static LogicalResult verifyMemoryAccessAttribute(MemoryOpTy memoryOp) {
   // memory-access attribute is Aligned, then the alignment attribute must be
   // present.
   auto *op = memoryOp.getOperation();
-  auto memAccessAttr = op->getAttr(memoryOp.getMemoryAccessAttrName());
+  auto memAccessAttr = op->getAttr(kMemoryAccessAttrName);
   if (!memAccessAttr) {
     // Alignment attribute shouldn't be present if memory access attribute is
     // not present.
-    if (op->getAttr(memoryOp.getAlignmentAttrName())) {
+    if (op->getAttr(kAlignmentAttrName)) {
       return memoryOp.emitOpError(
           "invalid alignment specification without aligned memory access "
           "specification");
@@ -199,11 +153,11 @@ static LogicalResult verifyMemoryAccessAttribute(MemoryOpTy memoryOp) {
 
   if (spirv::bitEnumContainsAll(memAccess.getValue(),
                                 spirv::MemoryAccess::Aligned)) {
-    if (!op->getAttr(memoryOp.getAlignmentAttrName())) {
+    if (!op->getAttr(kAlignmentAttrName)) {
       return memoryOp.emitOpError("missing alignment value");
     }
   } else {
-    if (op->getAttr(memoryOp.getAlignmentAttrName())) {
+    if (op->getAttr(kAlignmentAttrName)) {
       return memoryOp.emitOpError(
           "invalid alignment specification with non-aligned memory access "
           "specification");
@@ -222,11 +176,11 @@ static LogicalResult verifySourceMemoryAccessAttribute(MemoryOpTy memoryOp) {
   // memory-access attribute is Aligned, then the alignment attribute must be
   // present.
   auto *op = memoryOp.getOperation();
-  auto memAccessAttr = op->getAttr(memoryOp.getSourceMemoryAccessAttrName());
+  auto memAccessAttr = op->getAttr(kSourceMemoryAccessAttrName);
   if (!memAccessAttr) {
     // Alignment attribute shouldn't be present if memory access attribute is
     // not present.
-    if (op->getAttr(memoryOp.getSourceAlignmentAttrName())) {
+    if (op->getAttr(kSourceAlignmentAttrName)) {
       return memoryOp.emitOpError(
           "invalid alignment specification without aligned memory access "
           "specification");
@@ -243,11 +197,11 @@ static LogicalResult verifySourceMemoryAccessAttribute(MemoryOpTy memoryOp) {
 
   if (spirv::bitEnumContainsAll(memAccess.getValue(),
                                 spirv::MemoryAccess::Aligned)) {
-    if (!op->getAttr(memoryOp.getSourceAlignmentAttrName())) {
+    if (!op->getAttr(kSourceAlignmentAttrName)) {
       return memoryOp.emitOpError("missing alignment value");
     }
   } else {
-    if (op->getAttr(memoryOp.getSourceAlignmentAttrName())) {
+    if (op->getAttr(kSourceAlignmentAttrName)) {
       return memoryOp.emitOpError(
           "invalid alignment specification with non-aligned memory access "
           "specification");
@@ -418,7 +372,7 @@ ParseResult LoadOp::parse(OpAsmParser &parser, OperationState &result) {
   OpAsmParser::UnresolvedOperand ptrInfo;
   Type elementType;
   if (parseEnumStrAttr(storageClass, parser) || parser.parseOperand(ptrInfo) ||
-      parseMemoryAccessAttributes<LoadOp>(parser, result) ||
+      parseMemoryAccessAttributes(parser, result) ||
       parser.parseOptionalAttrDict(result.attributes) || parser.parseColon() ||
       parser.parseType(elementType)) {
     return failure();
@@ -467,8 +421,8 @@ ParseResult StoreOp::parse(OpAsmParser &parser, OperationState &result) {
   Type elementType;
   if (parseEnumStrAttr(storageClass, parser) ||
       parser.parseOperandList(operandInfo, 2) ||
-      parseMemoryAccessAttributes<StoreOp>(parser, result) ||
-      parser.parseColon() || parser.parseType(elementType)) {
+      parseMemoryAccessAttributes(parser, result) || parser.parseColon() ||
+      parser.parseType(elementType)) {
     return failure();
   }
 
@@ -541,13 +495,13 @@ ParseResult CopyMemoryOp::parse(OpAsmParser &parser, OperationState &result) {
       parser.parseOperand(targetPtrInfo) || parser.parseComma() ||
       parseEnumStrAttr(sourceStorageClass, parser) ||
       parser.parseOperand(sourcePtrInfo) ||
-      parseMemoryAccessAttributes<CopyMemoryOp>(parser, result)) {
+      parseMemoryAccessAttributes(parser, result)) {
     return failure();
   }
 
   if (!parser.parseOptionalComma()) {
     // Parse 2nd memory access attributes.
-    if (parseSourceMemoryAccessAttributes<CopyMemoryOp>(parser, result)) {
+    if (parseSourceMemoryAccessAttributes(parser, result)) {
       return failure();
     }
   }
@@ -776,49 +730,19 @@ LogicalResult VariableOp::verify() {
                          "constant or spirv.GlobalVariable op");
   }
 
-  auto getDecorationAttr = [op = getOperation()](spirv::Decoration decoration) {
-    return op->getAttr(
-        llvm::convertToSnakeFromCamelCase(stringifyDecoration(decoration)));
-  };
-
   // TODO: generate these strings using ODS.
-  for (auto decoration :
-       {spirv::Decoration::DescriptorSet, spirv::Decoration::Binding,
-        spirv::Decoration::BuiltIn}) {
-    if (auto attr = getDecorationAttr(decoration))
+  auto *op = getOperation();
+  auto descriptorSetName = llvm::convertToSnakeFromCamelCase(
+      stringifyDecoration(spirv::Decoration::DescriptorSet));
+  auto bindingName = llvm::convertToSnakeFromCamelCase(
+      stringifyDecoration(spirv::Decoration::Binding));
+  auto builtInName = llvm::convertToSnakeFromCamelCase(
+      stringifyDecoration(spirv::Decoration::BuiltIn));
+
+  for (const auto &attr : {descriptorSetName, bindingName, builtInName}) {
+    if (op->getAttr(attr))
       return emitOpError("cannot have '")
-             << llvm::convertToSnakeFromCamelCase(
-                    stringifyDecoration(decoration))
-             << "' attribute (only allowed in spirv.GlobalVariable)";
-  }
-
-  // From SPV_KHR_physical_storage_buffer:
-  // > If an OpVariable's pointee type is a pointer (or array of pointers) in
-  // > PhysicalStorageBuffer storage class, then the variable must be decorated
-  // > with exactly one of AliasedPointer or RestrictPointer.
-  auto pointeePtrType = dyn_cast<spirv::PointerType>(getPointeeType());
-  if (!pointeePtrType) {
-    if (auto pointeeArrayType = dyn_cast<spirv::ArrayType>(getPointeeType())) {
-      pointeePtrType =
-          dyn_cast<spirv::PointerType>(pointeeArrayType.getElementType());
-    }
-  }
-
-  if (pointeePtrType && pointeePtrType.getStorageClass() ==
-                            spirv::StorageClass::PhysicalStorageBuffer) {
-    bool hasAliasedPtr =
-        getDecorationAttr(spirv::Decoration::AliasedPointer) != nullptr;
-    bool hasRestrictPtr =
-        getDecorationAttr(spirv::Decoration::RestrictPointer) != nullptr;
-
-    if (!hasAliasedPtr && !hasRestrictPtr)
-      return emitOpError() << " with physical buffer pointer must be decorated "
-                              "either 'AliasedPointer' or 'RestrictPointer'";
-
-    if (hasAliasedPtr && hasRestrictPtr)
-      return emitOpError()
-             << " with physical buffer pointer must have exactly one "
-                "aliasing decoration";
+             << attr << "' attribute (only allowed in spirv.GlobalVariable)";
   }
 
   return success();

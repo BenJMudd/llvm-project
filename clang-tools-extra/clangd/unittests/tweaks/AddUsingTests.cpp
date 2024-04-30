@@ -309,29 +309,6 @@ namespace foo { void fun(); }
 void foo::fun() {
   ff();
 })cpp"},
-      // Inside a lambda.
-      {
-          R"cpp(
-namespace NS {
-void unrelated();
-void foo();
-}
-
-auto L = [] {
-  using NS::unrelated;
-  NS::f^oo();
-};)cpp",
-          R"cpp(
-namespace NS {
-void unrelated();
-void foo();
-}
-
-auto L = [] {
-  using NS::foo;using NS::unrelated;
-  foo();
-};)cpp",
-      },
       // If all other using are fully qualified, add ::
       {R"cpp(
 #include "test.hpp"

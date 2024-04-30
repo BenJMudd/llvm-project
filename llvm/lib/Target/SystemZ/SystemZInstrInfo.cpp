@@ -18,7 +18,7 @@
 #include "llvm/ADT/Statistic.h"
 #include "llvm/CodeGen/LiveInterval.h"
 #include "llvm/CodeGen/LiveIntervals.h"
-#include "llvm/CodeGen/LiveRegUnits.h"
+#include "llvm/CodeGen/LivePhysRegs.h"
 #include "llvm/CodeGen/LiveVariables.h"
 #include "llvm/CodeGen/MachineBasicBlock.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
@@ -59,7 +59,7 @@ static uint64_t allOnes(unsigned int Count) {
 void SystemZInstrInfo::anchor() {}
 
 SystemZInstrInfo::SystemZInstrInfo(SystemZSubtarget &sti)
-    : SystemZGenInstrInfo(-1, -1),
+    : SystemZGenInstrInfo(SystemZ::ADJCALLSTACKDOWN, SystemZ::ADJCALLSTACKUP),
       RI(sti.getSpecialRegisters()->getReturnFunctionAddressRegister()),
       STI(sti) {}
 
@@ -322,12 +322,12 @@ static int isSimpleMove(const MachineInstr &MI, int &FrameIndex,
   return 0;
 }
 
-Register SystemZInstrInfo::isLoadFromStackSlot(const MachineInstr &MI,
+unsigned SystemZInstrInfo::isLoadFromStackSlot(const MachineInstr &MI,
                                                int &FrameIndex) const {
   return isSimpleMove(MI, FrameIndex, SystemZII::SimpleBDXLoad);
 }
 
-Register SystemZInstrInfo::isStoreToStackSlot(const MachineInstr &MI,
+unsigned SystemZInstrInfo::isStoreToStackSlot(const MachineInstr &MI,
                                               int &FrameIndex) const {
   return isSimpleMove(MI, FrameIndex, SystemZII::SimpleBDXStore);
 }
@@ -610,7 +610,7 @@ void SystemZInstrInfo::insertSelect(MachineBasicBlock &MBB,
     .addImm(CCValid).addImm(CCMask);
 }
 
-bool SystemZInstrInfo::foldImmediate(MachineInstr &UseMI, MachineInstr &DefMI,
+bool SystemZInstrInfo::FoldImmediate(MachineInstr &UseMI, MachineInstr &DefMI,
                                      Register Reg,
                                      MachineRegisterInfo *MRI) const {
   unsigned DefOpc = DefMI.getOpcode();
@@ -938,9 +938,8 @@ static LogicOp interpretAndImmediate(unsigned Opcode) {
 }
 
 static void transferDeadCC(MachineInstr *OldMI, MachineInstr *NewMI) {
-  if (OldMI->registerDefIsDead(SystemZ::CC, /*TRI=*/nullptr)) {
-    MachineOperand *CCDef =
-        NewMI->findRegisterDefOperand(SystemZ::CC, /*TRI=*/nullptr);
+  if (OldMI->registerDefIsDead(SystemZ::CC)) {
+    MachineOperand *CCDef = NewMI->findRegisterDefOperand(SystemZ::CC);
     if (CCDef != nullptr)
       CCDef->setIsDead(true);
   }
@@ -1035,8 +1034,7 @@ MachineInstr *SystemZInstrInfo::foldMemoryOperandImpl(
         .addFrameIndex(FrameIndex)
         .addImm(0)
         .addImm(MI.getOperand(2).getImm());
-      BuiltMI->findRegisterDefOperand(SystemZ::CC, /*TRI=*/nullptr)
-          ->setIsDead(true);
+      BuiltMI->findRegisterDefOperand(SystemZ::CC)->setIsDead(true);
       CCLiveRange->createDeadDef(MISlot, LIS->getVNInfoAllocator());
       return BuiltMI;
     }
@@ -1197,7 +1195,7 @@ MachineInstr *SystemZInstrInfo::foldMemoryOperandImpl(
   unsigned NumOps = MI.getNumExplicitOperands();
   int MemOpcode = SystemZ::getMemOpcode(Opcode);
   if (MemOpcode == -1 ||
-      (CCLiveAtMI && !MI.definesRegister(SystemZ::CC, /*TRI=*/nullptr) &&
+      (CCLiveAtMI && !MI.definesRegister(SystemZ::CC) &&
        get(MemOpcode).hasImplicitDefOfPhysReg(SystemZ::CC)))
     return nullptr;
 
@@ -1305,9 +1303,9 @@ MachineInstr *SystemZInstrInfo::foldMemoryOperandImpl(
       MIB.addImm(CCValid);
       MIB.addImm(NeedsCommute ? CCMask ^ CCValid : CCMask);
     }
-    if (MIB->definesRegister(SystemZ::CC, /*TRI=*/nullptr) &&
-        (!MI.definesRegister(SystemZ::CC, /*TRI=*/nullptr) ||
-         MI.registerDefIsDead(SystemZ::CC, /*TRI=*/nullptr))) {
+    if (MIB->definesRegister(SystemZ::CC) &&
+        (!MI.definesRegister(SystemZ::CC) ||
+         MI.registerDefIsDead(SystemZ::CC))) {
       MIB->addRegisterDead(SystemZ::CC, TRI);
       if (CCLiveRange)
         CCLiveRange->createDeadDef(MISlot, LIS->getVNInfoAllocator());
@@ -1694,6 +1692,9 @@ unsigned SystemZInstrInfo::getLoadAndTest(unsigned Opcode) const {
   case SystemZ::LR:     return SystemZ::LTR;
   case SystemZ::LGFR:   return SystemZ::LTGFR;
   case SystemZ::LGR:    return SystemZ::LTGR;
+  case SystemZ::LER:    return SystemZ::LTEBR;
+  case SystemZ::LDR:    return SystemZ::LTDBR;
+  case SystemZ::LXR:    return SystemZ::LTXBR;
   case SystemZ::LCDFR:  return SystemZ::LCDBR;
   case SystemZ::LPDFR:  return SystemZ::LPDBR;
   case SystemZ::LNDFR:  return SystemZ::LNDBR;
@@ -1863,22 +1864,22 @@ prepareCompareSwapOperands(MachineBasicBlock::iterator const MBBI) const {
   bool CCLive = true;
   SmallVector<MachineInstr *, 4> CCUsers;
   for (MachineInstr &MI : llvm::make_range(std::next(MBBI), MBB->end())) {
-    if (MI.readsRegister(SystemZ::CC, /*TRI=*/nullptr)) {
+    if (MI.readsRegister(SystemZ::CC)) {
       unsigned Flags = MI.getDesc().TSFlags;
       if ((Flags & SystemZII::CCMaskFirst) || (Flags & SystemZII::CCMaskLast))
         CCUsers.push_back(&MI);
       else
         return false;
     }
-    if (MI.definesRegister(SystemZ::CC, /*TRI=*/nullptr)) {
+    if (MI.definesRegister(SystemZ::CC)) {
       CCLive = false;
       break;
     }
   }
   if (CCLive) {
-    LiveRegUnits LiveRegs(*MBB->getParent()->getSubtarget().getRegisterInfo());
+    LivePhysRegs LiveRegs(*MBB->getParent()->getSubtarget().getRegisterInfo());
     LiveRegs.addLiveOuts(*MBB);
-    if (!LiveRegs.available(SystemZ::CC))
+    if (LiveRegs.contains(SystemZ::CC))
       return false;
   }
 
@@ -2022,12 +2023,11 @@ areMemAccessesTriviallyDisjoint(const MachineInstr &MIa,
   }
   if (SameVal) {
     int OffsetA = MMOa->getOffset(), OffsetB = MMOb->getOffset();
-    LocationSize WidthA = MMOa->getSize(), WidthB = MMOb->getSize();
+    int WidthA = MMOa->getSize(), WidthB = MMOb->getSize();
     int LowOffset = OffsetA < OffsetB ? OffsetA : OffsetB;
     int HighOffset = OffsetA < OffsetB ? OffsetB : OffsetA;
-    LocationSize LowWidth = (LowOffset == OffsetA) ? WidthA : WidthB;
-    if (LowWidth.hasValue() &&
-        LowOffset + (int)LowWidth.getValue() <= HighOffset)
+    int LowWidth = (LowOffset == OffsetA) ? WidthA : WidthB;
+    if (LowOffset + LowWidth <= HighOffset)
       return true;
   }
 

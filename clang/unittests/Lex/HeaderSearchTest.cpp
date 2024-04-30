@@ -47,18 +47,14 @@ protected:
     Search.AddSearchPath(DL, /*isAngled=*/false);
   }
 
-  void addFrameworkSearchDir(llvm::StringRef Dir, bool IsSystem = true) {
+  void addSystemFrameworkSearchDir(llvm::StringRef Dir) {
     VFS->addFile(
         Dir, 0, llvm::MemoryBuffer::getMemBuffer(""), /*User=*/std::nullopt,
         /*Group=*/std::nullopt, llvm::sys::fs::file_type::directory_file);
     auto DE = FileMgr.getOptionalDirectoryRef(Dir);
     assert(DE);
-    auto DL = DirectoryLookup(*DE, IsSystem ? SrcMgr::C_System : SrcMgr::C_User,
-                              /*isFramework=*/true);
-    if (IsSystem)
-      Search.AddSystemSearchPath(DL);
-    else
-      Search.AddSearchPath(DL, /*isAngled=*/true);
+    auto DL = DirectoryLookup(*DE, SrcMgr::C_System, /*isFramework=*/true);
+    Search.AddSystemSearchPath(DL);
   }
 
   void addHeaderMap(llvm::StringRef Filename,
@@ -67,7 +63,7 @@ protected:
     VFS->addFile(Filename, 0, std::move(Buf), /*User=*/std::nullopt,
                  /*Group=*/std::nullopt,
                  llvm::sys::fs::file_type::regular_file);
-    auto FE = FileMgr.getOptionalFileRef(Filename, true);
+    auto FE = FileMgr.getFile(Filename, true);
     assert(FE);
 
     // Test class supports only one HMap at a time.
@@ -179,32 +175,20 @@ TEST_F(HeaderSearchTest, IncludeFromSameDirectory) {
 }
 
 TEST_F(HeaderSearchTest, SdkFramework) {
-  addFrameworkSearchDir(
+  addSystemFrameworkSearchDir(
       "/Platforms/MacOSX.platform/Developer/SDKs/MacOSX11.3.sdk/Frameworks/");
-  bool IsAngled = false;
+  bool IsSystem = false;
   EXPECT_EQ(Search.suggestPathToFileForDiagnostics(
                 "/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/"
                 "Frameworks/AppKit.framework/Headers/NSView.h",
                 /*WorkingDir=*/"",
-                /*MainFile=*/"", &IsAngled),
+                /*MainFile=*/"", &IsSystem),
             "AppKit/NSView.h");
-  EXPECT_TRUE(IsAngled);
-
-  addFrameworkSearchDir("/System/Developer/Library/Framworks/",
-                        /*IsSystem*/ false);
-  EXPECT_EQ(Search.suggestPathToFileForDiagnostics(
-                "/System/Developer/Library/Framworks/"
-                "Foo.framework/Headers/Foo.h",
-                /*WorkingDir=*/"",
-                /*MainFile=*/"", &IsAngled),
-            "Foo/Foo.h");
-  // Expect to be true even though we passed false to IsSystem earlier since
-  // all frameworks should be treated as <>.
-  EXPECT_TRUE(IsAngled);
+  EXPECT_TRUE(IsSystem);
 }
 
 TEST_F(HeaderSearchTest, NestedFramework) {
-  addFrameworkSearchDir("/Platforms/MacOSX/Frameworks");
+  addSystemFrameworkSearchDir("/Platforms/MacOSX/Frameworks");
   EXPECT_EQ(Search.suggestPathToFileForDiagnostics(
                 "/Platforms/MacOSX/Frameworks/AppKit.framework/Frameworks/"
                 "Sub.framework/Headers/Sub.h",
@@ -215,7 +199,7 @@ TEST_F(HeaderSearchTest, NestedFramework) {
 
 TEST_F(HeaderSearchTest, HeaderFrameworkLookup) {
   std::string HeaderPath = "/tmp/Frameworks/Foo.framework/Headers/Foo.h";
-  addFrameworkSearchDir("/tmp/Frameworks");
+  addSystemFrameworkSearchDir("/tmp/Frameworks");
   VFS->addFile(HeaderPath, 0,
                llvm::MemoryBuffer::getMemBufferCopy("", HeaderPath),
                /*User=*/std::nullopt, /*Group=*/std::nullopt,

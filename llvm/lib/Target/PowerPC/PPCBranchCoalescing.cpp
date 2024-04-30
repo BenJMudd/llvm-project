@@ -13,6 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "PPC.h"
+#include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/CodeGen/MachineDominators.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
@@ -701,7 +702,6 @@ bool PPCBranchCoalescing::mergeCandidates(CoalescingCandidateInfo &SourceRegion,
   TargetRegion.FallThroughBlock->transferSuccessorsAndUpdatePHIs(
       SourceRegion.FallThroughBlock);
   TargetRegion.FallThroughBlock->removeSuccessor(SourceRegion.BranchBlock);
-  TargetRegion.FallThroughBlock->normalizeSuccProbs();
 
   // Remove the blocks from the function.
   assert(SourceRegion.BranchBlock->empty() &&

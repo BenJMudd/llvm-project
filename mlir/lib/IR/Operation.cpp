@@ -20,7 +20,6 @@
 #include "mlir/Interfaces/FoldInterfaces.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringExtras.h"
-#include "llvm/Support/ErrorHandling.h"
 #include <numeric>
 #include <optional>
 
@@ -310,7 +309,8 @@ void Operation::setAttrs(DictionaryAttr newAttrs) {
     SmallVector<NamedAttribute> discardableAttrs;
     discardableAttrs.reserve(newAttrs.size());
     for (NamedAttribute attr : newAttrs) {
-      if (getInherentAttr(attr.getName()))
+      if (std::optional<Attribute> inherentAttr =
+              getInherentAttr(attr.getName()))
         setInherentAttr(attr.getName(), attr.getValue());
       else
         discardableAttrs.push_back(attr);
@@ -327,7 +327,8 @@ void Operation::setAttrs(ArrayRef<NamedAttribute> newAttrs) {
     SmallVector<NamedAttribute> discardableAttrs;
     discardableAttrs.reserve(newAttrs.size());
     for (NamedAttribute attr : newAttrs) {
-      if (getInherentAttr(attr.getName()))
+      if (std::optional<Attribute> inherentAttr =
+              getInherentAttr(attr.getName()))
         setInherentAttr(attr.getName(), attr.getValue());
       else
         discardableAttrs.push_back(attr);
@@ -352,15 +353,16 @@ Attribute Operation::getPropertiesAsAttribute() {
     return *getPropertiesStorage().as<Attribute *>();
   return info->getOpPropertiesAsAttribute(this);
 }
-LogicalResult Operation::setPropertiesFromAttribute(
-    Attribute attr, function_ref<InFlightDiagnostic()> emitError) {
+LogicalResult
+Operation::setPropertiesFromAttribute(Attribute attr,
+                                      InFlightDiagnostic *diagnostic) {
   std::optional<RegisteredOperationName> info = getRegisteredInfo();
   if (LLVM_UNLIKELY(!info)) {
     *getPropertiesStorage().as<Attribute *>() = attr;
     return success();
   }
   return info->setOpPropertiesFromAttribute(
-      this->getName(), this->getPropertiesStorage(), attr, emitError);
+      this->getName(), this->getPropertiesStorage(), attr, diagnostic);
 }
 
 void Operation::copyProperties(OpaqueProperties rhs) {
@@ -607,38 +609,13 @@ void Operation::setSuccessor(Block *block, unsigned index) {
   getBlockOperands()[index].set(block);
 }
 
-#ifndef NDEBUG
-/// Assert that the folded results (in case of values) have the same type as
-/// the results of the given op.
-static void checkFoldResultTypes(Operation *op,
-                                 SmallVectorImpl<OpFoldResult> &results) {
-  if (results.empty())
-    return;
-
-  for (auto [ofr, opResult] : llvm::zip_equal(results, op->getResults())) {
-    if (auto value = dyn_cast<Value>(ofr)) {
-      if (value.getType() != opResult.getType()) {
-        op->emitOpError() << "folder produced a value of incorrect type: "
-                          << opResult.getType()
-                          << ", expected: " << value.getType();
-        assert(false && "incorrect fold result type");
-      }
-    }
-  }
-}
-#endif // NDEBUG
-
 /// Attempt to fold this operation using the Op's registered foldHook.
 LogicalResult Operation::fold(ArrayRef<Attribute> operands,
                               SmallVectorImpl<OpFoldResult> &results) {
   // If we have a registered operation definition matching this one, use it to
   // try to constant fold the operation.
-  if (succeeded(name.foldHook(this, operands, results))) {
-#ifndef NDEBUG
-    checkFoldResultTypes(this, results);
-#endif // NDEBUG
+  if (succeeded(name.foldHook(this, operands, results)))
     return success();
-  }
 
   // Otherwise, fall back on the dialect hook to handle it.
   Dialect *dialect = getDialect();
@@ -649,12 +626,7 @@ LogicalResult Operation::fold(ArrayRef<Attribute> operands,
   if (!interface)
     return failure();
 
-  LogicalResult status = interface->fold(this, operands, results);
-#ifndef NDEBUG
-  if (succeeded(status))
-    checkFoldResultTypes(this, results);
-#endif // NDEBUG
-  return status;
+  return interface->fold(this, operands, results);
 }
 
 LogicalResult Operation::fold(SmallVectorImpl<OpFoldResult> &results) {
@@ -782,7 +754,7 @@ void OpState::print(Operation *op, OpAsmPrinter &p, StringRef defaultDialect) {
 void OpState::printOpName(Operation *op, OpAsmPrinter &p,
                           StringRef defaultDialect) {
   StringRef name = op->getName().getStringRef();
-  if (name.starts_with((defaultDialect + ".").str()) && name.count('.') == 1)
+  if (name.startswith((defaultDialect + ".").str()) && name.count('.') == 1)
     name = name.drop_front(defaultDialect.size() + 1);
   p.getStream() << name;
 }
@@ -790,33 +762,15 @@ void OpState::printOpName(Operation *op, OpAsmPrinter &p,
 /// Parse properties as a Attribute.
 ParseResult OpState::genericParseProperties(OpAsmParser &parser,
                                             Attribute &result) {
-  if (succeeded(parser.parseOptionalLess())) { // The less is optional.
-    if (parser.parseAttribute(result) || parser.parseGreater())
-      return failure();
-  }
+  if (parser.parseLess() || parser.parseAttribute(result) ||
+      parser.parseGreater())
+    return failure();
   return success();
 }
 
-/// Print the properties as a Attribute with names not included within
-/// 'elidedProps'
-void OpState::genericPrintProperties(OpAsmPrinter &p, Attribute properties,
-                                     ArrayRef<StringRef> elidedProps) {
-  auto dictAttr = dyn_cast_or_null<::mlir::DictionaryAttr>(properties);
-  if (dictAttr && !elidedProps.empty()) {
-    ArrayRef<NamedAttribute> attrs = dictAttr.getValue();
-    llvm::SmallDenseSet<StringRef> elidedAttrsSet(elidedProps.begin(),
-                                                  elidedProps.end());
-    bool atLeastOneAttr = llvm::any_of(attrs, [&](NamedAttribute attr) {
-      return !elidedAttrsSet.contains(attr.getName().strref());
-    });
-    if (atLeastOneAttr) {
-      p << "<";
-      p.printOptionalAttrDict(dictAttr.getValue(), elidedProps);
-      p << ">";
-    }
-  } else {
-    p << "<" << properties << ">";
-  }
+/// Print the properties as a Attribute.
+void OpState::genericPrintProperties(OpAsmPrinter &p, Attribute properties) {
+  p << "<" << properties << ">";
 }
 
 /// Emit an error about fatal conditions with this operation, reporting up to
@@ -1130,51 +1084,6 @@ LogicalResult OpTrait::impl::verifySameOperandsAndResultType(Operation *op) {
   return success();
 }
 
-LogicalResult OpTrait::impl::verifySameOperandsAndResultRank(Operation *op) {
-  if (failed(verifyAtLeastNOperands(op, 1)))
-    return failure();
-
-  // delegate function that returns true if type is a shaped type with known
-  // rank
-  auto hasRank = [](const Type type) {
-    if (auto shapedType = dyn_cast<ShapedType>(type))
-      return shapedType.hasRank();
-
-    return false;
-  };
-
-  auto rankedOperandTypes =
-      llvm::make_filter_range(op->getOperandTypes(), hasRank);
-  auto rankedResultTypes =
-      llvm::make_filter_range(op->getResultTypes(), hasRank);
-
-  // If all operands and results are unranked, then no further verification.
-  if (rankedOperandTypes.empty() && rankedResultTypes.empty())
-    return success();
-
-  // delegate function that returns rank of shaped type with known rank
-  auto getRank = [](const Type type) {
-    return cast<ShapedType>(type).getRank();
-  };
-
-  auto rank = !rankedOperandTypes.empty() ? getRank(*rankedOperandTypes.begin())
-                                          : getRank(*rankedResultTypes.begin());
-
-  for (const auto type : rankedOperandTypes) {
-    if (rank != getRank(type)) {
-      return op->emitOpError("operands don't have matching ranks");
-    }
-  }
-
-  for (const auto type : rankedResultTypes) {
-    if (rank != getRank(type)) {
-      return op->emitOpError("result type has different rank than operands");
-    }
-  }
-
-  return success();
-}
-
 LogicalResult OpTrait::impl::verifyIsTerminator(Operation *op) {
   Block *block = op->getBlock();
   // Verify that the operation is at the end of the respective parent block.
@@ -1306,7 +1215,9 @@ LogicalResult OpTrait::impl::verifyNoRegionArguments(Operation *op) {
 }
 
 LogicalResult OpTrait::impl::verifyElementwise(Operation *op) {
-  auto isMappableType = llvm::IsaPred<VectorType, TensorType>;
+  auto isMappableType = [](Type type) {
+    return llvm::isa<VectorType, TensorType>(type);
+  };
   auto resultMappableTypes = llvm::to_vector<1>(
       llvm::make_filter_range(op->getResultTypes(), isMappableType));
   auto operandMappableTypes = llvm::to_vector<2>(

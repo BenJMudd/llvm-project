@@ -1,10 +1,10 @@
 // RUN: %check_clang_tidy -check-suffixes=UDL-ALLOWED -std=c++14-or-later %s readability-magic-numbers %t \
 // RUN: -config='{CheckOptions: \
-// RUN:  {readability-magic-numbers.IgnoreUserDefinedLiterals: false}}' \
+// RUN:  [{key: readability-magic-numbers.IgnoreUserDefinedLiterals, value: false}]}' \
 // RUN: --
 // RUN: %check_clang_tidy -check-suffixes=UDL-IGNORED -std=c++14-or-later %s readability-magic-numbers %t \
 // RUN: -config='{CheckOptions: \
-// RUN:  {readability-magic-numbers.IgnoreUserDefinedLiterals: true}}' \
+// RUN:  [{key: readability-magic-numbers.IgnoreUserDefinedLiterals, value: true}]}' \
 // RUN: --
 
 namespace std {

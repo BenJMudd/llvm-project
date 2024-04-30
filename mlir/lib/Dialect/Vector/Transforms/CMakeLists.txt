@@ -4,20 +4,16 @@ add_mlir_dialect_library(MLIRVectorTransforms
   LowerVectorBroadcast.cpp
   LowerVectorContract.cpp
   LowerVectorGather.cpp
-  LowerVectorInterleave.cpp
   LowerVectorMask.cpp
   LowerVectorMultiReduction.cpp
   LowerVectorScan.cpp
   LowerVectorShapeCast.cpp
   LowerVectorTransfer.cpp
   LowerVectorTranspose.cpp
-  SubsetOpInterfaceImpl.cpp
   VectorDistribute.cpp
   VectorDropLeadUnitDim.cpp
-  VectorEmulateMaskedLoadStore.cpp
   VectorEmulateNarrowType.cpp
   VectorInsertExtractStridedSliceRewritePatterns.cpp
-  VectorLinearize.cpp
   VectorTransferOpTransforms.cpp
   VectorTransferSplitRewritePatterns.cpp
   VectorTransforms.cpp
@@ -44,7 +40,6 @@ add_mlir_dialect_library(MLIRVectorTransforms
   MLIRMemRefUtils
   MLIRSCFDialect
   MLIRSideEffectInterfaces
-  MLIRSubsetOpInterface
   MLIRTensorDialect
   MLIRTransforms
   MLIRVectorDialect

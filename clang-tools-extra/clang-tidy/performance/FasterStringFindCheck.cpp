@@ -26,20 +26,14 @@ std::optional<std::string> makeCharacterLiteral(const StringLiteral *Literal) {
     Literal->outputString(OS);
   }
   // Now replace the " with '.
-  auto OpenPos = Result.find_first_of('"');
-  if (OpenPos == std::string::npos)
+  auto Pos = Result.find_first_of('"');
+  if (Pos == Result.npos)
     return std::nullopt;
-  Result[OpenPos] = '\'';
-
-  auto ClosePos = Result.find_last_of('"');
-  if (ClosePos == std::string::npos)
+  Result[Pos] = '\'';
+  Pos = Result.find_last_of('"');
+  if (Pos == Result.npos)
     return std::nullopt;
-  Result[ClosePos] = '\'';
-
-  // "'" is OK, but ''' is not, so add a backslash
-  if ((ClosePos - OpenPos) == 2 && Result[OpenPos + 1] == '\'')
-    Result.replace(OpenPos + 1, 1, "\\'");
-
+  Result[Pos] = '\'';
   return Result;
 }
 

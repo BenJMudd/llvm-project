@@ -155,7 +155,8 @@ public:
   {
     m_option_group.Append(&m_platform_options, LLDB_OPT_SET_ALL, 1);
     m_option_group.Finalize();
-    AddSimpleArgumentList(eArgTypePlatform);
+    CommandArgumentData platform_arg{eArgTypePlatform, eArgRepeatPlain};
+    m_arguments.push_back({platform_arg});
   }
 
   ~CommandObjectPlatformSelect() override = default;
@@ -168,7 +169,7 @@ public:
   Options *GetOptions() override { return &m_option_group; }
 
 protected:
-  void DoExecute(Args &args, CommandReturnObject &result) override {
+  bool DoExecute(Args &args, CommandReturnObject &result) override {
     if (args.GetArgumentCount() == 1) {
       const char *platform_name = args.GetArgumentAtIndex(0);
       if (platform_name && platform_name[0]) {
@@ -193,6 +194,7 @@ protected:
       result.AppendError(
           "platform create takes a platform name as an argument\n");
     }
+    return result.Succeeded();
   }
 
   OptionGroupOptions m_option_group;
@@ -210,7 +212,7 @@ public:
   ~CommandObjectPlatformList() override = default;
 
 protected:
-  void DoExecute(Args &args, CommandReturnObject &result) override {
+  bool DoExecute(Args &args, CommandReturnObject &result) override {
     Stream &ostrm = result.GetOutputStream();
     ostrm.Printf("Available platforms:\n");
 
@@ -233,6 +235,7 @@ protected:
       result.AppendError("no platforms are available\n");
     } else
       result.SetStatus(eReturnStatusSuccessFinishResult);
+    return result.Succeeded();
   }
 };
 
@@ -247,7 +250,7 @@ public:
   ~CommandObjectPlatformStatus() override = default;
 
 protected:
-  void DoExecute(Args &args, CommandReturnObject &result) override {
+  bool DoExecute(Args &args, CommandReturnObject &result) override {
     Stream &ostrm = result.GetOutputStream();
 
     Target *target = GetDebugger().GetSelectedTarget().get();
@@ -264,6 +267,7 @@ protected:
     } else {
       result.AppendError("no platform is currently selected\n");
     }
+    return result.Succeeded();
   }
 };
 
@@ -275,13 +279,14 @@ public:
             interpreter, "platform connect",
             "Select the current platform by providing a connection URL.",
             "platform connect <connect-url>", 0) {
-    AddSimpleArgumentList(eArgTypeConnectURL);
+    CommandArgumentData platform_arg{eArgTypeConnectURL, eArgRepeatPlain};
+    m_arguments.push_back({platform_arg});
   }
 
   ~CommandObjectPlatformConnect() override = default;
 
 protected:
-  void DoExecute(Args &args, CommandReturnObject &result) override {
+  bool DoExecute(Args &args, CommandReturnObject &result) override {
     Stream &ostrm = result.GetOutputStream();
 
     PlatformSP platform_sp(
@@ -302,6 +307,7 @@ protected:
     } else {
       result.AppendError("no platform is currently selected\n");
     }
+    return result.Succeeded();
   }
 
   Options *GetOptions() override {
@@ -328,7 +334,7 @@ public:
   ~CommandObjectPlatformDisconnect() override = default;
 
 protected:
-  void DoExecute(Args &args, CommandReturnObject &result) override {
+  bool DoExecute(Args &args, CommandReturnObject &result) override {
     PlatformSP platform_sp(
         GetDebugger().GetPlatformList().GetSelectedPlatform());
     if (platform_sp) {
@@ -368,6 +374,7 @@ protected:
     } else {
       result.AppendError("no platform is currently selected");
     }
+    return result.Succeeded();
   }
 };
 
@@ -387,7 +394,7 @@ public:
   ~CommandObjectPlatformSettings() override = default;
 
 protected:
-  void DoExecute(Args &args, CommandReturnObject &result) override {
+  bool DoExecute(Args &args, CommandReturnObject &result) override {
     PlatformSP platform_sp(
         GetDebugger().GetPlatformList().GetSelectedPlatform());
     if (platform_sp) {
@@ -397,6 +404,7 @@ protected:
     } else {
       result.AppendError("no platform is currently selected");
     }
+    return result.Succeeded();
   }
 
   Options *GetOptions() override {
@@ -416,12 +424,13 @@ public:
       : CommandObjectParsed(interpreter, "platform mkdir",
                             "Make a new directory on the remote end.", nullptr,
                             0) {
-    AddSimpleArgumentList(eArgTypeRemotePath);
+    CommandArgumentData thread_arg{eArgTypePath, eArgRepeatPlain};
+    m_arguments.push_back({thread_arg});
   }
 
   ~CommandObjectPlatformMkDir() override = default;
 
-  void DoExecute(Args &args, CommandReturnObject &result) override {
+  bool DoExecute(Args &args, CommandReturnObject &result) override {
     PlatformSP platform_sp(
         GetDebugger().GetPlatformList().GetSelectedPlatform());
     if (platform_sp) {
@@ -444,6 +453,7 @@ public:
     } else {
       result.AppendError("no platform currently selected\n");
     }
+    return result.Succeeded();
   }
 
   Options *GetOptions() override {
@@ -464,12 +474,22 @@ public:
   CommandObjectPlatformFOpen(CommandInterpreter &interpreter)
       : CommandObjectParsed(interpreter, "platform file open",
                             "Open a file on the remote end.", nullptr, 0) {
-    AddSimpleArgumentList(eArgTypeRemotePath);
+    CommandArgumentData path_arg{eArgTypePath, eArgRepeatPlain};
+    m_arguments.push_back({path_arg});
   }
 
   ~CommandObjectPlatformFOpen() override = default;
 
-  void DoExecute(Args &args, CommandReturnObject &result) override {
+  void
+  HandleArgumentCompletion(CompletionRequest &request,
+                           OptionElementVector &opt_element_vector) override {
+    if (request.GetCursorIndex() == 0)
+      lldb_private::CommandCompletions::InvokeCommonCompletionCallbacks(
+          GetCommandInterpreter(), lldb::eRemoteDiskFileCompletion, request,
+          nullptr);
+  }
+
+  bool DoExecute(Args &args, CommandReturnObject &result) override {
     PlatformSP platform_sp(
         GetDebugger().GetPlatformList().GetSelectedPlatform());
     if (platform_sp) {
@@ -497,6 +517,7 @@ public:
     } else {
       result.AppendError("no platform currently selected\n");
     }
+    return result.Succeeded();
   }
 
   Options *GetOptions() override {
@@ -517,12 +538,13 @@ public:
   CommandObjectPlatformFClose(CommandInterpreter &interpreter)
       : CommandObjectParsed(interpreter, "platform file close",
                             "Close a file on the remote end.", nullptr, 0) {
-    AddSimpleArgumentList(eArgTypeUnsignedInteger);
+    CommandArgumentData path_arg{eArgTypeUnsignedInteger, eArgRepeatPlain};
+    m_arguments.push_back({path_arg});
   }
 
   ~CommandObjectPlatformFClose() override = default;
 
-  void DoExecute(Args &args, CommandReturnObject &result) override {
+  bool DoExecute(Args &args, CommandReturnObject &result) override {
     PlatformSP platform_sp(
         GetDebugger().GetPlatformList().GetSelectedPlatform());
     if (platform_sp) {
@@ -532,7 +554,7 @@ public:
       if (!llvm::to_integer(cmd_line, fd)) {
         result.AppendErrorWithFormatv("'{0}' is not a valid file descriptor.\n",
                                       cmd_line);
-        return;
+        return result.Succeeded();
       }
       Status error;
       bool success = platform_sp->CloseFile(fd, error);
@@ -545,6 +567,7 @@ public:
     } else {
       result.AppendError("no platform currently selected\n");
     }
+    return result.Succeeded();
   }
 };
 
@@ -559,12 +582,13 @@ public:
       : CommandObjectParsed(interpreter, "platform file read",
                             "Read data from a file on the remote end.", nullptr,
                             0) {
-    AddSimpleArgumentList(eArgTypeUnsignedInteger);
+    CommandArgumentData path_arg{eArgTypeUnsignedInteger, eArgRepeatPlain};
+    m_arguments.push_back({path_arg});
   }
 
   ~CommandObjectPlatformFRead() override = default;
 
-  void DoExecute(Args &args, CommandReturnObject &result) override {
+  bool DoExecute(Args &args, CommandReturnObject &result) override {
     PlatformSP platform_sp(
         GetDebugger().GetPlatformList().GetSelectedPlatform());
     if (platform_sp) {
@@ -574,7 +598,7 @@ public:
       if (!llvm::to_integer(cmd_line, fd)) {
         result.AppendErrorWithFormatv("'{0}' is not a valid file descriptor.\n",
                                       cmd_line);
-        return;
+        return result.Succeeded();
       }
       std::string buffer(m_options.m_count, 0);
       Status error;
@@ -590,6 +614,7 @@ public:
     } else {
       result.AppendError("no platform currently selected\n");
     }
+    return result.Succeeded();
   }
 
   Options *GetOptions() override { return &m_options; }
@@ -653,12 +678,13 @@ public:
       : CommandObjectParsed(interpreter, "platform file write",
                             "Write data to a file on the remote end.", nullptr,
                             0) {
-    AddSimpleArgumentList(eArgTypeUnsignedInteger);
+    CommandArgumentData path_arg{eArgTypeUnsignedInteger, eArgRepeatPlain};
+    m_arguments.push_back({path_arg});
   }
 
   ~CommandObjectPlatformFWrite() override = default;
 
-  void DoExecute(Args &args, CommandReturnObject &result) override {
+  bool DoExecute(Args &args, CommandReturnObject &result) override {
     PlatformSP platform_sp(
         GetDebugger().GetPlatformList().GetSelectedPlatform());
     if (platform_sp) {
@@ -669,7 +695,7 @@ public:
       if (!llvm::to_integer(cmd_line, fd)) {
         result.AppendErrorWithFormatv("'{0}' is not a valid file descriptor.",
                                       cmd_line);
-        return;
+        return result.Succeeded();
       }
       uint64_t retcode =
           platform_sp->WriteFile(fd, m_options.m_offset, &m_options.m_data[0],
@@ -683,6 +709,7 @@ public:
     } else {
       result.AppendError("no platform currently selected\n");
     }
+    return result.Succeeded();
   }
 
   Options *GetOptions() override { return &m_options; }
@@ -779,7 +806,7 @@ public:
     CommandArgumentData file_arg_remote, file_arg_host;
 
     // Define the first (and only) variant of this arg.
-    file_arg_remote.arg_type = eArgTypeRemoteFilename;
+    file_arg_remote.arg_type = eArgTypeFilename;
     file_arg_remote.arg_repetition = eArgRepeatPlain;
     // There is only one variant this argument could be; put it into the
     // argument entry.
@@ -812,12 +839,12 @@ public:
           GetCommandInterpreter(), lldb::eDiskFileCompletion, request, nullptr);
   }
 
-  void DoExecute(Args &args, CommandReturnObject &result) override {
+  bool DoExecute(Args &args, CommandReturnObject &result) override {
     // If the number of arguments is incorrect, issue an error message.
     if (args.GetArgumentCount() != 2) {
       result.AppendError("required arguments missing; specify both the "
                          "source and destination file paths");
-      return;
+      return false;
     }
 
     PlatformSP platform_sp(
@@ -839,6 +866,7 @@ public:
     } else {
       result.AppendError("no platform currently selected\n");
     }
+    return result.Succeeded();
   }
 };
 
@@ -856,17 +884,39 @@ public:
 
     Get the file size from the remote end with path /the/remote/file/path.)");
 
-    AddSimpleArgumentList(eArgTypeRemoteFilename);
+    CommandArgumentEntry arg1;
+    CommandArgumentData file_arg_remote;
+
+    // Define the first (and only) variant of this arg.
+    file_arg_remote.arg_type = eArgTypeFilename;
+    file_arg_remote.arg_repetition = eArgRepeatPlain;
+    // There is only one variant this argument could be; put it into the
+    // argument entry.
+    arg1.push_back(file_arg_remote);
+
+    // Push the data for the first argument into the m_arguments vector.
+    m_arguments.push_back(arg1);
   }
 
   ~CommandObjectPlatformGetSize() override = default;
 
-  void DoExecute(Args &args, CommandReturnObject &result) override {
+  void
+  HandleArgumentCompletion(CompletionRequest &request,
+                           OptionElementVector &opt_element_vector) override {
+    if (request.GetCursorIndex() != 0)
+      return;
+
+    lldb_private::CommandCompletions::InvokeCommonCompletionCallbacks(
+        GetCommandInterpreter(), lldb::eRemoteDiskFileCompletion, request,
+        nullptr);
+  }
+
+  bool DoExecute(Args &args, CommandReturnObject &result) override {
     // If the number of arguments is incorrect, issue an error message.
     if (args.GetArgumentCount() != 1) {
       result.AppendError("required argument missing; specify the source file "
                          "path as the only argument");
-      return;
+      return false;
     }
 
     PlatformSP platform_sp(
@@ -887,6 +937,7 @@ public:
     } else {
       result.AppendError("no platform currently selected\n");
     }
+    return result.Succeeded();
   }
 };
 
@@ -904,17 +955,39 @@ public:
 
     Get the file permissions from the remote end with path /the/remote/file/path.)");
 
-    AddSimpleArgumentList(eArgTypeRemoteFilename);
+    CommandArgumentEntry arg1;
+    CommandArgumentData file_arg_remote;
+
+    // Define the first (and only) variant of this arg.
+    file_arg_remote.arg_type = eArgTypeFilename;
+    file_arg_remote.arg_repetition = eArgRepeatPlain;
+    // There is only one variant this argument could be; put it into the
+    // argument entry.
+    arg1.push_back(file_arg_remote);
+
+    // Push the data for the first argument into the m_arguments vector.
+    m_arguments.push_back(arg1);
   }
 
   ~CommandObjectPlatformGetPermissions() override = default;
 
-  void DoExecute(Args &args, CommandReturnObject &result) override {
+  void
+  HandleArgumentCompletion(CompletionRequest &request,
+                           OptionElementVector &opt_element_vector) override {
+    if (request.GetCursorIndex() != 0)
+      return;
+
+    lldb_private::CommandCompletions::InvokeCommonCompletionCallbacks(
+        GetCommandInterpreter(), lldb::eRemoteDiskFileCompletion, request,
+        nullptr);
+  }
+
+  bool DoExecute(Args &args, CommandReturnObject &result) override {
     // If the number of arguments is incorrect, issue an error message.
     if (args.GetArgumentCount() != 1) {
       result.AppendError("required argument missing; specify the source file "
                          "path as the only argument");
-      return;
+      return false;
     }
 
     PlatformSP platform_sp(
@@ -934,6 +1007,7 @@ public:
     } else {
       result.AppendError("no platform currently selected\n");
     }
+    return result.Succeeded();
   }
 };
 
@@ -951,17 +1025,39 @@ public:
 
     Check if /the/remote/file/path exists on the remote end.)");
 
-    AddSimpleArgumentList(eArgTypeRemoteFilename);
+    CommandArgumentEntry arg1;
+    CommandArgumentData file_arg_remote;
+
+    // Define the first (and only) variant of this arg.
+    file_arg_remote.arg_type = eArgTypeFilename;
+    file_arg_remote.arg_repetition = eArgRepeatPlain;
+    // There is only one variant this argument could be; put it into the
+    // argument entry.
+    arg1.push_back(file_arg_remote);
+
+    // Push the data for the first argument into the m_arguments vector.
+    m_arguments.push_back(arg1);
   }
 
   ~CommandObjectPlatformFileExists() override = default;
 
-  void DoExecute(Args &args, CommandReturnObject &result) override {
+  void
+  HandleArgumentCompletion(CompletionRequest &request,
+                           OptionElementVector &opt_element_vector) override {
+    if (request.GetCursorIndex() != 0)
+      return;
+
+    lldb_private::CommandCompletions::InvokeCommonCompletionCallbacks(
+        GetCommandInterpreter(), lldb::eRemoteDiskFileCompletion, request,
+        nullptr);
+  }
+
+  bool DoExecute(Args &args, CommandReturnObject &result) override {
     // If the number of arguments is incorrect, issue an error message.
     if (args.GetArgumentCount() != 1) {
       result.AppendError("required argument missing; specify the source file "
                          "path as the only argument");
-      return;
+      return false;
     }
 
     PlatformSP platform_sp(
@@ -976,6 +1072,7 @@ public:
     } else {
       result.AppendError("no platform currently selected\n");
     }
+    return result.Succeeded();
   }
 };
 
@@ -998,7 +1095,7 @@ public:
 
     Omitting the destination places the file in the platform working directory.)");
     CommandArgumentData source_arg{eArgTypePath, eArgRepeatPlain};
-    CommandArgumentData path_arg{eArgTypeRemotePath, eArgRepeatOptional};
+    CommandArgumentData path_arg{eArgTypePath, eArgRepeatOptional};
     m_arguments.push_back({source_arg});
     m_arguments.push_back({path_arg});
   }
@@ -1017,7 +1114,7 @@ public:
           nullptr);
   }
 
-  void DoExecute(Args &args, CommandReturnObject &result) override {
+  bool DoExecute(Args &args, CommandReturnObject &result) override {
     const char *src = args.GetArgumentAtIndex(0);
     const char *dst = args.GetArgumentAtIndex(1);
 
@@ -1037,6 +1134,7 @@ public:
     } else {
       result.AppendError("no platform currently selected\n");
     }
+    return result.Succeeded();
   }
 };
 
@@ -1053,17 +1151,8 @@ public:
     m_all_options.Append(&m_class_options, LLDB_OPT_SET_1 | LLDB_OPT_SET_2,
                          LLDB_OPT_SET_ALL);
     m_all_options.Finalize();
-    AddSimpleArgumentList(eArgTypeRunArgs, eArgRepeatStar);
-  }
-
-  void
-  HandleArgumentCompletion(CompletionRequest &request,
-                           OptionElementVector &opt_element_vector) override {
-    // I didn't make a type for RemoteRunArgs, but since we're going to run
-    // this on the remote system we should use the remote completer.
-    lldb_private::CommandCompletions::InvokeCommonCompletionCallbacks(
-        GetCommandInterpreter(), lldb::eRemoteDiskFileCompletion, request,
-        nullptr);
+    CommandArgumentData run_arg_arg{eArgTypeRunArgs, eArgRepeatStar};
+    m_arguments.push_back({run_arg_arg});
   }
 
   ~CommandObjectPlatformProcessLaunch() override = default;
@@ -1071,7 +1160,7 @@ public:
   Options *GetOptions() override { return &m_all_options; }
 
 protected:
-  void DoExecute(Args &args, CommandReturnObject &result) override {
+  bool DoExecute(Args &args, CommandReturnObject &result) override {
     Target *target = GetDebugger().GetSelectedTarget().get();
     PlatformSP platform_sp;
     if (target) {
@@ -1131,10 +1220,10 @@ protected:
 
         if (!process_sp && error.Success()) {
           result.AppendError("failed to launch or debug process");
-          return;
+          return false;
         } else if (!error.Success()) {
           result.AppendError(error.AsCString());
-          return;
+          return false;
         }
 
         const bool synchronous_execution =
@@ -1153,7 +1242,7 @@ protected:
         if (rebroadcast_first_stop) {
           assert(first_stop_event_sp);
           process_sp->BroadcastEvent(first_stop_event_sp);
-          return;
+          return true;
         }
 
         switch (state) {
@@ -1183,17 +1272,18 @@ protected:
 
         if (process_sp && process_sp->IsAlive()) {
           result.SetStatus(eReturnStatusSuccessFinishNoResult);
-          return;
+          return true;
         }
       } else {
         result.AppendError("'platform process launch' uses the current target "
                            "file and arguments, or the executable and its "
                            "arguments can be specified in this command");
-        return;
+        return false;
       }
     } else {
       result.AppendError("no platform is selected\n");
     }
+    return result.Succeeded();
   }
 
   CommandOptionsProcessLaunch m_options;
@@ -1220,7 +1310,7 @@ public:
   Options *GetOptions() override { return &m_options; }
 
 protected:
-  void DoExecute(Args &args, CommandReturnObject &result) override {
+  bool DoExecute(Args &args, CommandReturnObject &result) override {
     Target *target = GetDebugger().GetSelectedTarget().get();
     PlatformSP platform_sp;
     if (target) {
@@ -1308,6 +1398,7 @@ protected:
     } else {
       result.AppendError("no platform is selected\n");
     }
+    return result.Succeeded();
   }
 
   class CommandOptions : public Options {
@@ -1462,13 +1553,32 @@ public:
             interpreter, "platform process info",
             "Get detailed information for one or more process by process ID.",
             "platform process info <pid> [<pid> <pid> ...]", 0) {
-    AddSimpleArgumentList(eArgTypePid, eArgRepeatStar);
+    CommandArgumentEntry arg;
+    CommandArgumentData pid_args;
+
+    // Define the first (and only) variant of this arg.
+    pid_args.arg_type = eArgTypePid;
+    pid_args.arg_repetition = eArgRepeatStar;
+
+    // There is only one variant this argument could be; put it into the
+    // argument entry.
+    arg.push_back(pid_args);
+
+    // Push the data for the first argument into the m_arguments vector.
+    m_arguments.push_back(arg);
   }
 
   ~CommandObjectPlatformProcessInfo() override = default;
 
+  void
+  HandleArgumentCompletion(CompletionRequest &request,
+                           OptionElementVector &opt_element_vector) override {
+    lldb_private::CommandCompletions::InvokeCommonCompletionCallbacks(
+        GetCommandInterpreter(), lldb::eProcessIDCompletion, request, nullptr);
+  }
+
 protected:
-  void DoExecute(Args &args, CommandReturnObject &result) override {
+  bool DoExecute(Args &args, CommandReturnObject &result) override {
     Target *target = GetDebugger().GetSelectedTarget().get();
     PlatformSP platform_sp;
     if (target) {
@@ -1517,6 +1627,7 @@ protected:
     } else {
       result.AppendError("no platform is currently selected");
     }
+    return result.Succeeded();
   }
 };
 
@@ -1538,7 +1649,7 @@ public:
 
   ~CommandObjectPlatformProcessAttach() override = default;
 
-  void DoExecute(Args &command, CommandReturnObject &result) override {
+  bool DoExecute(Args &command, CommandReturnObject &result) override {
     PlatformSP platform_sp(
         GetDebugger().GetPlatformList().GetSelectedPlatform());
     if (platform_sp) {
@@ -1562,6 +1673,7 @@ public:
     } else {
       result.AppendError("no platform is currently selected");
     }
+    return result.Succeeded();
   }
 
   Options *GetOptions() override { return &m_all_options; }
@@ -1668,14 +1780,15 @@ public:
       : CommandObjectRaw(interpreter, "platform shell",
                          "Run a shell command on the current platform.",
                          "platform shell <shell-command>", 0) {
-    AddSimpleArgumentList(eArgTypeNone, eArgRepeatStar);
+    CommandArgumentData thread_arg{eArgTypeNone, eArgRepeatStar};
+    m_arguments.push_back({thread_arg});
   }
 
   ~CommandObjectPlatformShell() override = default;
 
   Options *GetOptions() override { return &m_options; }
 
-  void DoExecute(llvm::StringRef raw_command_line,
+  bool DoExecute(llvm::StringRef raw_command_line,
                  CommandReturnObject &result) override {
     ExecutionContext exe_ctx = GetCommandInterpreter().GetExecutionContext();
     m_options.NotifyOptionParsingStarting(&exe_ctx);
@@ -1683,7 +1796,7 @@ public:
     // Print out an usage syntax on an empty command line.
     if (raw_command_line.empty()) {
       result.GetOutputStream().Printf("%s\n", this->GetSyntax().str().c_str());
-      return;
+      return true;
     }
 
     const bool is_alias = !raw_command_line.contains("platform");
@@ -1691,12 +1804,12 @@ public:
 
     if (args.HasArgs())
       if (!ParseOptions(args.GetArgs(), result))
-        return;
+        return false;
 
     if (args.GetRawPart().empty()) {
       result.GetOutputStream().Printf("%s <shell-command>\n",
                                       is_alias ? "shell" : "platform shell");
-      return;
+      return false;
     }
 
     llvm::StringRef cmd = args.GetRawPart();
@@ -1743,6 +1856,7 @@ public:
     } else {
       result.SetStatus(eReturnStatusSuccessFinishResult);
     }
+    return true;
   }
 
   CommandOptions m_options;
@@ -1757,7 +1871,7 @@ public:
             "Install a target (bundle or executable file) to the remote end.",
             "platform target-install <local-thing> <remote-sandbox>", 0) {
     CommandArgumentData local_arg{eArgTypePath, eArgRepeatPlain};
-    CommandArgumentData remote_arg{eArgTypeRemotePath, eArgRepeatPlain};
+    CommandArgumentData remote_arg{eArgTypePath, eArgRepeatPlain};
     m_arguments.push_back({local_arg});
     m_arguments.push_back({remote_arg});
   }
@@ -1773,10 +1887,10 @@ public:
         GetCommandInterpreter(), lldb::eDiskFileCompletion, request, nullptr);
   }
 
-  void DoExecute(Args &args, CommandReturnObject &result) override {
+  bool DoExecute(Args &args, CommandReturnObject &result) override {
     if (args.GetArgumentCount() != 2) {
       result.AppendError("platform target-install takes two arguments");
-      return;
+      return false;
     }
     // TODO: move the bulk of this code over to the platform itself
     FileSpec src(args.GetArgumentAtIndex(0));
@@ -1784,13 +1898,13 @@ public:
     FileSpec dst(args.GetArgumentAtIndex(1));
     if (!FileSystem::Instance().Exists(src)) {
       result.AppendError("source location does not exist or is not accessible");
-      return;
+      return false;
     }
     PlatformSP platform_sp(
         GetDebugger().GetPlatformList().GetSelectedPlatform());
     if (!platform_sp) {
       result.AppendError("no platform currently selected");
-      return;
+      return false;
     }
 
     Status error = platform_sp->Install(src, dst);
@@ -1799,6 +1913,7 @@ public:
     } else {
       result.AppendErrorWithFormat("install failed: %s", error.AsCString());
     }
+    return result.Succeeded();
   }
 };
 

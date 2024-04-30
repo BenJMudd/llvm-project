@@ -22,7 +22,8 @@ namespace LLVM {
 namespace detail {
 
 /// A helper class that converts llvm.loop metadata nodes into corresponding
-/// LoopAnnotationAttrs and llvm.access.group nodes into AccessGroupAttrs.
+/// LoopAnnotationAttrs and llvm.access.group nodes into
+/// AccessGroupMetadataOps.
 class LoopAnnotationImporter {
 public:
   LoopAnnotationImporter(ModuleImport &moduleImport, OpBuilder &builder)

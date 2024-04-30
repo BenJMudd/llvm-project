@@ -13,7 +13,6 @@
 #ifndef LLVM_CODEGEN_TARGETFRAMELOWERING_H
 #define LLVM_CODEGEN_TARGETFRAMELOWERING_H
 
-#include "llvm/ADT/BitVector.h"
 #include "llvm/CodeGen/MachineBasicBlock.h"
 #include "llvm/Support/TypeSize.h"
 #include <vector>
@@ -102,10 +101,6 @@ public:
   /// is the largest alignment for any data object in the target.
   ///
   Align getStackAlign() const { return StackAlignment; }
-
-  /// getStackThreshold - Return the maximum stack size
-  ///
-  virtual uint64_t getStackThreshold() const { return UINT_MAX; }
 
   /// alignSPAdjust - This method aligns the stack adjustment to the correct
   /// alignment.

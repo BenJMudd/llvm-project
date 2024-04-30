@@ -77,10 +77,8 @@ LogicalResult OperationFolder::tryToFold(Operation *op, bool *inPlaceUpdate) {
     // Check to see if we should rehoist, i.e. if a non-constant operation was
     // inserted before this one.
     Block *opBlock = op->getBlock();
-    if (&opBlock->front() != op && !isFolderOwnedConstant(op->getPrevNode())) {
+    if (&opBlock->front() != op && !isFolderOwnedConstant(op->getPrevNode()))
       op->moveBefore(&opBlock->front());
-      op->setLoc(erasedFoldedLocation);
-    }
     return failure();
   }
 
@@ -114,10 +112,8 @@ bool OperationFolder::insertKnownConstant(Operation *op, Attribute constValue) {
   // If this is a constant we unique'd, we don't need to insert, but we can
   // check to see if we should rehoist it.
   if (isFolderOwnedConstant(op)) {
-    if (&opBlock->front() != op && !isFolderOwnedConstant(op->getPrevNode())) {
+    if (&opBlock->front() != op && !isFolderOwnedConstant(op->getPrevNode()))
       op->moveBefore(&opBlock->front());
-      op->setLoc(erasedFoldedLocation);
-    }
     return true;
   }
 
@@ -146,7 +142,6 @@ bool OperationFolder::insertKnownConstant(Operation *op, Attribute constValue) {
   if (folderConstOp) {
     notifyRemoval(op);
     rewriter.replaceOp(op, folderConstOp->getResults());
-    folderConstOp->setLoc(erasedFoldedLocation);
     return false;
   }
 
@@ -156,10 +151,8 @@ bool OperationFolder::insertKnownConstant(Operation *op, Attribute constValue) {
   // anything. Otherwise, we move the constant to the insertion block.
   Block *insertBlock = &insertRegion->front();
   if (opBlock != insertBlock || (&insertBlock->front() != op &&
-                                 !isFolderOwnedConstant(op->getPrevNode()))) {
+                                 !isFolderOwnedConstant(op->getPrevNode())))
     op->moveBefore(&insertBlock->front());
-    op->setLoc(erasedFoldedLocation);
-  }
 
   folderConstOp = op;
   referencedDialects[op].push_back(op->getDialect());
@@ -200,17 +193,17 @@ void OperationFolder::clear() {
 /// Get or create a constant using the given builder. On success this returns
 /// the constant operation, nullptr otherwise.
 Value OperationFolder::getOrCreateConstant(Block *block, Dialect *dialect,
-                                           Attribute value, Type type) {
+                                           Attribute value, Type type,
+                                           Location loc) {
   // Find an insertion point for the constant.
   auto *insertRegion = getInsertionRegion(interfaces, block);
   auto &entry = insertRegion->front();
   rewriter.setInsertionPoint(&entry, entry.begin());
 
   // Get the constant map for the insertion region of this operation.
-  // Use erased location since the op is being built at the front of block.
   auto &uniquedConstants = foldScopes[insertRegion];
-  Operation *constOp = tryGetOrCreateConstant(uniquedConstants, dialect, value,
-                                              type, erasedFoldedLocation);
+  Operation *constOp =
+      tryGetOrCreateConstant(uniquedConstants, dialect, value, type, loc);
   return constOp ? constOp->getResult(0) : Value();
 }
 
@@ -254,6 +247,10 @@ OperationFolder::processFoldResults(Operation *op,
 
     // Check if the result was an SSA value.
     if (auto repl = llvm::dyn_cast_if_present<Value>(foldResults[i])) {
+      if (repl.getType() != op->getResult(i).getType()) {
+        results.clear();
+        return failure();
+      }
       results.emplace_back(repl);
       continue;
     }
@@ -261,9 +258,8 @@ OperationFolder::processFoldResults(Operation *op,
     // Check to see if there is a canonicalized version of this constant.
     auto res = op->getResult(i);
     Attribute attrRepl = foldResults[i].get<Attribute>();
-    if (auto *constOp =
-            tryGetOrCreateConstant(uniquedConstants, dialect, attrRepl,
-                                   res.getType(), erasedFoldedLocation)) {
+    if (auto *constOp = tryGetOrCreateConstant(
+            uniquedConstants, dialect, attrRepl, res.getType(), op->getLoc())) {
       // Ensure that this constant dominates the operation we are replacing it
       // with. This may not automatically happen if the operation being folded
       // was inserted before the constant within the insertion block.
@@ -298,11 +294,8 @@ OperationFolder::tryGetOrCreateConstant(ConstantMap &uniquedConstants,
   // Check if an existing mapping already exists.
   auto constKey = std::make_tuple(dialect, value, type);
   Operation *&constOp = uniquedConstants[constKey];
-  if (constOp) {
-    if (loc != constOp->getLoc())
-      constOp->setLoc(erasedFoldedLocation);
+  if (constOp)
     return constOp;
-  }
 
   // If one doesn't exist, try to materialize one.
   if (!(constOp = materializeConstant(dialect, rewriter, value, type, loc)))
@@ -325,8 +318,6 @@ OperationFolder::tryGetOrCreateConstant(ConstantMap &uniquedConstants,
     notifyRemoval(constOp);
     rewriter.eraseOp(constOp);
     referencedDialects[existingOp].push_back(dialect);
-    if (loc != existingOp->getLoc())
-      existingOp->setLoc(erasedFoldedLocation);
     return constOp = existingOp;
   }
 

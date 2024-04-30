@@ -50,7 +50,7 @@ private:
                  const ast_matchers::MatchFinder::MatchResult &Result);
   void memmoveFix(StringRef Name,
                   const ast_matchers::MatchFinder::MatchResult &Result,
-                  DiagnosticBuilder &Diag) const;
+                  DiagnosticBuilder &Diag);
   void strerror_sFix(const ast_matchers::MatchFinder::MatchResult &Result);
   void ncmpFix(StringRef Name,
                const ast_matchers::MatchFinder::MatchResult &Result);

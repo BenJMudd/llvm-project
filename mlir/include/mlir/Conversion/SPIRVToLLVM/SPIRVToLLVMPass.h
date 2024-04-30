@@ -15,8 +15,6 @@
 
 #include <memory>
 
-#include "mlir/Dialect/SPIRV/IR/SPIRVEnums.h"
-
 namespace mlir {
 class Pass;
 

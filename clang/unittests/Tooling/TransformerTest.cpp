@@ -1623,8 +1623,7 @@ TEST_F(TransformerTest, MultipleFiles) {
     return L.getFilePath() < R.getFilePath();
   });
 
-  ASSERT_EQ(llvm::sys::path::convert_to_slash(Changes[0].getFilePath()),
-            "./input.h");
+  ASSERT_EQ(Changes[0].getFilePath(), "./input.h");
   EXPECT_THAT(Changes[0].getInsertedHeaders(), IsEmpty());
   EXPECT_THAT(Changes[0].getRemovedHeaders(), IsEmpty());
   llvm::Expected<std::string> UpdatedCode =
@@ -1661,8 +1660,7 @@ TEST_F(TransformerTest, AddIncludeMultipleFiles) {
       {{"input.h", Header}}));
 
   ASSERT_EQ(Changes.size(), 1U);
-  ASSERT_EQ(llvm::sys::path::convert_to_slash(Changes[0].getFilePath()),
-            "./input.h");
+  ASSERT_EQ(Changes[0].getFilePath(), "./input.h");
   EXPECT_THAT(Changes[0].getInsertedHeaders(), ElementsAre("header.h"));
   EXPECT_THAT(Changes[0].getRemovedHeaders(), IsEmpty());
   llvm::Expected<std::string> UpdatedCode =
@@ -1704,14 +1702,14 @@ TEST_F(TransformerTest, MultiFileEdit) {
       "clang-tool", std::make_shared<PCHContainerOperations>(),
       {{"input.h", Header}}));
 
-  auto GetPathWithSlashes = [](const AtomicChange &C) {
-    return llvm::sys::path::convert_to_slash(C.getFilePath());
-  };
-
   EXPECT_EQ(ErrorCount, 0);
-  EXPECT_THAT(ChangeSets, UnorderedElementsAre(UnorderedElementsAre(
-                              ResultOf(GetPathWithSlashes, "input.cc"),
-                              ResultOf(GetPathWithSlashes, "./input.h"))));
+  EXPECT_THAT(
+      ChangeSets,
+      UnorderedElementsAre(UnorderedElementsAre(
+          ResultOf([](const AtomicChange &C) { return C.getFilePath(); },
+                   "input.cc"),
+          ResultOf([](const AtomicChange &C) { return C.getFilePath(); },
+                   "./input.h"))));
 }
 
 TEST_F(TransformerTest, GeneratesMetadata) {

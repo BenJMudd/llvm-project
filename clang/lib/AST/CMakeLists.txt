@@ -32,7 +32,6 @@ add_clang_library(clangAST
   ASTTypeTraits.cpp
   AttrDocTable.cpp
   AttrImpl.cpp
-  Availability.cpp
   Comment.cpp
   CommentBriefParser.cpp
   CommentCommandTraits.cpp
@@ -66,6 +65,7 @@ add_clang_library(clangAST
   InheritViz.cpp
   Interp/ByteCodeEmitter.cpp
   Interp/ByteCodeExprGen.cpp
+  Interp/ByteCodeGenError.cpp
   Interp/ByteCodeStmtGen.cpp
   Interp/Context.cpp
   Interp/Descriptor.cpp
@@ -75,7 +75,6 @@ add_clang_library(clangAST
   Interp/Function.cpp
   Interp/InterpBuiltin.cpp
   Interp/Floating.cpp
-  Interp/EvaluationResult.cpp
   Interp/Interp.cpp
   Interp/InterpBlock.cpp
   Interp/InterpFrame.cpp
@@ -87,7 +86,6 @@ add_clang_library(clangAST
   Interp/Record.cpp
   Interp/Source.cpp
   Interp/State.cpp
-  Interp/InterpShared.cpp
   ItaniumCXXABI.cpp
   ItaniumMangle.cpp
   JSONNodeDumper.cpp
@@ -98,7 +96,6 @@ add_clang_library(clangAST
   NSAPI.cpp
   ODRDiagsEmitter.cpp
   ODRHash.cpp
-  OpenACCClause.cpp
   OpenMPClause.cpp
   OSLog.cpp
   ParentMap.cpp
@@ -114,7 +111,6 @@ add_clang_library(clangAST
   StmtCXX.cpp
   StmtIterator.cpp
   StmtObjC.cpp
-  StmtOpenACC.cpp
   StmtOpenMP.cpp
   StmtPrinter.cpp
   StmtProfile.cpp
@@ -136,6 +132,5 @@ add_clang_library(clangAST
   ClangAttrDocTable
   Opcodes
   omp_gen
-  ClangDriverOptions
   intrinsics_gen
   )

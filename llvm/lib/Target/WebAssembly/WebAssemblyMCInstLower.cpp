@@ -15,10 +15,10 @@
 #include "WebAssemblyMCInstLower.h"
 #include "TargetInfo/WebAssemblyTargetInfo.h"
 #include "Utils/WebAssemblyTypeUtilities.h"
+#include "Utils/WebAssemblyUtilities.h"
 #include "WebAssemblyAsmPrinter.h"
 #include "WebAssemblyISelLowering.h"
 #include "WebAssemblyMachineFunctionInfo.h"
-#include "WebAssemblyUtilities.h"
 #include "llvm/CodeGen/AsmPrinter.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/IR/Constants.h"
@@ -73,13 +73,14 @@ WebAssemblyMCInstLower::GetGlobalAddressSymbol(const MachineOperand &MO) const {
   SmallVector<MVT, 4> ParamMVTs;
   const auto *const F = dyn_cast<Function>(Global);
   computeSignatureVTs(FuncTy, F, CurrentFunc, TM, ParamMVTs, ResultMVTs);
-  auto Signature = signatureFromMVTs(Ctx, ResultMVTs, ParamMVTs);
+  auto Signature = signatureFromMVTs(ResultMVTs, ParamMVTs);
 
   bool InvokeDetected = false;
   auto *WasmSym = Printer.getMCSymbolForFunction(
       F, WebAssembly::WasmEnableEmEH || WebAssembly::WasmEnableEmSjLj,
-      Signature, InvokeDetected);
-  WasmSym->setSignature(Signature);
+      Signature.get(), InvokeDetected);
+  WasmSym->setSignature(Signature.get());
+  Printer.addSignature(std::move(Signature));
   WasmSym->setType(wasm::WASM_SYMBOL_TYPE_FUNCTION);
   return WasmSym;
 }
@@ -141,12 +142,12 @@ MCOperand WebAssemblyMCInstLower::lowerSymbolOperand(const MachineOperand &MO,
 MCOperand WebAssemblyMCInstLower::lowerTypeIndexOperand(
     SmallVectorImpl<wasm::ValType> &&Returns,
     SmallVectorImpl<wasm::ValType> &&Params) const {
-  auto Signature = Ctx.createWasmSignature();
-  Signature->Returns = std::move(Returns);
-  Signature->Params = std::move(Params);
+  auto Signature = std::make_unique<wasm::WasmSignature>(std::move(Returns),
+                                                         std::move(Params));
   MCSymbol *Sym = Printer.createTempSymbol("typeindex");
   auto *WasmSym = cast<MCSymbolWasm>(Sym);
-  WasmSym->setSignature(Signature);
+  WasmSym->setSignature(Signature.get());
+  Printer.addSignature(std::move(Signature));
   WasmSym->setType(wasm::WASM_SYMBOL_TYPE_FUNCTION);
   const MCExpr *Expr =
       MCSymbolRefExpr::create(WasmSym, MCSymbolRefExpr::VK_WASM_TYPEINDEX, Ctx);
@@ -201,12 +202,12 @@ void WebAssemblyMCInstLower::lower(const MachineInstr *MI,
           const MachineRegisterInfo &MRI =
               MI->getParent()->getParent()->getRegInfo();
           for (const MachineOperand &MO : MI->defs())
-            Returns.push_back(WebAssembly::regClassToValType(
-                MRI.getRegClass(MO.getReg())->getID()));
+            Returns.push_back(
+                WebAssembly::regClassToValType(MRI.getRegClass(MO.getReg())));
           for (const MachineOperand &MO : MI->explicit_uses())
             if (MO.isReg())
-              Params.push_back(WebAssembly::regClassToValType(
-                  MRI.getRegClass(MO.getReg())->getID()));
+              Params.push_back(
+                  WebAssembly::regClassToValType(MRI.getRegClass(MO.getReg())));
 
           // call_indirect instructions have a callee operand at the end which
           // doesn't count as a param.

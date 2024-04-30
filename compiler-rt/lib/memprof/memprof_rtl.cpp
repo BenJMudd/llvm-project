@@ -162,7 +162,7 @@ static void MemprofInitInternal() {
   InitializeHighMemEnd();
 
   // Make sure we are not statically linked.
-  __interception::DoesNotSupportStaticLinking();
+  MemprofDoesNotSupportStaticLinkage();
 
   // Install tool-specific callbacks in sanitizer_common.
   AddDieCallback(MemprofDie);

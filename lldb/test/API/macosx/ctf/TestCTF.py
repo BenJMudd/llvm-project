@@ -37,9 +37,6 @@ class TestCTF(TestBase):
 
         symbol_file = self.getBuildArtifact("a.ctf")
 
-        if self.TraceOn():
-            self.runCmd("log enable -v lldb symbol")
-
         self.runCmd("target symbols add {}".format(symbol_file))
         self.expect(
             "target variable foo",
@@ -53,10 +50,10 @@ class TestCTF(TestBase):
                 "[2] = 'b'",
                 "[3] = 'c'",
                 'u = (i = 1, s = "")',
-                "b = false",
                 "f = 0x0000000000000000",
             ],
         )
+
         self.expect("target variable foo.n.i", substrs=["(MyInt) foo.n.i = 1"])
         self.expect(
             "target variable foo.n.s", substrs=["(const char *) foo.n.s", '"foo"']
@@ -81,16 +78,3 @@ class TestCTF(TestBase):
             "target variable foo.f",
             substrs=["(void (*)(int)) foo.f = 0x0000000000000000"],
         )
-
-        self.expect(
-            "type lookup MyEnum",
-            substrs=[
-                "enum MyEnum {",
-                "eOne,",
-                "eTwo,",
-                "eThree",
-                "}",
-            ],
-        )
-
-        self.expect("type lookup RecursiveStruct", substrs=["RecursiveStruct *n;"])

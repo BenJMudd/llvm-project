@@ -190,7 +190,7 @@ SlotIndex LiveRangeEdit::rematerializeAt(MachineBasicBlock &MBB,
   // DestReg of the cloned instruction cannot be Dead. Set isDead of DestReg
   // to false anyway in case the isDead flag of RM.OrigMI's dest register
   // is true.
-  (*--MI).clearRegisterDeads(DestReg);
+  (*--MI).getOperand(0).setIsDead(false);
   Rematted.insert(RM.ParentVNI);
   ++NumReMaterialization;
 
@@ -352,8 +352,7 @@ void LiveRangeEdit::eliminateDeadDef(MachineInstr *MI, ToShrinkSet &ToShrink) {
     // unlikely to change anything. We typically don't want to shrink the
     // PIC base register that has lots of uses everywhere.
     // Always shrink COPY uses that probably come from live range splitting.
-    if ((MI->readsVirtualRegister(Reg) &&
-         (MO.isDef() || TII.isCopyInstr(*MI))) ||
+    if ((MI->readsVirtualRegister(Reg) && (MI->isCopy() || MO.isDef())) ||
         (MO.readsReg() && (MRI.hasOneNonDBGUse(Reg) || useIsKill(LI, MO))))
       ToShrink.insert(&LI);
     else if (MO.readsReg())
@@ -426,7 +425,8 @@ void LiveRangeEdit::eliminateDeadDef(MachineInstr *MI, ToShrinkSet &ToShrink) {
 
   // Erase any virtregs that are now empty and unused. There may be <undef>
   // uses around. Keep the empty live range in that case.
-  for (Register Reg : RegsToErase) {
+  for (unsigned i = 0, e = RegsToErase.size(); i != e; ++i) {
+    Register Reg = RegsToErase[i];
     if (LIS.hasInterval(Reg) && MRI.reg_nodbg_empty(Reg)) {
       ToShrink.remove(&LIS.getInterval(Reg));
       eraseVirtReg(Reg);

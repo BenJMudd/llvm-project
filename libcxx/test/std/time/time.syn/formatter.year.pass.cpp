@@ -5,6 +5,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+// XFAIL: LIBCXX-FREEBSD-FIXME
+
 // UNSUPPORTED: c++03, c++11, c++14, c++17
 // UNSUPPORTED: no-localization
 // UNSUPPORTED: GCC-ALWAYS_INLINE-FIXME
@@ -81,7 +83,7 @@ static void test_valid_values() {
 
   // Non localized output using C-locale
   check(SV("%C='00'\t"
-#if defined(__APPLE__) || defined(_WIN32) || defined(__FreeBSD__)
+#if defined(__APPLE__) || defined(_WIN32)
            "%EC='00'\t"
 #else
            "%EC='0'\t"
@@ -90,7 +92,7 @@ static void test_valid_values() {
            "%Ey='00'\t"
            "%Oy='00'\t"
            "%Y='0000'\t"
-#if defined(__APPLE__) || defined(_WIN32) || defined(__FreeBSD__)
+#if defined(__APPLE__) || defined(_WIN32)
            "%EY='0000'\t"
 #elif defined(_AIX)
            "%EY=''\t"
@@ -125,7 +127,7 @@ static void test_valid_values() {
 
   // Use the global locale (fr_FR)
   check(SV("%C='00'\t"
-#if defined(__APPLE__) || defined(_WIN32) || defined(__FreeBSD__)
+#if defined(__APPLE__) || defined(_WIN32)
            "%EC='00'\t"
 #else
            "%EC='0'\t"
@@ -134,7 +136,7 @@ static void test_valid_values() {
            "%Ey='00'\t"
            "%Oy='00'\t"
            "%Y='0000'\t"
-#if defined(__APPLE__) || defined(_WIN32) || defined(__FreeBSD__)
+#if defined(__APPLE__) || defined(_WIN32)
            "%EY='0000'\t"
 #elif defined(_AIX)
            "%EY=''\t"
@@ -168,10 +170,10 @@ static void test_valid_values() {
         std::chrono::year{2038});
 
   // Use supplied locale (ja_JP). This locale has a different alternate.
-#if defined(__APPLE__) || defined(_AIX) || defined(_WIN32) || defined(__FreeBSD__)
+#if defined(__APPLE__) || defined(_AIX) || defined(_WIN32)
 
   check(SV("%C='00'\t"
-#  if defined(__APPLE__) || defined(_WIN32) || defined(__FreeBSD__)
+#  if defined(__APPLE__) || defined(_WIN32)
            "%EC='00'\t"
 #  else
            "%EC='0'\t"
@@ -211,7 +213,7 @@ static void test_valid_values() {
         lfmt,
         std::chrono::year{2038});
 
-#else // defined(__APPLE__) || defined(_AIX) || defined(_WIN32) || defined(__FreeBSD__)
+#else // defined(__APPLE__) || defined(_AIX) || defined(_WIN32)
   check(loc,
         SV("%C='00'\t"
            "%EC='紀元前'\t"
@@ -258,7 +260,7 @@ static void test_valid_values() {
            "\n"),
         lfmt,
         std::chrono::year{2038});
-#endif // defined(__APPLE__) || defined(_AIX) || defined(_WIN32) || defined(__FreeBSD__)
+#endif // defined(__APPLE__) || defined(_AIX) || defined(_WIN32)
 
   std::locale::global(std::locale::classic());
 }

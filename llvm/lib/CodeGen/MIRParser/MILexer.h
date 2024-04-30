@@ -74,8 +74,6 @@ struct MIToken {
     kw_exact,
     kw_nofpexcept,
     kw_unpredictable,
-    kw_nneg,
-    kw_disjoint,
     kw_debug_location,
     kw_debug_instr_number,
     kw_dbg_instr_ref,
@@ -137,8 +135,6 @@ struct MIToken {
     kw_unknown_address,
     kw_ir_block_address_taken,
     kw_machine_block_address_taken,
-    kw_call_frame_size,
-    kw_noconvergent,
 
     // Metadata types.
     kw_distinct,

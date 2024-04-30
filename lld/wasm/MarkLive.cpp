@@ -40,9 +40,7 @@ public:
 
 private:
   void enqueue(Symbol *sym);
-  void enqueue(InputChunk *chunk);
   void enqueueInitFunctions(const ObjFile *sym);
-  void enqueueRetainedSegments(const ObjFile *file);
   void mark();
   bool isCallCtorsLive();
 
@@ -58,28 +56,19 @@ void MarkLive::enqueue(Symbol *sym) {
   LLVM_DEBUG(dbgs() << "markLive: " << sym->getName() << "\n");
 
   InputFile *file = sym->getFile();
-  bool markImplicitDeps = file && !file->isLive() && sym->isDefined();
+  bool needInitFunctions = file && !file->isLive() && sym->isDefined();
 
   sym->markLive();
 
-  if (markImplicitDeps) {
-    // Mark ctor functions in the object that defines this symbol live.
-    // The ctor functions are all referenced by the synthetic callCtors
-    // function. However, this function does not contain relocations so we
-    // have to manually mark the ctors as live.
+  // Mark ctor functions in the object that defines this symbol live.
+  // The ctor functions are all referenced by the synthetic callCtors
+  // function. However, this function does not contain relocations so we
+  // have to manually mark the ctors as live.
+  if (needInitFunctions)
     enqueueInitFunctions(cast<ObjFile>(file));
-    // Mark retained segments in the object that defines this symbol live.
-    enqueueRetainedSegments(cast<ObjFile>(file));
-  }
 
   if (InputChunk *chunk = sym->getChunk())
     queue.push_back(chunk);
-}
-
-void MarkLive::enqueue(InputChunk *chunk) {
-  LLVM_DEBUG(dbgs() << "markLive: " << toString(chunk) << "\n");
-  chunk->live = true;
-  queue.push_back(chunk);
 }
 
 // The ctor functions are all referenced by the synthetic callCtors
@@ -92,14 +81,6 @@ void MarkLive::enqueueInitFunctions(const ObjFile *obj) {
     if (!initSym->isDiscarded())
       enqueue(initSym);
   }
-}
-
-// Mark segments flagged by segment-level no-strip. Segment-level no-strip is
-// usually used to retain segments without having symbol table entry.
-void MarkLive::enqueueRetainedSegments(const ObjFile *file) {
-  for (InputChunk *chunk : file->segments)
-    if (chunk->isRetained())
-      enqueue(chunk);
 }
 
 void MarkLive::run() {
@@ -115,14 +96,10 @@ void MarkLive::run() {
   if (WasmSym::callDtors)
     enqueue(WasmSym::callDtors);
 
-  for (const ObjFile *obj : ctx.objectFiles)
-    if (obj->isLive()) {
-      // Enqueue constructors in objects explicitly live from the command-line.
+  // Enqueue constructors in objects explicitly live from the command-line.
+  for (const ObjFile *obj : symtab->objectFiles)
+    if (obj->isLive())
       enqueueInitFunctions(obj);
-      // Enqueue retained segments in objects explicitly live from the
-      // command-line.
-      enqueueRetainedSegments(obj);
-    }
 
   mark();
 
@@ -174,7 +151,7 @@ void markLive() {
 
   // Report garbage-collected sections.
   if (config->printGcSections) {
-    for (const ObjFile *obj : ctx.objectFiles) {
+    for (const ObjFile *obj : symtab->objectFiles) {
       for (InputChunk *c : obj->functions)
         if (!c->live)
           message("removing unused section " + toString(c));
@@ -191,13 +168,13 @@ void markLive() {
         if (!t->live)
           message("removing unused section " + toString(t));
     }
-    for (InputChunk *c : ctx.syntheticFunctions)
+    for (InputChunk *c : symtab->syntheticFunctions)
       if (!c->live)
         message("removing unused section " + toString(c));
-    for (InputGlobal *g : ctx.syntheticGlobals)
+    for (InputGlobal *g : symtab->syntheticGlobals)
       if (!g->live)
         message("removing unused section " + toString(g));
-    for (InputTable *t : ctx.syntheticTables)
+    for (InputTable *t : symtab->syntheticTables)
       if (!t->live)
         message("removing unused section " + toString(t));
   }
@@ -210,12 +187,12 @@ bool MarkLive::isCallCtorsLive() {
 
   // In Emscripten-style PIC, we call `__wasm_call_ctors` which calls
   // `__wasm_apply_data_relocs`.
-  if (ctx.isPic)
+  if (config->isPic)
     return true;
 
   // If there are any init functions, mark `__wasm_call_ctors` live so that
   // it can call them.
-  for (const ObjFile *file : ctx.objectFiles) {
+  for (const ObjFile *file : symtab->objectFiles) {
     const WasmLinkingData &l = file->getWasmObj()->linkingData();
     for (const WasmInitFunc &f : l.InitFunctions) {
       auto *sym = file->getFunctionSymbol(f.Symbol);

@@ -21,17 +21,17 @@ namespace variadic_expansion {
                     return a;
                   }() ...);
                 };                 
-    auto N2 = [x = y, //expected-note3{{begins here}} expected-note 6 {{default capture by}}
+    auto N2 = [x = y, //expected-note3{{begins here}} expected-note 6 {{default capture by}} expected-note 2 {{substituting into a lambda}}
                 &z = y, n = f(t...), 
-                o = f([&a(t)](T& ... t)->decltype(auto) { return a; }(t...)...)](T& ... s) { // expected-note 6 {{capture 't' by}} expected-note {{substituting into a lambda}}
-                fv([&a(t)]()->decltype(auto) { //expected-error 3{{captured}}
+                o = f([&a(t)](T& ... t)->decltype(auto) { return a; }(t...)...)](T& ... s) { // expected-note 6 {{capture 't' by}}
+                fv([&a(t)]()->decltype(auto) { //expected-error 3{{captured}} expected-note 2{{substituting into a lambda}}
                     return a;
                   }() ...);
                 };                 
 
   }
 
-  void h(int i, char c) { g(i, c); } // expected-note {{requested here}}
+  void h(int i, char c) { g(i, c); } //expected-note 2{{in instantiation}}
 }
 
 namespace odr_use_within_init_capture {

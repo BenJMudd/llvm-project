@@ -8,9 +8,6 @@ namespace members {
     RefCountable* a = nullptr;
 // expected-warning@-1{{Member variable 'a' in 'members::Foo' is a raw pointer to ref-countable type 'RefCountable'}}
 
-    [[clang::suppress]]
-    RefCountable* a_suppressed = nullptr;
-
   protected:
     RefPtr<RefCountable> b;
 
@@ -28,13 +25,7 @@ namespace members {
   };
 
   void forceTmplToInstantiate(FooTmpl<RefCountable>) {}
-
-  struct [[clang::suppress]] FooSuppressed {
-  private:
-    RefCountable* a = nullptr;
-  };
 }
-
 
 namespace ignore_unions {
   union Foo {

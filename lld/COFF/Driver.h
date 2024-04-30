@@ -233,9 +233,6 @@ private:
   // Parses a string in the form of "[:<integer>]"
   void parseFunctionPadMin(llvm::opt::Arg *a);
 
-  // Parses a string in the form of "[:<integer>]"
-  void parseDependentLoadFlags(llvm::opt::Arg *a);
-
   // Parses a string in the form of "EMBED[,=<integer>]|NO".
   void parseManifest(StringRef arg);
 
@@ -275,7 +272,7 @@ private:
 // Create enum with OPT_xxx values for each option in Options.td
 enum {
   OPT_INVALID = 0,
-#define OPTION(...) LLVM_MAKE_OPT_ID(__VA_ARGS__),
+#define OPTION(_1, _2, ID, _4, _5, _6, _7, _8, _9, _10, _11, _12) OPT_##ID,
 #include "Options.inc"
 #undef OPTION
 };

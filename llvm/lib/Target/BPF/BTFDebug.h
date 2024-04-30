@@ -343,10 +343,10 @@ class BTFDebug : public DebugHandlerBase {
 
   /// Get the file content for the subprogram. Certain lines of the file
   /// later may be put into string table and referenced by line info.
-  std::string populateFileContent(const DIFile *File);
+  std::string populateFileContent(const DISubprogram *SP);
 
   /// Construct a line info.
-  void constructLineInfo(MCSymbol *Label, const DIFile *File, uint32_t Line,
+  void constructLineInfo(const DISubprogram *SP, MCSymbol *Label, uint32_t Line,
                          uint32_t Column);
 
   /// Generate types and variables for globals.

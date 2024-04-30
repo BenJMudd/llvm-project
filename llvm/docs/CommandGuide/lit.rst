@@ -94,19 +94,21 @@ OUTPUT OPTIONS
  Show more information on test failures, for example the entire test output
  instead of just the test result.
 
- Each command is printed before it is executed. This can be valuable for
- debugging test failures, as the last printed command is the one that failed.
- Moreover, :program:`lit` inserts ``'RUN: at line N'`` before each
- command pipeline in the output to help you locate the source line of
- the failed command.
-
 .. option:: -vv, --echo-all-commands
 
- Deprecated alias for -v.
+ On test failure, echo all commands to stdout as they are being executed.
+ This can be valuable for debugging test failures, as the last echoed command
+ will be the one which has failed.
+ :program:`lit` normally inserts a no-op command (``:`` in the case of bash)
+ with argument ``'RUN: at line N'`` before each command pipeline, and this
+ option also causes those no-op commands to be echoed to stdout to help you
+ locate the source line of the failed command.
+ This option implies ``--verbose``.
 
 .. option:: -a, --show-all
 
- Enable -v, but for all tests not just failed tests.
+ Show more information about all tests, for example the entire test
+ commandline and output.
 
 .. option:: --no-progress-bar
 
@@ -178,12 +180,6 @@ The timing data is stored in the `test_exec_root` in a file named
 
  Run the tests in a random order, not failing/slowest first. Deprecated,
  use :option:`--order` instead.
-
-.. option:: --per-test-coverage
-
- Emit the necessary test coverage data, divided per test case (involves
- setting a unique value to LLVM_PROFILE_FILE for each RUN). The coverage
- data files will be emitted in the directory specified by `config.test_exec_root`.
 
 .. option:: --max-failures N
 
@@ -539,16 +535,6 @@ TestRunner.py:
  %/p                     %p but ``\`` is replaced by ``/``
  %/t                     %t but ``\`` is replaced by ``/``
  %/T                     %T but ``\`` is replaced by ``/``
- %{s:real}               %s after expanding all symbolic links and substitute drives
- %{S:real}               %S after expanding all symbolic links and substitute drives
- %{p:real}               %p after expanding all symbolic links and substitute drives
- %{t:real}               %t after expanding all symbolic links and substitute drives
- %{T:real}               %T after expanding all symbolic links and substitute drives
- %{/s:real}              %/s after expanding all symbolic links and substitute drives
- %{/S:real}              %/S after expanding all symbolic links and substitute drives
- %{/p:real}              %/p after expanding all symbolic links and substitute drives
- %{/t:real}              %/t after expanding all symbolic links and substitute drives
- %{/T:real}              %/T after expanding all symbolic links and substitute drives
  %{/s:regex_replacement} %/s but escaped for use in the replacement of a ``s@@@`` command in sed
  %{/S:regex_replacement} %/S but escaped for use in the replacement of a ``s@@@`` command in sed
  %{/p:regex_replacement} %/p but escaped for use in the replacement of a ``s@@@`` command in sed

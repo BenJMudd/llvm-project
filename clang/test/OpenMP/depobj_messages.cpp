@@ -59,7 +59,7 @@ T tmain(T argc) {
   switch (argc) {
 #pragma omp depobj(x) depend(in:s)
   case 1:
-#pragma omp depobj(x) depend(in:s) // expected-error {{'#pragma omp depobj' cannot be an immediate substatement}}
+#pragma omp depobj(x) depend(in:s)
     break;
   default: {
 #pragma omp depobj(x) depend(in:s)
@@ -71,7 +71,7 @@ T tmain(T argc) {
 #pragma omp depobj(x) depend(in:s)
     }
 label:
-#pragma omp depobj(x) depend(in:s) // expected-error {{'#pragma omp depobj' cannot be an immediate substatement}}
+#pragma omp depobj(x) depend(in:s)
 label1 : {
 #pragma omp depobj(x) depend(in:s)
 }
@@ -124,7 +124,7 @@ omp_depend_t x;
   switch (argc) {
 #pragma omp depobj(x) depend(in:s)
   case 1:
-#pragma omp depobj(x) depend(in:s) // expected-error {{'#pragma omp depobj' cannot be an immediate substatement}}
+#pragma omp depobj(x) depend(in:s)
     break;
   default: {
 #pragma omp depobj(x) depend(in:s)
@@ -136,7 +136,7 @@ omp_depend_t x;
 #pragma omp depobj(x) depend(in:s)
     }
 label:
-#pragma omp depobj(x) depend(in:s) // expected-error {{'#pragma omp depobj' cannot be an immediate substatement}}
+#pragma omp depobj(x) depend(in:s)
 label1 : {
 #pragma omp depobj(x) depend(in:s)
 }

@@ -16,10 +16,10 @@
 #include "clang/Tooling/Tooling.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/SmallVector.h"
-#include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/FormatVariadic.h"
+#include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Regex.h"
 #include "llvm/Support/Signals.h"
 #include "llvm/Support/raw_ostream.h"
@@ -54,14 +54,6 @@ cl::opt<std::string> HTMLReportPath{
     "html",
     cl::desc("Specify an output filename for an HTML report. "
              "This describes both recommendations and reasons for changes."),
-    cl::cat(IncludeCleaner),
-};
-
-cl::opt<std::string> OnlyHeaders{
-    "only-headers",
-    cl::desc("A comma-separated list of regexes to match against suffix of a "
-             "header. Only headers that match will be analyzed."),
-    cl::init(""),
     cl::cat(IncludeCleaner),
 };
 
@@ -118,16 +110,14 @@ format::FormatStyle getStyle(llvm::StringRef Filename) {
 
 class Action : public clang::ASTFrontendAction {
 public:
-  Action(llvm::function_ref<bool(llvm::StringRef)> HeaderFilter,
-         llvm::StringMap<std::string> &EditedFiles)
-      : HeaderFilter(HeaderFilter), EditedFiles(EditedFiles) {}
+  Action(llvm::function_ref<bool(llvm::StringRef)> HeaderFilter)
+      : HeaderFilter(HeaderFilter){};
 
 private:
   RecordedAST AST;
   RecordedPP PP;
   PragmaIncludes PI;
   llvm::function_ref<bool(llvm::StringRef)> HeaderFilter;
-  llvm::StringMap<std::string> &EditedFiles;
 
   bool BeginInvocation(CompilerInstance &CI) override {
     // We only perform include-cleaner analysis. So we disable diagnostics that
@@ -163,14 +153,14 @@ private:
     if (!HTMLReportPath.empty())
       writeHTML();
 
+    auto &HS = getCompilerInstance().getPreprocessor().getHeaderSearchInfo();
     llvm::StringRef Path =
         SM.getFileEntryForID(SM.getMainFileID())->tryGetRealPathName();
     assert(!Path.empty() && "Main file path not known?");
     llvm::StringRef Code = SM.getBufferData(SM.getMainFileID());
 
-    auto Results =
-        analyze(AST.Roots, PP.MacroReferences, PP.Includes, &PI,
-                getCompilerInstance().getPreprocessor(), HeaderFilter);
+    auto Results = analyze(AST.Roots, PP.MacroReferences, PP.Includes, &PI, SM,
+                           HS, HeaderFilter);
     if (!Insert)
       Results.Missing.clear();
     if (!Remove)
@@ -191,8 +181,17 @@ private:
       }
     }
 
-    if (!Results.Missing.empty() || !Results.Unused.empty())
-      EditedFiles.try_emplace(Path, Final);
+    if (Edit && (!Results.Missing.empty() || !Results.Unused.empty())) {
+      if (auto Err = llvm::writeToOutput(
+              Path, [&](llvm::raw_ostream &OS) -> llvm::Error {
+                OS << Final;
+                return llvm::Error::success();
+              })) {
+        llvm::errs() << "Failed to apply edits to " << Path << ": "
+                     << toString(std::move(Err)) << "\n";
+        ++Errors;
+      }
+    }
   }
 
   void writeHTML() {
@@ -216,25 +215,18 @@ public:
       : HeaderFilter(HeaderFilter) {}
 
   std::unique_ptr<clang::FrontendAction> create() override {
-    return std::make_unique<Action>(HeaderFilter, EditedFiles);
-  }
-
-  const llvm::StringMap<std::string> &editedFiles() const {
-    return EditedFiles;
+    return std::make_unique<Action>(HeaderFilter);
   }
 
 private:
   llvm::function_ref<bool(llvm::StringRef)> HeaderFilter;
-  // Map from file name to final code with the include edits applied.
-  llvm::StringMap<std::string> EditedFiles;
 };
 
-// Compiles a regex list into a function that return true if any match a header.
-// Prints and returns nullptr if any regexes are invalid.
-std::function<bool(llvm::StringRef)> matchesAny(llvm::StringRef RegexFlag) {
+std::function<bool(llvm::StringRef)> headerFilter() {
   auto FilterRegs = std::make_shared<std::vector<llvm::Regex>>();
+
   llvm::SmallVector<llvm::StringRef> Headers;
-  RegexFlag.split(Headers, ',', -1, /*KeepEmpty=*/false);
+  llvm::StringRef(IgnoreHeaders).split(Headers, ',', -1, /*KeepEmpty=*/false);
   for (auto HeaderPattern : Headers) {
     std::string AnchoredPattern = "(" + HeaderPattern.str() + ")$";
     llvm::Regex CompiledRegex(AnchoredPattern);
@@ -251,21 +243,6 @@ std::function<bool(llvm::StringRef)> matchesAny(llvm::StringRef RegexFlag) {
       if (F.match(Path))
         return true;
     }
-    return false;
-  };
-}
-
-std::function<bool(llvm::StringRef)> headerFilter() {
-  auto OnlyMatches = matchesAny(OnlyHeaders);
-  auto IgnoreMatches = matchesAny(IgnoreHeaders);
-  if (!OnlyMatches || !IgnoreMatches)
-    return nullptr;
-
-  return [OnlyMatches, IgnoreMatches](llvm::StringRef Header) {
-    if (!OnlyHeaders.empty() && !OnlyMatches(Header))
-      return true;
-    if (!IgnoreHeaders.empty() && IgnoreMatches(Header))
-      return true;
     return false;
   };
 }
@@ -297,26 +274,21 @@ int main(int argc, const char **argv) {
 
   clang::tooling::ClangTool Tool(OptionsParser->getCompilations(),
                                  OptionsParser->getSourcePathList());
+  std::vector<std::unique_ptr<llvm::MemoryBuffer>> Buffers;
+  for (const auto &File : OptionsParser->getSourcePathList()) {
+    auto Content = llvm::MemoryBuffer::getFile(File);
+    if (!Content) {
+      llvm::errs() << "Error: can't read file '" << File
+                   << "': " << Content.getError().message() << "\n";
+      return 1;
+    }
+    Buffers.push_back(std::move(Content.get()));
+    Tool.mapVirtualFile(File, Buffers.back()->getBuffer());
+  }
 
   auto HeaderFilter = headerFilter();
   if (!HeaderFilter)
     return 1; // error already reported.
   ActionFactory Factory(HeaderFilter);
-  auto ErrorCode = Tool.run(&Factory);
-  if (Edit) {
-    for (const auto &NameAndContent : Factory.editedFiles()) {
-      llvm::StringRef FileName = NameAndContent.first();
-      const std::string &FinalCode = NameAndContent.second;
-      if (auto Err = llvm::writeToOutput(
-              FileName, [&](llvm::raw_ostream &OS) -> llvm::Error {
-                OS << FinalCode;
-                return llvm::Error::success();
-              })) {
-        llvm::errs() << "Failed to apply edits to " << FileName << ": "
-                     << toString(std::move(Err)) << "\n";
-        ++Errors;
-      }
-    }
-  }
-  return ErrorCode || Errors != 0;
+  return Tool.run(&Factory) || Errors != 0;
 }

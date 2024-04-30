@@ -275,10 +275,6 @@ public:
 
   unsigned getAllocaAddrSpace() const { return AllocaAddrSpace; }
 
-  PointerType *getAllocaPtrType(LLVMContext &Ctx) const {
-    return PointerType::get(Ctx, AllocaAddrSpace);
-  }
-
   /// Returns the alignment of function pointers, which may or may not be
   /// related to the alignment of functions.
   /// \see getFunctionPtrAlignType
@@ -337,7 +333,7 @@ public:
     case MM_WinCOFF:
       return ".L";
     case MM_GOFF:
-      return "L#";
+      return "@";
     case MM_Mips:
       return "$";
     case MM_MachO:
@@ -673,10 +669,9 @@ inline TypeSize DataLayout::getTypeSizeInBits(Type *Ty) const {
   assert(Ty->isSized() && "Cannot getTypeInfo() on a type that is unsized!");
   switch (Ty->getTypeID()) {
   case Type::LabelTyID:
-    return TypeSize::getFixed(getPointerSizeInBits(0));
+    return TypeSize::Fixed(getPointerSizeInBits(0));
   case Type::PointerTyID:
-    return TypeSize::getFixed(
-        getPointerSizeInBits(Ty->getPointerAddressSpace()));
+    return TypeSize::Fixed(getPointerSizeInBits(Ty->getPointerAddressSpace()));
   case Type::ArrayTyID: {
     ArrayType *ATy = cast<ArrayType>(Ty);
     return ATy->getNumElements() *
@@ -686,24 +681,24 @@ inline TypeSize DataLayout::getTypeSizeInBits(Type *Ty) const {
     // Get the layout annotation... which is lazily created on demand.
     return getStructLayout(cast<StructType>(Ty))->getSizeInBits();
   case Type::IntegerTyID:
-    return TypeSize::getFixed(Ty->getIntegerBitWidth());
+    return TypeSize::Fixed(Ty->getIntegerBitWidth());
   case Type::HalfTyID:
   case Type::BFloatTyID:
-    return TypeSize::getFixed(16);
+    return TypeSize::Fixed(16);
   case Type::FloatTyID:
-    return TypeSize::getFixed(32);
+    return TypeSize::Fixed(32);
   case Type::DoubleTyID:
   case Type::X86_MMXTyID:
-    return TypeSize::getFixed(64);
+    return TypeSize::Fixed(64);
   case Type::PPC_FP128TyID:
   case Type::FP128TyID:
-    return TypeSize::getFixed(128);
+    return TypeSize::Fixed(128);
   case Type::X86_AMXTyID:
-    return TypeSize::getFixed(8192);
+    return TypeSize::Fixed(8192);
   // In memory objects this is always aligned to a higher boundary, but
   // only 80 bits contain information.
   case Type::X86_FP80TyID:
-    return TypeSize::getFixed(80);
+    return TypeSize::Fixed(80);
   case Type::FixedVectorTyID:
   case Type::ScalableVectorTyID: {
     VectorType *VTy = cast<VectorType>(Ty);

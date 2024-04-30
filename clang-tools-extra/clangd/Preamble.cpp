@@ -122,10 +122,10 @@ public:
     CapturedCtx.emplace(CI);
 
     const SourceManager &SM = CI.getSourceManager();
-    OptionalFileEntryRef MainFE = SM.getFileEntryRefForID(SM.getMainFileID());
+    const FileEntry *MainFE = SM.getFileEntryForID(SM.getMainFileID());
     IsMainFileIncludeGuarded =
         CI.getPreprocessor().getHeaderSearchInfo().isFileMultipleIncludeGuarded(
-            *MainFE);
+            MainFE);
 
     if (Stats) {
       const ASTContext &AST = CI.getASTContext();
@@ -365,7 +365,7 @@ scanPreamble(llvm::StringRef Contents, const tooling::CompileCommand &Cmd) {
   // This means we're scanning (though not preprocessing) the preamble section
   // twice. However, it's important to precisely follow the preamble bounds used
   // elsewhere.
-  auto Bounds = ComputePreambleBounds(CI->getLangOpts(), *ContentsBuffer, 0);
+  auto Bounds = ComputePreambleBounds(*CI->getLangOpts(), *ContentsBuffer, 0);
   auto PreambleContents = llvm::MemoryBuffer::getMemBufferCopy(
       llvm::StringRef(PI.Contents).take_front(Bounds.Size));
   auto Clang = prepareCompilerInstance(
@@ -596,7 +596,7 @@ buildPreamble(PathRef FileName, CompilerInvocation CI,
   // without those.
   auto ContentsBuffer =
       llvm::MemoryBuffer::getMemBuffer(Inputs.Contents, FileName);
-  auto Bounds = ComputePreambleBounds(CI.getLangOpts(), *ContentsBuffer, 0);
+  auto Bounds = ComputePreambleBounds(*CI.getLangOpts(), *ContentsBuffer, 0);
 
   trace::Span Tracer("BuildPreamble");
   SPAN_ATTACH(Tracer, "File", FileName);
@@ -610,8 +610,8 @@ buildPreamble(PathRef FileName, CompilerInvocation CI,
   StoreDiags PreambleDiagnostics;
   PreambleDiagnostics.setDiagCallback(
       [&ASTListeners](const clang::Diagnostic &D, clangd::Diag &Diag) {
-        for (const auto &L : ASTListeners)
-          L->sawDiagnostic(D, Diag);
+        llvm::for_each(ASTListeners,
+                       [&](const auto &L) { L->sawDiagnostic(D, Diag); });
       });
   llvm::IntrusiveRefCntPtr<DiagnosticsEngine> PreambleDiagsEngine =
       CompilerInstance::createDiagnostics(&CI.getDiagnosticOpts(),
@@ -622,7 +622,7 @@ buildPreamble(PathRef FileName, CompilerInvocation CI,
                                            const clang::Diagnostic &Info) {
     if (Cfg.Diagnostics.SuppressAll ||
         isBuiltinDiagnosticSuppressed(Info.getID(), Cfg.Diagnostics.Suppress,
-                                      CI.getLangOpts()))
+                                      *CI.getLangOpts()))
       return DiagnosticsEngine::Ignored;
     switch (Info.getID()) {
     case diag::warn_no_newline_eof:
@@ -665,10 +665,6 @@ buildPreamble(PathRef FileName, CompilerInvocation CI,
       Stats ? TimedFS : StatCacheFS, std::make_shared<PCHContainerOperations>(),
       StoreInMemory, /*StoragePath=*/"", CapturedInfo);
   PreambleTimer.stopTimer();
-
-  // We have to setup DiagnosticConsumer that will be alife
-  // while preamble callback is executed
-  PreambleDiagsEngine->setClient(new IgnoringDiagConsumer, true);
   // Reset references to ref-counted-ptrs before executing the callbacks, to
   // prevent resetting them concurrently.
   PreambleDiagsEngine.reset();
@@ -700,7 +696,6 @@ buildPreamble(PathRef FileName, CompilerInvocation CI,
     Result->Marks = CapturedInfo.takeMarks();
     Result->StatCache = StatCache;
     Result->MainIsIncludeGuarded = CapturedInfo.isMainFileIncludeGuarded();
-    Result->TargetOpts = CI.TargetOpts;
     if (PreambleCallback) {
       trace::Span Tracer("Running PreambleCallback");
       auto Ctx = CapturedInfo.takeLife();
@@ -711,7 +706,6 @@ buildPreamble(PathRef FileName, CompilerInvocation CI,
       // While extending the life of FileMgr and VFS, StatCache should also be
       // extended.
       Ctx->setStatCache(Result->StatCache);
-
       PreambleCallback(std::move(*Ctx), Result->Pragmas);
     }
     return Result;
@@ -733,7 +727,7 @@ bool isPreambleCompatible(const PreambleData &Preamble,
                           const CompilerInvocation &CI) {
   auto ContentsBuffer =
       llvm::MemoryBuffer::getMemBuffer(Inputs.Contents, FileName);
-  auto Bounds = ComputePreambleBounds(CI.getLangOpts(), *ContentsBuffer, 0);
+  auto Bounds = ComputePreambleBounds(*CI.getLangOpts(), *ContentsBuffer, 0);
   auto VFS = Inputs.TFS->view(Inputs.CompileCommand.Directory);
   return compileCommandsAreEqual(Inputs.CompileCommand,
                                  Preamble.CompileCommand) &&
@@ -914,12 +908,6 @@ PreamblePatch PreamblePatch::createMacroPatch(llvm::StringRef FileName,
 }
 
 void PreamblePatch::apply(CompilerInvocation &CI) const {
-  // Make sure the compilation uses same target opts as the preamble. Clang has
-  // no guarantees around using arbitrary options when reusing PCHs, and
-  // different target opts can result in crashes, see
-  // ParsedASTTest.PreambleWithDifferentTarget.
-  CI.TargetOpts = Baseline->TargetOpts;
-
   // No need to map an empty file.
   if (PatchContents.empty())
     return;
@@ -960,10 +948,12 @@ const MainFileMacros &PreamblePatch::mainFileMacros() const {
   return PatchedMacros;
 }
 
-OptionalFileEntryRef PreamblePatch::getPatchEntry(llvm::StringRef MainFilePath,
-                                                  const SourceManager &SM) {
+const FileEntry *PreamblePatch::getPatchEntry(llvm::StringRef MainFilePath,
+                                              const SourceManager &SM) {
   auto PatchFilePath = getPatchName(MainFilePath);
-  return SM.getFileManager().getOptionalFileRef(PatchFilePath);
+  if (auto File = SM.getFileManager().getFile(PatchFilePath))
+    return *File;
+  return nullptr;
 }
 } // namespace clangd
 } // namespace clang

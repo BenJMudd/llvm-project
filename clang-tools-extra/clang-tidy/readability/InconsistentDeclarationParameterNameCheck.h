@@ -36,7 +36,7 @@ public:
   }
 
 private:
-  void markRedeclarationsAsVisited(const FunctionDecl *OriginalDeclaration);
+  void markRedeclarationsAsVisited(const FunctionDecl *FunctionDeclaration);
 
   llvm::DenseSet<const FunctionDecl *> VisitedDeclarations;
   const bool IgnoreMacros;

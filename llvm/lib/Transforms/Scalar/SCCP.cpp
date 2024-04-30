@@ -17,7 +17,10 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/Transforms/Scalar/SCCP.h"
+#include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/Statistic.h"
@@ -46,7 +49,9 @@
 #include "llvm/Transforms/Scalar.h"
 #include "llvm/Transforms/Utils/Local.h"
 #include "llvm/Transforms/Utils/SCCPSolver.h"
+#include <cassert>
 #include <utility>
+#include <vector>
 
 using namespace llvm;
 

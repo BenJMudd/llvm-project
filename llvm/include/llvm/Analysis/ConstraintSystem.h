@@ -54,6 +54,9 @@ class ConstraintSystem {
   /// constraint system.
   DenseMap<Value *, unsigned> Value2Index;
 
+  /// Current greatest common divisor for all coefficients in the system.
+  uint32_t GCD = 1;
+
   // Eliminate constraints from the system using Fourier–Motzkin elimination.
   bool eliminateUsingFM();
 
@@ -85,6 +88,10 @@ public:
     for (const auto &[Idx, C] : enumerate(R)) {
       if (C == 0)
         continue;
+      auto A = std::abs(C);
+      GCD = APIntOps::GreatestCommonDivisor({32, (uint32_t)A}, {32, GCD})
+                .getZExtValue();
+
       NewRow.emplace_back(C, Idx);
     }
     if (Constraints.empty())

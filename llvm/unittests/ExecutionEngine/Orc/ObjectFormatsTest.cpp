@@ -28,7 +28,6 @@ TEST(ObjectFormatsTest, ELFInitializerSections) {
   EXPECT_TRUE(isELFInitializerSection(".init_array"));
   EXPECT_TRUE(isELFInitializerSection(".init_array.0"));
   EXPECT_FALSE(isELFInitializerSection(".text"));
-  EXPECT_TRUE(isELFInitializerSection(".ctors.0"));
 }
 
 } // end anonymous namespace

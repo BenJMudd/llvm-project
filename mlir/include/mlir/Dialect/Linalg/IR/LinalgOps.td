@@ -95,7 +95,6 @@ def Linalg_SoftmaxOp : Linalg_Op<"softmax",
      PredOpTrait<"input and output have same element type", TCopVTEtIsSameAs<0, 1>>,
      DeclareOpInterfaceMethods<ReifyRankedShapedTypeOpInterface>,
      DeclareOpInterfaceMethods<AggregatedOpInterface, ["decomposeOperation"]>,
-     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>,
      DeclareOpInterfaceMethods<TilingInterface,
       ["getIterationDomain",
        "getLoopIteratorTypes",
@@ -138,10 +137,10 @@ def Linalg_SoftmaxOp : Linalg_Op<"softmax",
 
   let extraClassDeclaration = [{
     ShapedType getInputOperandType() {
-      return cast<ShapedType>(getInput().getType());
+      return getInput().getType().cast<ShapedType>();
     }
     ShapedType getOutputOperandType() {
-      return cast<ShapedType>(getOutput().getType());
+      return getOutput().getType().cast<ShapedType>();
     }
     int64_t getInputOperandRank() {
       return getInputOperandType().getRank();
@@ -149,7 +148,14 @@ def Linalg_SoftmaxOp : Linalg_Op<"softmax",
     int64_t getOutputOperandRank() {
       return getOutputOperandType().getRank();
     }
-    MutableOperandRange getDpsInitsMutable() { return getOutputMutable(); }
+    // Method to implement DestinationStyleOpInterface.
+    std::pair<int64_t, int64_t> getDpsInitsPositionRange() {
+      std::pair<unsigned, unsigned> outputsIndexAndLength =
+        getODSOperandIndexAndLength(1);
+      return std::make_pair<int64_t, int64_t>(
+          outputsIndexAndLength.first,
+          outputsIndexAndLength.first + outputsIndexAndLength.second);
+    }
   }];
   let hasVerifier = 1;
 }

@@ -211,7 +211,7 @@ bool SymbolFileSymtab::ParseDebugMacros(CompileUnit &comp_unit) {
 }
 
 bool SymbolFileSymtab::ParseSupportFiles(CompileUnit &comp_unit,
-                                         SupportFileList &support_files) {
+                                         FileSpecList &support_files) {
   return false;
 }
 

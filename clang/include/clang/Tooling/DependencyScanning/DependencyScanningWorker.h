@@ -56,8 +56,6 @@ public:
 
   virtual void handleModuleDependency(ModuleDeps MD) = 0;
 
-  virtual void handleDirectModuleDependency(ModuleID MD) = 0;
-
   virtual void handleContextHash(std::string Hash) = 0;
 };
 
@@ -116,7 +114,7 @@ private:
   llvm::IntrusiveRefCntPtr<DependencyScanningWorkerFilesystem> DepFS;
   ScanningOutputFormat Format;
   /// Whether to optimize the modules' command-line arguments.
-  ScanningOptimizations OptimizeArgs;
+  bool OptimizeArgs;
   /// Whether to set up command-lines to load PCM files eagerly.
   bool EagerLoadModules;
 };

@@ -13,11 +13,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "AMDGPU.h"
-#include "AMDGPUTargetMachine.h"
 #include "llvm/Analysis/AssumptionCache.h"
 #include "llvm/Analysis/UniformityAnalysis.h"
 #include "llvm/Analysis/ValueTracking.h"
-#include "llvm/CodeGen/TargetPassConfig.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/InstVisitor.h"
 #include "llvm/InitializePasses.h"
@@ -60,7 +58,6 @@ public:
   }
 
   void getAnalysisUsage(AnalysisUsage &AU) const override {
-    AU.addRequired<TargetPassConfig>();
     AU.addRequired<AssumptionCacheTracker>();
     AU.addRequired<UniformityInfoWrapperPass>();
     AU.setPreservesAll();
@@ -91,12 +88,6 @@ bool AMDGPULateCodeGenPrepare::doInitialization(Module &M) {
 
 bool AMDGPULateCodeGenPrepare::runOnFunction(Function &F) {
   if (skipFunction(F))
-    return false;
-
-  const TargetPassConfig &TPC = getAnalysis<TargetPassConfig>();
-  const TargetMachine &TM = TPC.getTM<TargetMachine>();
-  const GCNSubtarget &ST = TM.getSubtarget<GCNSubtarget>(F);
-  if (ST.hasScalarSubwordLoads())
     return false;
 
   AC = &getAnalysis<AssumptionCacheTracker>().getAssumptionCache(F);
@@ -188,7 +179,6 @@ bool AMDGPULateCodeGenPrepare::visitLoadInst(LoadInst &LI) {
 
 INITIALIZE_PASS_BEGIN(AMDGPULateCodeGenPrepare, DEBUG_TYPE,
                       "AMDGPU IR late optimizations", false, false)
-INITIALIZE_PASS_DEPENDENCY(TargetPassConfig)
 INITIALIZE_PASS_DEPENDENCY(AssumptionCacheTracker)
 INITIALIZE_PASS_DEPENDENCY(UniformityInfoWrapperPass)
 INITIALIZE_PASS_END(AMDGPULateCodeGenPrepare, DEBUG_TYPE,

@@ -45,7 +45,6 @@
 using namespace lldb;
 using namespace lldb_private;
 using namespace lldb_private::dwarf;
-using namespace lldb_private::plugin::dwarf;
 
 // DWARFExpression constructor
 DWARFExpression::DWARFExpression() : m_data() {}
@@ -608,10 +607,11 @@ static bool Evaluate_DW_OP_entry_value(std::vector<Value> &stack,
   StackFrameSP parent_frame = nullptr;
   addr_t return_pc = LLDB_INVALID_ADDRESS;
   uint32_t current_frame_idx = current_frame->GetFrameIndex();
-
-  for (uint32_t parent_frame_idx = current_frame_idx + 1;;parent_frame_idx++) {
+  uint32_t num_frames = thread->GetStackFrameCount();
+  for (uint32_t parent_frame_idx = current_frame_idx + 1;
+       parent_frame_idx < num_frames; ++parent_frame_idx) {
     parent_frame = thread->GetStackFrameAtIndex(parent_frame_idx);
-    // If this is null, we're at the end of the stack.
+    // Require a valid sequence of frames.
     if (!parent_frame)
       break;
 

@@ -22,12 +22,11 @@ add_libc_fuzzer(
   SRCS
     strtofloat_fuzz.cpp
   DEPENDS
-    libc.hdr.math_macros
     libc.src.stdlib.atof
     libc.src.stdlib.strtof
     libc.src.stdlib.strtod
     libc.src.stdlib.strtold
-    libc.src.__support.FPUtil.fp_bits
+    libc.src.__support.FPUtil.float_properties
 )
 
 add_libc_fuzzer(

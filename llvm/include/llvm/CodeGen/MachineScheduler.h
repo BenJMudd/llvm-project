@@ -656,15 +656,15 @@ public:
   ///
   /// Consider an instruction that uses resources X0, X1 and X2 as follows:
   ///
-  /// X0 X1 X1 X2    +--------+-------------+--------------+
-  ///                |Resource|AcquireAtCycle|ReleaseAtCycle|
-  ///                +--------+-------------+--------------+
-  ///                |   X0   |     0       |       1      |
-  ///                +--------+-------------+--------------+
-  ///                |   X1   |     1       |       3      |
-  ///                +--------+-------------+--------------+
-  ///                |   X2   |     3       |       4      |
-  ///                +--------+-------------+--------------+
+  /// X0 X1 X1 X2    +--------+------------+------+
+  ///                |Resource|StartAtCycle|Cycles|
+  ///                +--------+------------+------+
+  ///                |   X0   |     0      |  1   |
+  ///                +--------+------------+------+
+  ///                |   X1   |     1      |  3   |
+  ///                +--------+------------+------+
+  ///                |   X2   |     3      |  4   |
+  ///                +--------+------------+------+
   ///
   /// If we can schedule the instruction at cycle C, we need to
   /// compute the interval of the resource as follows:
@@ -685,7 +685,7 @@ public:
   /// of an instruction that can be scheduled at cycle C in top-down
   /// scheduling is:
   ///
-  ///       [C+AcquireAtCycle, C+ReleaseAtCycle)
+  ///       [C+StartAtCycle, C+Cycles)
   ///
   ///
   /// # BOTTOM UP SCHEDULING
@@ -709,20 +709,20 @@ public:
   /// of an instruction that can be scheduled at cycle C in bottom-up
   /// scheduling is:
   ///
-  ///       [C-ReleaseAtCycle+1, C-AcquireAtCycle+1)
+  ///       [C-Cycle+1, C-StartAtCycle+1)
   ///
   ///
   /// NOTE: In both cases, the number of cycles booked by a
-  /// resources is the value (ReleaseAtCycle - AcquireAtCycle).
-  static IntervalTy getResourceIntervalBottom(unsigned C, unsigned AcquireAtCycle,
-                                              unsigned ReleaseAtCycle) {
-    return std::make_pair<long, long>((long)C - (long)ReleaseAtCycle + 1L,
-                                      (long)C - (long)AcquireAtCycle + 1L);
+  /// resources is the value (Cycle - StartAtCycles).
+  static IntervalTy getResourceIntervalBottom(unsigned C, unsigned StartAtCycle,
+                                              unsigned Cycle) {
+    return std::make_pair<long, long>((long)C - (long)Cycle + 1L,
+                                      (long)C - (long)StartAtCycle + 1L);
   }
-  static IntervalTy getResourceIntervalTop(unsigned C, unsigned AcquireAtCycle,
-                                           unsigned ReleaseAtCycle) {
-    return std::make_pair<long, long>((long)C + (long)AcquireAtCycle,
-                                      (long)C + (long)ReleaseAtCycle);
+  static IntervalTy getResourceIntervalTop(unsigned C, unsigned StartAtCycle,
+                                           unsigned Cycle) {
+    return std::make_pair<long, long>((long)C + (long)StartAtCycle,
+                                      (long)C + (long)Cycle);
   }
 
 private:
@@ -730,7 +730,7 @@ private:
   ///
   /// The function uses the \param IntervalBuider [*] to build a
   /// resource interval [a, b[ out of the input parameters \param
-  /// CurrCycle, \param AcquireAtCycle and \param ReleaseAtCycle.
+  /// CurrCycle, \param StartAtCycle and \param Cycle.
   ///
   /// The function then loops through the intervals in the ResourceSegments
   /// and shifts the interval [a, b[ and the ReturnCycle to the
@@ -744,7 +744,7 @@ private:
   ///               c   1   2   3   4   5   6   7   8   9   10 ... ---> (time
   ///               flow)
   ///  ResourceSegments...  [---)   [-------)           [-----------)
-  ///               c   [1     3[  -> AcquireAtCycle=1, ReleaseAtCycle=3
+  ///               c   [1     3[  -> StartAtCycle=1, Cycles=3
   ///                 ++c   [1     3)
   ///                     ++c   [1     3)
   ///                         ++c   [1     3)
@@ -772,25 +772,24 @@ private:
   /// [*] See \ref `getResourceIntervalTop` and
   /// \ref `getResourceIntervalBottom` to see how such resource intervals
   /// are built.
-  unsigned getFirstAvailableAt(
-      unsigned CurrCycle, unsigned AcquireAtCycle, unsigned ReleaseAtCycle,
-      std::function<IntervalTy(unsigned, unsigned, unsigned)> IntervalBuilder)
-      const;
+  unsigned
+  getFirstAvailableAt(unsigned CurrCycle, unsigned StartAtCycle, unsigned Cycle,
+                      std::function<IntervalTy(unsigned, unsigned, unsigned)>
+                          IntervalBuilder) const;
 
 public:
   /// getFirstAvailableAtFromBottom and getFirstAvailableAtFromTop
   /// should be merged in a single function in which a function that
   /// creates the `NewInterval` is passed as a parameter.
   unsigned getFirstAvailableAtFromBottom(unsigned CurrCycle,
-                                         unsigned AcquireAtCycle,
-                                         unsigned ReleaseAtCycle) const {
-    return getFirstAvailableAt(CurrCycle, AcquireAtCycle, ReleaseAtCycle,
+                                         unsigned StartAtCycle,
+                                         unsigned Cycle) const {
+    return getFirstAvailableAt(CurrCycle, StartAtCycle, Cycle,
                                getResourceIntervalBottom);
   }
-  unsigned getFirstAvailableAtFromTop(unsigned CurrCycle,
-                                      unsigned AcquireAtCycle,
-                                      unsigned ReleaseAtCycle) const {
-    return getFirstAvailableAt(CurrCycle, AcquireAtCycle, ReleaseAtCycle,
+  unsigned getFirstAvailableAtFromTop(unsigned CurrCycle, unsigned StartAtCycle,
+                                      unsigned Cycle) const {
+    return getFirstAvailableAt(CurrCycle, StartAtCycle, Cycle,
                                getResourceIntervalTop);
   }
 
@@ -1007,13 +1006,13 @@ public:
   unsigned getLatencyStallCycles(SUnit *SU);
 
   unsigned getNextResourceCycleByInstance(unsigned InstanceIndex,
-                                          unsigned ReleaseAtCycle,
-                                          unsigned AcquireAtCycle);
+                                          unsigned Cycles,
+                                          unsigned StartAtCycle);
 
   std::pair<unsigned, unsigned> getNextResourceCycle(const MCSchedClassDesc *SC,
                                                      unsigned PIdx,
-                                                     unsigned ReleaseAtCycle,
-                                                     unsigned AcquireAtCycle);
+                                                     unsigned Cycles,
+                                                     unsigned StartAtCycle);
 
   bool isUnbufferedGroup(unsigned PIdx) const {
     return SchedModel->getProcResource(PIdx)->SubUnitsIdxBegin &&
@@ -1293,24 +1292,19 @@ class PostGenericScheduler : public GenericSchedulerBase {
 protected:
   ScheduleDAGMI *DAG = nullptr;
   SchedBoundary Top;
-  SchedBoundary Bot;
-  MachineSchedPolicy RegionPolicy;
-
-  /// Candidate last picked from Top boundary.
-  SchedCandidate TopCand;
-  /// Candidate last picked from Bot boundary.
-  SchedCandidate BotCand;
+  SmallVector<SUnit*, 8> BotRoots;
 
 public:
-  PostGenericScheduler(const MachineSchedContext *C)
-      : GenericSchedulerBase(C), Top(SchedBoundary::TopQID, "TopQ"),
-        Bot(SchedBoundary::BotQID, "BotQ") {}
+  PostGenericScheduler(const MachineSchedContext *C):
+    GenericSchedulerBase(C), Top(SchedBoundary::TopQID, "TopQ") {}
 
   ~PostGenericScheduler() override = default;
 
   void initPolicy(MachineBasicBlock::iterator Begin,
                   MachineBasicBlock::iterator End,
-                  unsigned NumRegionInstrs) override;
+                  unsigned NumRegionInstrs) override {
+    /* no configurable policy */
+  }
 
   /// PostRA scheduling does not track pressure.
   bool shouldTrackPressure() const override { return false; }
@@ -1320,8 +1314,6 @@ public:
   void registerRoots() override;
 
   SUnit *pickNode(bool &IsTopNode) override;
-
-  SUnit *pickNodeBidirectional(bool &IsTopNode);
 
   void scheduleTree(unsigned SubtreeID) override {
     llvm_unreachable("PostRA scheduler does not support subtree analysis.");
@@ -1333,20 +1325,17 @@ public:
     if (SU->isScheduled)
       return;
     Top.releaseNode(SU, SU->TopReadyCycle, false);
-    TopCand.SU = nullptr;
   }
 
+  // Only called for roots.
   void releaseBottomNode(SUnit *SU) override {
-    if (SU->isScheduled)
-      return;
-    Bot.releaseNode(SU, SU->BotReadyCycle, false);
-    BotCand.SU = nullptr;
+    BotRoots.push_back(SU);
   }
 
 protected:
   virtual bool tryCandidate(SchedCandidate &Cand, SchedCandidate &TryCand);
 
-  void pickNodeFromQueue(SchedBoundary &Zone, SchedCandidate &Cand);
+  void pickNodeFromQueue(SchedCandidate &Cand);
 };
 
 /// Create the standard converging machine scheduler. This will be used as the
@@ -1357,19 +1346,13 @@ ScheduleDAGMILive *createGenericSchedLive(MachineSchedContext *C);
 /// Create a generic scheduler with no vreg liveness or DAG mutation passes.
 ScheduleDAGMI *createGenericSchedPostRA(MachineSchedContext *C);
 
-/// If ReorderWhileClustering is set to true, no attempt will be made to
-/// reduce reordering due to store clustering.
 std::unique_ptr<ScheduleDAGMutation>
 createLoadClusterDAGMutation(const TargetInstrInfo *TII,
-                             const TargetRegisterInfo *TRI,
-                             bool ReorderWhileClustering = false);
+                             const TargetRegisterInfo *TRI);
 
-/// If ReorderWhileClustering is set to true, no attempt will be made to
-/// reduce reordering due to store clustering.
 std::unique_ptr<ScheduleDAGMutation>
 createStoreClusterDAGMutation(const TargetInstrInfo *TII,
-                              const TargetRegisterInfo *TRI,
-                              bool ReorderWhileClustering = false);
+                              const TargetRegisterInfo *TRI);
 
 std::unique_ptr<ScheduleDAGMutation>
 createCopyConstrainDAGMutation(const TargetInstrInfo *TII,

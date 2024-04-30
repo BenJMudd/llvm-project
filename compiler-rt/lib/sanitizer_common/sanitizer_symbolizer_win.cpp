@@ -175,7 +175,9 @@ const char *WinSymbolizerTool::Demangle(const char *name) {
     return name;
 }
 
-const char *Symbolizer::PlatformDemangle(const char *name) { return nullptr; }
+const char *Symbolizer::PlatformDemangle(const char *name) {
+  return name;
+}
 
 namespace {
 struct ScopedHandle {
@@ -231,7 +233,7 @@ bool SymbolizerProcess::StartSymbolizerSubprocess() {
     CHECK(!internal_strchr(arg, '"') && "quotes in args unsupported");
     CHECK(arglen > 0 && arg[arglen - 1] != '\\' &&
           "args ending in backslash and empty args unsupported");
-    command_line.AppendF("\"%s\" ", arg);
+    command_line.append("\"%s\" ", arg);
   }
   VReport(3, "Launching symbolizer command: %s\n", command_line.data());
 

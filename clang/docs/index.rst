@@ -35,8 +35,6 @@ Using Clang as a Compiler
    SanitizerCoverage
    SanitizerStats
    SanitizerSpecialCaseList
-   BoundsSafety
-   BoundsSafetyImplPlans
    ControlFlowIntegrity
    LTOVisibility
    SafeStack
@@ -49,7 +47,6 @@ Using Clang as a Compiler
    OpenCLSupport
    OpenMPSupport
    SYCLSupport
-   HIPSupport
    HLSL/HLSLDocs
    ThinLTO
    APINotes

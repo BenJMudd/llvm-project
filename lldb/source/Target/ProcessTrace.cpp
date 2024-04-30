@@ -20,8 +20,6 @@
 using namespace lldb;
 using namespace lldb_private;
 
-LLDB_PLUGIN_DEFINE(ProcessTrace)
-
 llvm::StringRef ProcessTrace::GetPluginDescriptionStatic() {
   return "Trace process plug-in.";
 }
@@ -36,16 +34,15 @@ ProcessSP ProcessTrace::CreateInstance(TargetSP target_sp,
                                        bool can_connect) {
   if (can_connect)
     return nullptr;
-  return std::make_shared<ProcessTrace>(target_sp, listener_sp, *crash_file);
+  return std::make_shared<ProcessTrace>(target_sp, listener_sp);
 }
 
 bool ProcessTrace::CanDebug(TargetSP target_sp, bool plugin_specified_by_name) {
   return plugin_specified_by_name;
 }
 
-ProcessTrace::ProcessTrace(TargetSP target_sp, ListenerSP listener_sp,
-                           const FileSpec &core_file)
-    : PostMortemProcess(target_sp, listener_sp, core_file) {}
+ProcessTrace::ProcessTrace(TargetSP target_sp, ListenerSP listener_sp)
+    : PostMortemProcess(target_sp, listener_sp) {}
 
 ProcessTrace::~ProcessTrace() {
   Clear();
@@ -53,7 +50,7 @@ ProcessTrace::~ProcessTrace() {
   // make sure all of the broadcaster cleanup goes as planned. If we destruct
   // this class, then Process::~Process() might have problems trying to fully
   // destroy the broadcaster.
-  Finalize(true /* destructing */);
+  Finalize();
 }
 
 void ProcessTrace::DidAttach(ArchSpec &process_arch) {

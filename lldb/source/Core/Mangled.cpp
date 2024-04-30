@@ -42,39 +42,21 @@ Mangled::ManglingScheme Mangled::GetManglingScheme(llvm::StringRef const name) {
   if (name.empty())
     return Mangled::eManglingSchemeNone;
 
-  if (name.starts_with("?"))
+  if (name.startswith("?"))
     return Mangled::eManglingSchemeMSVC;
 
-  if (name.starts_with("_R"))
+  if (name.startswith("_R"))
     return Mangled::eManglingSchemeRustV0;
 
-  if (name.starts_with("_D"))
+  if (name.startswith("_D"))
     return Mangled::eManglingSchemeD;
 
-  if (name.starts_with("_Z"))
+  if (name.startswith("_Z"))
     return Mangled::eManglingSchemeItanium;
 
   // ___Z is a clang extension of block invocations
-  if (name.starts_with("___Z"))
+  if (name.startswith("___Z"))
     return Mangled::eManglingSchemeItanium;
-
-  // Swift's older style of mangling used "_T" as a mangling prefix. This can
-  // lead to false positives with other symbols that just so happen to start
-  // with "_T". To minimize the chance of that happening, we only return true
-  // for select old-style swift mangled names. The known cases are ObjC classes
-  // and protocols. Classes are either prefixed with "_TtC" or "_TtGC".
-  // Protocols are prefixed with "_TtP".
-  if (name.starts_with("_TtC") || name.starts_with("_TtGC") ||
-      name.starts_with("_TtP"))
-    return Mangled::eManglingSchemeSwift;
-
-  // Swift 4.2 used "$S" and "_$S".
-  // Swift 5 and onward uses "$s" and "_$s".
-  // Swift also uses "@__swiftmacro_" as a prefix for mangling filenames.
-  if (name.starts_with("$S") || name.starts_with("_$S") ||
-      name.starts_with("$s") || name.starts_with("_$s") ||
-      name.starts_with("@__swiftmacro_"))
-    return Mangled::eManglingSchemeSwift;
 
   return Mangled::eManglingSchemeNone;
 }
@@ -125,7 +107,7 @@ void Mangled::SetValue(ConstString name) {
 }
 
 // Local helpers for different demangling implementations.
-static char *GetMSVCDemangledStr(llvm::StringRef M) {
+static char *GetMSVCDemangledStr(std::string_view M) {
   char *demangled_cstr = llvm::microsoftDemangle(
       M, nullptr, nullptr,
       llvm::MSDemangleFlags(
@@ -169,29 +151,27 @@ static char *GetItaniumDemangledStr(const char *M) {
   return demangled_cstr;
 }
 
-static char *GetRustV0DemangledStr(llvm::StringRef M) {
+static char *GetRustV0DemangledStr(std::string_view M) {
   char *demangled_cstr = llvm::rustDemangle(M);
 
   if (Log *log = GetLog(LLDBLog::Demangle)) {
     if (demangled_cstr && demangled_cstr[0])
       LLDB_LOG(log, "demangled rustv0: {0} -> \"{1}\"", M, demangled_cstr);
     else
-      LLDB_LOG(log, "demangled rustv0: {0} -> error: failed to demangle",
-               static_cast<std::string_view>(M));
+      LLDB_LOG(log, "demangled rustv0: {0} -> error: failed to demangle", M);
   }
 
   return demangled_cstr;
 }
 
-static char *GetDLangDemangledStr(llvm::StringRef M) {
+static char *GetDLangDemangledStr(std::string_view M) {
   char *demangled_cstr = llvm::dlangDemangle(M);
 
   if (Log *log = GetLog(LLDBLog::Demangle)) {
     if (demangled_cstr && demangled_cstr[0])
       LLDB_LOG(log, "demangled dlang: {0} -> \"{1}\"", M, demangled_cstr);
     else
-      LLDB_LOG(log, "demangled dlang: {0} -> error: failed to demangle",
-               static_cast<std::string_view>(M));
+      LLDB_LOG(log, "demangled dlang: {0} -> error: failed to demangle", M);
   }
 
   return demangled_cstr;
@@ -248,7 +228,6 @@ bool Mangled::GetRichManglingInfo(RichManglingContext &context,
 
   case eManglingSchemeRustV0:
   case eManglingSchemeD:
-  case eManglingSchemeSwift:
     // Rich demangling scheme is not supported
     return false;
   }
@@ -285,10 +264,6 @@ ConstString Mangled::GetDemangledName() const {
         break;
       case eManglingSchemeD:
         demangled_name = GetDLangDemangledStr(m_mangled);
-        break;
-      case eManglingSchemeSwift:
-        // Demangling a swift name requires the swift compiler. This is
-        // explicitly unsupported on llvm.org.
         break;
       case eManglingSchemeNone:
         llvm_unreachable("eManglingSchemeNone was handled already");

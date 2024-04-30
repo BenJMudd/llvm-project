@@ -229,7 +229,11 @@ define dso_local i64 @load_atomic_i64_aligned_seq_cst_const(ptr readonly %ptr) {
 
 define dso_local i128 @load_atomic_i128_aligned_unordered(ptr %ptr) {
 ; -O0-LABEL: load_atomic_i128_aligned_unordered:
-; -O0:    bl __aarch64_cas16_relax
+; -O0:    ldxp x0, x1, [x9]
+; -O0:    cmp x0, x10
+; -O0:    cmp x1, x10
+; -O0:    stxp w8, x10, x10, [x9]
+; -O0:    stxp w8, x0, x1, [x9]
 ;
 ; -O1-LABEL: load_atomic_i128_aligned_unordered:
 ; -O1:    ldxp x0, x1, [x8]
@@ -240,7 +244,11 @@ define dso_local i128 @load_atomic_i128_aligned_unordered(ptr %ptr) {
 
 define dso_local i128 @load_atomic_i128_aligned_unordered_const(ptr readonly %ptr) {
 ; -O0-LABEL: load_atomic_i128_aligned_unordered_const:
-; -O0:    bl __aarch64_cas16_relax
+; -O0:    ldxp x0, x1, [x9]
+; -O0:    cmp x0, x10
+; -O0:    cmp x1, x10
+; -O0:    stxp w8, x10, x10, [x9]
+; -O0:    stxp w8, x0, x1, [x9]
 ;
 ; -O1-LABEL: load_atomic_i128_aligned_unordered_const:
 ; -O1:    ldxp x0, x1, [x8]
@@ -251,7 +259,11 @@ define dso_local i128 @load_atomic_i128_aligned_unordered_const(ptr readonly %pt
 
 define dso_local i128 @load_atomic_i128_aligned_monotonic(ptr %ptr) {
 ; -O0-LABEL: load_atomic_i128_aligned_monotonic:
-; -O0:    bl __aarch64_cas16_relax
+; -O0:    ldxp x0, x1, [x9]
+; -O0:    cmp x0, x10
+; -O0:    cmp x1, x10
+; -O0:    stxp w8, x10, x10, [x9]
+; -O0:    stxp w8, x0, x1, [x9]
 ;
 ; -O1-LABEL: load_atomic_i128_aligned_monotonic:
 ; -O1:    ldxp x0, x1, [x8]
@@ -262,7 +274,11 @@ define dso_local i128 @load_atomic_i128_aligned_monotonic(ptr %ptr) {
 
 define dso_local i128 @load_atomic_i128_aligned_monotonic_const(ptr readonly %ptr) {
 ; -O0-LABEL: load_atomic_i128_aligned_monotonic_const:
-; -O0:    bl __aarch64_cas16_relax
+; -O0:    ldxp x0, x1, [x9]
+; -O0:    cmp x0, x10
+; -O0:    cmp x1, x10
+; -O0:    stxp w8, x10, x10, [x9]
+; -O0:    stxp w8, x0, x1, [x9]
 ;
 ; -O1-LABEL: load_atomic_i128_aligned_monotonic_const:
 ; -O1:    ldxp x0, x1, [x8]
@@ -273,7 +289,11 @@ define dso_local i128 @load_atomic_i128_aligned_monotonic_const(ptr readonly %pt
 
 define dso_local i128 @load_atomic_i128_aligned_acquire(ptr %ptr) {
 ; -O0-LABEL: load_atomic_i128_aligned_acquire:
-; -O0:    bl __aarch64_cas16_acq
+; -O0:    ldaxp x0, x1, [x9]
+; -O0:    cmp x0, x10
+; -O0:    cmp x1, x10
+; -O0:    stxp w8, x10, x10, [x9]
+; -O0:    stxp w8, x0, x1, [x9]
 ;
 ; -O1-LABEL: load_atomic_i128_aligned_acquire:
 ; -O1:    ldaxp x0, x1, [x8]
@@ -284,7 +304,11 @@ define dso_local i128 @load_atomic_i128_aligned_acquire(ptr %ptr) {
 
 define dso_local i128 @load_atomic_i128_aligned_acquire_const(ptr readonly %ptr) {
 ; -O0-LABEL: load_atomic_i128_aligned_acquire_const:
-; -O0:    bl __aarch64_cas16_acq
+; -O0:    ldaxp x0, x1, [x9]
+; -O0:    cmp x0, x10
+; -O0:    cmp x1, x10
+; -O0:    stxp w8, x10, x10, [x9]
+; -O0:    stxp w8, x0, x1, [x9]
 ;
 ; -O1-LABEL: load_atomic_i128_aligned_acquire_const:
 ; -O1:    ldaxp x0, x1, [x8]
@@ -295,7 +319,11 @@ define dso_local i128 @load_atomic_i128_aligned_acquire_const(ptr readonly %ptr)
 
 define dso_local i128 @load_atomic_i128_aligned_seq_cst(ptr %ptr) {
 ; -O0-LABEL: load_atomic_i128_aligned_seq_cst:
-; -O0:    bl __aarch64_cas16_acq_rel
+; -O0:    ldaxp x0, x1, [x9]
+; -O0:    cmp x0, x10
+; -O0:    cmp x1, x10
+; -O0:    stlxp w8, x10, x10, [x9]
+; -O0:    stlxp w8, x0, x1, [x9]
 ;
 ; -O1-LABEL: load_atomic_i128_aligned_seq_cst:
 ; -O1:    ldaxp x0, x1, [x8]
@@ -306,7 +334,11 @@ define dso_local i128 @load_atomic_i128_aligned_seq_cst(ptr %ptr) {
 
 define dso_local i128 @load_atomic_i128_aligned_seq_cst_const(ptr readonly %ptr) {
 ; -O0-LABEL: load_atomic_i128_aligned_seq_cst_const:
-; -O0:    bl __aarch64_cas16_acq_rel
+; -O0:    ldaxp x0, x1, [x9]
+; -O0:    cmp x0, x10
+; -O0:    cmp x1, x10
+; -O0:    stlxp w8, x10, x10, [x9]
+; -O0:    stlxp w8, x0, x1, [x9]
 ;
 ; -O1-LABEL: load_atomic_i128_aligned_seq_cst_const:
 ; -O1:    ldaxp x0, x1, [x8]

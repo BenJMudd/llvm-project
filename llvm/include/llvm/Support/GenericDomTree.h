@@ -850,16 +850,17 @@ protected:
   void Split(typename GraphTraits<N>::NodeRef NewBB) {
     using GraphT = GraphTraits<N>;
     using NodeRef = typename GraphT::NodeRef;
-    assert(llvm::hasSingleElement(children<N>(NewBB)) &&
+    assert(std::distance(GraphT::child_begin(NewBB),
+                         GraphT::child_end(NewBB)) == 1 &&
            "NewBB should have a single successor!");
     NodeRef NewBBSucc = *GraphT::child_begin(NewBB);
 
-    SmallVector<NodeRef, 4> PredBlocks(inverse_children<N>(NewBB));
+    SmallVector<NodeRef, 4> PredBlocks(children<Inverse<N>>(NewBB));
 
     assert(!PredBlocks.empty() && "No predblocks?");
 
     bool NewBBDominatesNewBBSucc = true;
-    for (auto *Pred : inverse_children<N>(NewBBSucc)) {
+    for (auto *Pred : children<Inverse<N>>(NewBBSucc)) {
       if (Pred != NewBB && !dominates(NewBBSucc, Pred) &&
           isReachableFromEntry(Pred)) {
         NewBBDominatesNewBBSucc = false;

@@ -92,7 +92,6 @@ TEST(Hover, Structured) {
          HI.Offset = 0;
          HI.Size = 8;
          HI.Padding = 56;
-         HI.Align = 8;
          HI.AccessSpecifier = "private";
        }},
       // Union field
@@ -111,7 +110,6 @@ TEST(Hover, Structured) {
          HI.Type = "char";
          HI.Size = 8;
          HI.Padding = 120;
-         HI.Align = 8;
          HI.AccessSpecifier = "public";
        }},
       // Bitfield
@@ -130,7 +128,6 @@ TEST(Hover, Structured) {
          HI.Type = "int";
          HI.Offset = 0;
          HI.Size = 1;
-         HI.Align = 32;
          HI.AccessSpecifier = "public";
        }},
       // Local to class method.
@@ -195,7 +192,6 @@ TEST(Hover, Structured) {
          HI.Type = "char";
          HI.Offset = 0;
          HI.Size = 8;
-         HI.Align = 8;
          HI.AccessSpecifier = "public";
        }},
       // Struct definition shows size.
@@ -208,7 +204,6 @@ TEST(Hover, Structured) {
          HI.Kind = index::SymbolKind::Struct;
          HI.Definition = "struct X {}";
          HI.Size = 8;
-         HI.Align = 8;
        }},
       // Variable with template type
       {R"cpp(
@@ -492,16 +487,6 @@ class Foo final {})cpp";
          HI.Kind = index::SymbolKind::TypeAlias;
          HI.Definition = "int";
        }},
-      {R"cpp(
-        template <class T> concept F = true;
-        [[^F]] auto x = 1;
-        )cpp",
-       [](HoverInfo &HI) {
-         HI.NamespaceScope = "";
-         HI.Name = "F";
-         HI.Kind = index::SymbolKind::Concept;
-         HI.Definition = "template <class T>\nconcept F = true";
-       }},
       // auto on lambda
       {R"cpp(
         void foo() {
@@ -550,7 +535,7 @@ class Foo final {})cpp";
          HI.Kind = index::SymbolKind::Concept;
          HI.Definition = "template <class T>\nconcept Fooable = true";
        }},
-      {R"cpp(
+       {R"cpp(
         template<class T> concept Fooable = true;
         template<Fooable [[T^T]]>
         void bar(TT t) {}
@@ -563,28 +548,6 @@ class Foo final {})cpp";
          HI.LocalScope = "bar::";
          HI.Kind = index::SymbolKind::TemplateTypeParm;
          HI.Definition = "Fooable TT";
-       }},
-      {R"cpp(
-        template<class T> concept Fooable = true;
-        void bar([[Foo^able]] auto t) {}
-        )cpp",
-       [](HoverInfo &HI) {
-         HI.NamespaceScope = "";
-         HI.Name = "Fooable";
-         HI.Kind = index::SymbolKind::Concept;
-         HI.Definition = "template <class T>\nconcept Fooable = true";
-       }},
-      // concept reference
-      {R"cpp(
-        template<class T> concept Fooable = true;
-        auto X = [[Fooa^ble]]<int>;
-        )cpp",
-       [](HoverInfo &HI) {
-         HI.NamespaceScope = "";
-         HI.Name = "Fooable";
-         HI.Kind = index::SymbolKind::Concept;
-         HI.Definition = "template <class T>\nconcept Fooable = true";
-         HI.Value = "true";
        }},
 
       // empty macro
@@ -1380,7 +1343,6 @@ class Foo final {})cpp";
          HI.Offset = 8;
          HI.Size = 1;
          HI.Padding = 23;
-         HI.Align = 8;
          HI.AccessSpecifier = "public";
        }}};
   for (const auto &Case : Cases) {
@@ -1417,7 +1379,6 @@ class Foo final {})cpp";
     EXPECT_EQ(H->Value, Expected.Value);
     EXPECT_EQ(H->Size, Expected.Size);
     EXPECT_EQ(H->Offset, Expected.Offset);
-    EXPECT_EQ(H->Align, Expected.Align);
     EXPECT_EQ(H->AccessSpecifier, Expected.AccessSpecifier);
     EXPECT_EQ(H->CalleeArgInfo, Expected.CalleeArgInfo);
     EXPECT_EQ(H->CallPassType, Expected.CallPassType);
@@ -1983,14 +1944,10 @@ TEST(Hover, All) {
             HI.Kind = index::SymbolKind::Macro;
             HI.Definition =
                 R"cpp(#define MACRO                                                                  \
-  {                                                                            \
-    return 0;                                                                  \
-  }
+  { return 0; }
 
 // Expands to
-{
-  return 0;
-})cpp";
+{ return 0; })cpp";
           }},
       {
           R"cpp(// Forward class declaration
@@ -2587,19 +2544,6 @@ TEST(Hover, All) {
             HI.Definition = "Test &&test = {}";
           }},
       {
-          R"cpp(// Shouldn't crash when evaluating the initializer.
-            struct Bar {}; // error-ok
-            struct Foo { void foo(Bar x = y); }
-            void Foo::foo(Bar [[^x]]) {})cpp",
-          [](HoverInfo &HI) {
-            HI.Name = "x";
-            HI.Kind = index::SymbolKind::Parameter;
-            HI.NamespaceScope = "";
-            HI.LocalScope = "Foo::foo::";
-            HI.Type = "Bar";
-            HI.Definition = "Bar x = <recovery - expr>()";
-          }},
-      {
           R"cpp(// auto on alias
           typedef int int_type;
           ^[[auto]] x = int_type();
@@ -3010,32 +2954,6 @@ TEST(Hover, All) {
          HI.NamespaceScope = "";
          HI.Value = "0";
        }},
-      // Should not crash.
-      {R"objc(
-        typedef struct MyRect {} MyRect;
-
-        @interface IFace
-        @property(nonatomic) MyRect frame;
-        @end
-
-        MyRect foobar() {
-          MyRect mr;
-          return mr;
-        }
-        void test() {
-          IFace *v;
-          v.frame = [[foo^bar]]();
-        }
-        )objc",
-       [](HoverInfo &HI) {
-         HI.Name = "foobar";
-         HI.Kind = index::SymbolKind::Function;
-         HI.NamespaceScope = "";
-         HI.Definition = "MyRect foobar()";
-         HI.Type = {"MyRect ()", "MyRect ()"};
-         HI.ReturnType = {"MyRect", "MyRect"};
-         HI.Parameters.emplace();
-       }},
       {R"cpp(
          void foo(int * __attribute__(([[non^null]], noescape)) );
          )cpp",
@@ -3353,20 +3271,6 @@ TEST(Hover, NoCrashAPInt64) {
   getHover(AST, T.point(), format::getLLVMStyle(), nullptr);
 }
 
-TEST(Hover, NoCrashInt128) {
-  Annotations T(R"cpp(
-    constexpr __int128_t value = -4;
-    void foo() { va^lue; }
-  )cpp");
-  auto TU = TestTU::withCode(T.code());
-  // Need a triple that support __int128_t.
-  TU.ExtraArgs.push_back("--target=x86_64-pc-linux-gnu");
-  auto AST = TU.build();
-  auto H = getHover(AST, T.point(), format::getLLVMStyle(), nullptr);
-  ASSERT_TRUE(H);
-  EXPECT_EQ(H->Value, "-4 (0xfffffffc)");
-}
-
 TEST(Hover, DocsFromMostSpecial) {
   Annotations T(R"cpp(
   // doc1
@@ -3473,14 +3377,13 @@ template <typename T, typename C = bool> class Foo {})",
             HI.Size = 32;
             HI.Offset = 96;
             HI.Padding = 32;
-            HI.Align = 32;
           },
           R"(field foo
 
 Type: type (aka can_type)
 Value = value
 Offset: 12 bytes
-Size: 4 bytes (+4 bytes padding), alignment 4 bytes
+Size: 4 bytes (+4 bytes padding)
 
 // In test::Bar
 def)",
@@ -3496,14 +3399,13 @@ def)",
             HI.Size = 25;
             HI.Offset = 35;
             HI.Padding = 4;
-            HI.Align = 64;
           },
           R"(field foo
 
 Type: type (aka can_type)
 Value = value
 Offset: 4 bytes and 3 bits
-Size: 25 bits (+4 bits padding), alignment 8 bytes
+Size: 25 bits (+4 bits padding)
 
 // In test::Bar
 def)",

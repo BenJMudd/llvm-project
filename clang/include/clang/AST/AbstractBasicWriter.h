@@ -196,9 +196,9 @@ public:
   }
 
   void writeQualifiers(Qualifiers value) {
-    static_assert(sizeof(value.getAsOpaqueValue()) <= sizeof(uint64_t),
+    static_assert(sizeof(value.getAsOpaqueValue()) <= sizeof(uint32_t),
                   "update this if the value size changes");
-    asImpl().writeUInt64(value.getAsOpaqueValue());
+    asImpl().writeUInt32(value.getAsOpaqueValue());
   }
 
   void writeExceptionSpecInfo(

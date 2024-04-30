@@ -21,7 +21,4 @@ add_mlir_dialect_library(MLIRNVGPUTransformOps
   MLIRTransformDialect
   MLIRTransformDialectUtils
   MLIRVectorTransforms
-
-  # Conversions
-  MLIRNVGPUToNVVM
   )

@@ -156,9 +156,8 @@ Value *SSAUpdater::GetValueInMiddleOfBlock(BasicBlock *BB) {
   }
 
   // Ok, we have no way out, insert a new one now.
-  PHINode *InsertedPHI =
-      PHINode::Create(ProtoType, PredValues.size(), ProtoName);
-  InsertedPHI->insertBefore(BB->begin());
+  PHINode *InsertedPHI = PHINode::Create(ProtoType, PredValues.size(),
+                                         ProtoName, &BB->front());
 
   // Fill in all the predecessors of the PHI.
   for (const auto &PredValue : PredValues)
@@ -199,17 +198,11 @@ void SSAUpdater::RewriteUse(Use &U) {
 
 void SSAUpdater::UpdateDebugValues(Instruction *I) {
   SmallVector<DbgValueInst *, 4> DbgValues;
-  SmallVector<DbgVariableRecord *, 4> DbgVariableRecords;
-  llvm::findDbgValues(DbgValues, I, &DbgVariableRecords);
+  llvm::findDbgValues(DbgValues, I);
   for (auto &DbgValue : DbgValues) {
     if (DbgValue->getParent() == I->getParent())
       continue;
     UpdateDebugValue(I, DbgValue);
-  }
-  for (auto &DVR : DbgVariableRecords) {
-    if (DVR->getParent() == I->getParent())
-      continue;
-    UpdateDebugValue(I, DVR);
   }
 }
 
@@ -220,29 +213,14 @@ void SSAUpdater::UpdateDebugValues(Instruction *I,
   }
 }
 
-void SSAUpdater::UpdateDebugValues(
-    Instruction *I, SmallVectorImpl<DbgVariableRecord *> &DbgVariableRecords) {
-  for (auto &DVR : DbgVariableRecords) {
-    UpdateDebugValue(I, DVR);
-  }
-}
-
 void SSAUpdater::UpdateDebugValue(Instruction *I, DbgValueInst *DbgValue) {
   BasicBlock *UserBB = DbgValue->getParent();
   if (HasValueForBlock(UserBB)) {
     Value *NewVal = GetValueAtEndOfBlock(UserBB);
     DbgValue->replaceVariableLocationOp(I, NewVal);
-  } else
+  }
+  else
     DbgValue->setKillLocation();
-}
-
-void SSAUpdater::UpdateDebugValue(Instruction *I, DbgVariableRecord *DVR) {
-  BasicBlock *UserBB = DVR->getParent();
-  if (HasValueForBlock(UserBB)) {
-    Value *NewVal = GetValueAtEndOfBlock(UserBB);
-    DVR->replaceVariableLocationOp(I, NewVal);
-  } else
-    DVR->setKillLocation();
 }
 
 void SSAUpdater::RewriteUseAfterInsertions(Use &U) {
@@ -317,9 +295,8 @@ public:
   /// Reserve space for the operands but do not fill them in yet.
   static Value *CreateEmptyPHI(BasicBlock *BB, unsigned NumPreds,
                                SSAUpdater *Updater) {
-    PHINode *PHI =
-        PHINode::Create(Updater->ProtoType, NumPreds, Updater->ProtoName);
-    PHI->insertBefore(BB->begin());
+    PHINode *PHI = PHINode::Create(Updater->ProtoType, NumPreds,
+                                   Updater->ProtoName, &BB->front());
     return PHI;
   }
 

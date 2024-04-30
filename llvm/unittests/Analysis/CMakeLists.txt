@@ -1,7 +1,6 @@
 set(LLVM_LINK_COMPONENTS
   Analysis
   AsmParser
-  CodeGen
   Core
   Passes
   Support
@@ -41,8 +40,8 @@ set(ANALYSIS_TEST_SOURCES
   PluginInlineAdvisorAnalysisTest.cpp
   PluginInlineOrderAnalysisTest.cpp
   ProfileSummaryInfoTest.cpp
-  ReplaceWithVecLibTest.cpp
   ScalarEvolutionTest.cpp
+  VectorFunctionABITest.cpp
   SparsePropagation.cpp
   TargetLibraryInfoTest.cpp
   TensorSpecTest.cpp

@@ -1,8 +1,5 @@
 // RUN: %clang_cc1 -std=c++11 -verify -emit-llvm-only %s
 // RUN: %clang_cc1 -std=c++98 -fsyntax-only -verify %s -DCPP98
-// RUN: %clang_cc1 -std=c++11 -verify -emit-llvm-only %s -fexperimental-new-constant-interpreter
-// RUN: %clang_cc1 -std=c++98 -fsyntax-only -verify %s -DCPP98 -fexperimental-new-constant-interpreter
-
 
 namespace std {
   template <class _E>

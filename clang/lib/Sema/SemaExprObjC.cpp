@@ -71,7 +71,7 @@ ExprResult Sema::ParseObjCStringLiteral(SourceLocation *AtLocs,
     QualType StrTy = Context.getConstantArrayType(
         CAT->getElementType(), llvm::APInt(32, StrBuf.size() + 1), nullptr,
         CAT->getSizeModifier(), CAT->getIndexTypeCVRQualifiers());
-    S = StringLiteral::Create(Context, StrBuf, StringLiteralKind::Ordinary,
+    S = StringLiteral::Create(Context, StrBuf, StringLiteral::Ordinary,
                               /*Pascal=*/false, StrTy, &StrLocs[0],
                               StrLocs.size());
   }
@@ -285,15 +285,15 @@ static ObjCMethodDecl *getNSNumberFactoryMethod(Sema &S, SourceLocation Loc,
   if (!Method && S.getLangOpts().DebuggerObjCLiteral) {
     // create a stub definition this NSNumber factory method.
     TypeSourceInfo *ReturnTInfo = nullptr;
-    Method = ObjCMethodDecl::Create(
-        CX, SourceLocation(), SourceLocation(), Sel, S.NSNumberPointer,
-        ReturnTInfo, S.NSNumberDecl,
-        /*isInstance=*/false, /*isVariadic=*/false,
-        /*isPropertyAccessor=*/false,
-        /*isSynthesizedAccessorStub=*/false,
-        /*isImplicitlyDeclared=*/true,
-        /*isDefined=*/false, ObjCImplementationControl::Required,
-        /*HasRelatedResultType=*/false);
+    Method =
+        ObjCMethodDecl::Create(CX, SourceLocation(), SourceLocation(), Sel,
+                               S.NSNumberPointer, ReturnTInfo, S.NSNumberDecl,
+                               /*isInstance=*/false, /*isVariadic=*/false,
+                               /*isPropertyAccessor=*/false,
+                               /*isSynthesizedAccessorStub=*/false,
+                               /*isImplicitlyDeclared=*/true,
+                               /*isDefined=*/false, ObjCMethodDecl::Required,
+                               /*HasRelatedResultType=*/false);
     ParmVarDecl *value = ParmVarDecl::Create(S.Context, Method,
                                              SourceLocation(), SourceLocation(),
                                              &CX.Idents.get("value"),
@@ -321,20 +321,20 @@ ExprResult Sema::BuildObjCNumericLiteral(SourceLocation AtLoc, Expr *Number) {
     // In C, character literals have type 'int'. That's not the type we want
     // to use to determine the Objective-c literal kind.
     switch (Char->getKind()) {
-    case CharacterLiteralKind::Ascii:
-    case CharacterLiteralKind::UTF8:
+    case CharacterLiteral::Ascii:
+    case CharacterLiteral::UTF8:
       NumberType = Context.CharTy;
       break;
 
-    case CharacterLiteralKind::Wide:
+    case CharacterLiteral::Wide:
       NumberType = Context.getWideCharType();
       break;
 
-    case CharacterLiteralKind::UTF16:
+    case CharacterLiteral::UTF16:
       NumberType = Context.Char16Ty;
       break;
 
-    case CharacterLiteralKind::UTF32:
+    case CharacterLiteral::UTF32:
       NumberType = Context.Char32Ty;
       break;
     }
@@ -568,7 +568,7 @@ ExprResult Sema::BuildObjCBoxedExpr(SourceRange SR, Expr *ValueExpr) {
               /*isPropertyAccessor=*/false,
               /*isSynthesizedAccessorStub=*/false,
               /*isImplicitlyDeclared=*/true,
-              /*isDefined=*/false, ObjCImplementationControl::Required,
+              /*isDefined=*/false, ObjCMethodDecl::Required,
               /*HasRelatedResultType=*/false);
           QualType ConstCharType = Context.CharTy.withConst();
           ParmVarDecl *value =
@@ -611,20 +611,20 @@ ExprResult Sema::BuildObjCBoxedExpr(SourceRange SR, Expr *ValueExpr) {
       // In C, character literals have type 'int'. That's not the type we want
       // to use to determine the Objective-c literal kind.
       switch (Char->getKind()) {
-      case CharacterLiteralKind::Ascii:
-      case CharacterLiteralKind::UTF8:
+      case CharacterLiteral::Ascii:
+      case CharacterLiteral::UTF8:
         ValueType = Context.CharTy;
         break;
 
-      case CharacterLiteralKind::Wide:
+      case CharacterLiteral::Wide:
         ValueType = Context.getWideCharType();
         break;
 
-      case CharacterLiteralKind::UTF16:
+      case CharacterLiteral::UTF16:
         ValueType = Context.Char16Ty;
         break;
 
-      case CharacterLiteralKind::UTF32:
+      case CharacterLiteral::UTF32:
         ValueType = Context.Char32Ty;
         break;
       }
@@ -663,8 +663,10 @@ ExprResult Sema::BuildObjCBoxedExpr(SourceRange SR, Expr *ValueExpr) {
     }
 
     if (!ValueWithBytesObjCTypeMethod) {
-      const IdentifierInfo *II[] = {&Context.Idents.get("valueWithBytes"),
-                                    &Context.Idents.get("objCType")};
+      IdentifierInfo *II[] = {
+        &Context.Idents.get("valueWithBytes"),
+        &Context.Idents.get("objCType")
+      };
       Selector ValueWithBytesObjCType = Context.Selectors.getSelector(2, II);
 
       // Look for the appropriate method within NSValue.
@@ -680,7 +682,7 @@ ExprResult Sema::BuildObjCBoxedExpr(SourceRange SR, Expr *ValueExpr) {
             /*isPropertyAccessor=*/false,
             /*isSynthesizedAccessorStub=*/false,
             /*isImplicitlyDeclared=*/true,
-            /*isDefined=*/false, ObjCImplementationControl::Required,
+            /*isDefined=*/false, ObjCMethodDecl::Required,
             /*HasRelatedResultType=*/false);
 
         SmallVector<ParmVarDecl *, 2> Params;
@@ -814,7 +816,7 @@ ExprResult Sema::BuildObjCArrayLiteral(SourceRange SR, MultiExprArg Elements) {
           false /*isVariadic*/,
           /*isPropertyAccessor=*/false, /*isSynthesizedAccessorStub=*/false,
           /*isImplicitlyDeclared=*/true, /*isDefined=*/false,
-          ObjCImplementationControl::Required, false);
+          ObjCMethodDecl::Required, false);
       SmallVector<ParmVarDecl *, 2> Params;
       ParmVarDecl *objects = ParmVarDecl::Create(Context, Method,
                                                  SourceLocation(),
@@ -976,7 +978,7 @@ ExprResult Sema::BuildObjCDictionaryLiteral(SourceRange SR,
           /*isPropertyAccessor=*/false,
           /*isSynthesizedAccessorStub=*/false,
           /*isImplicitlyDeclared=*/true, /*isDefined=*/false,
-          ObjCImplementationControl::Required, false);
+          ObjCMethodDecl::Required, false);
       SmallVector<ParmVarDecl *, 3> Params;
       ParmVarDecl *objects = ParmVarDecl::Create(Context, Method,
                                                  SourceLocation(),
@@ -1345,8 +1347,7 @@ ExprResult Sema::ParseObjCSelectorExpression(Selector Sel,
   }
 
   if (Method &&
-      Method->getImplementationControl() !=
-          ObjCImplementationControl::Optional &&
+      Method->getImplementationControl() != ObjCMethodDecl::Optional &&
       !getSourceManager().isInSystemHeader(Method->getLocation()))
     ReferencedSelectors.insert(std::make_pair(Sel, AtLoc));
 
@@ -1799,8 +1800,7 @@ bool Sema::CheckMessageArgumentTypes(
   // FIXME. This need be cleaned up.
   if (Args.size() < NumNamedArgs) {
     Diag(SelLoc, diag::err_typecheck_call_too_few_args)
-        << 2 << NumNamedArgs << static_cast<unsigned>(Args.size())
-        << /*is non object*/ 0;
+      << 2 << NumNamedArgs << static_cast<unsigned>(Args.size());
     return false;
   }
 
@@ -1898,7 +1898,7 @@ bool Sema::CheckMessageArgumentTypes(
       Diag(Args[NumNamedArgs]->getBeginLoc(),
            diag::err_typecheck_call_too_many_args)
           << 2 /*method*/ << NumNamedArgs << static_cast<unsigned>(Args.size())
-          << Method->getSourceRange() << /*is non object*/ 0
+          << Method->getSourceRange()
           << SourceRange(Args[NumNamedArgs]->getBeginLoc(),
                          Args.back()->getEndLoc());
     }
@@ -2153,12 +2153,13 @@ HandleExprPropertyRefExpr(const ObjCObjectPointerType *OPT,
   return ExprError();
 }
 
-ExprResult Sema::ActOnClassPropertyRefExpr(const IdentifierInfo &receiverName,
-                                           const IdentifierInfo &propertyName,
-                                           SourceLocation receiverNameLoc,
-                                           SourceLocation propertyNameLoc) {
+ExprResult Sema::
+ActOnClassPropertyRefExpr(IdentifierInfo &receiverName,
+                          IdentifierInfo &propertyName,
+                          SourceLocation receiverNameLoc,
+                          SourceLocation propertyNameLoc) {
 
-  const IdentifierInfo *receiverNamePtr = &receiverName;
+  IdentifierInfo *receiverNamePtr = &receiverName;
   ObjCInterfaceDecl *IFace = getObjCInterfaceDecl(receiverNamePtr,
                                                   receiverNameLoc);
 
@@ -3745,22 +3746,22 @@ bool Sema::isKnownName(StringRef name) {
 
 template <typename DiagBuilderT>
 static void addFixitForObjCARCConversion(
-    Sema &S, DiagBuilderT &DiagB, CheckedConversionKind CCK,
+    Sema &S, DiagBuilderT &DiagB, Sema::CheckedConversionKind CCK,
     SourceLocation afterLParen, QualType castType, Expr *castExpr,
     Expr *realCast, const char *bridgeKeyword, const char *CFBridgeName) {
   // We handle C-style and implicit casts here.
   switch (CCK) {
-  case CheckedConversionKind::Implicit:
-  case CheckedConversionKind::ForBuiltinOverloadedOp:
-  case CheckedConversionKind::CStyleCast:
-  case CheckedConversionKind::OtherCast:
+  case Sema::CCK_ImplicitConversion:
+  case Sema::CCK_ForBuiltinOverloadedOp:
+  case Sema::CCK_CStyleCast:
+  case Sema::CCK_OtherCast:
     break;
-  case CheckedConversionKind::FunctionalCast:
+  case Sema::CCK_FunctionalCast:
     return;
   }
 
   if (CFBridgeName) {
-    if (CCK == CheckedConversionKind::OtherCast) {
+    if (CCK == Sema::CCK_OtherCast) {
       if (const CXXNamedCastExpr *NCE = dyn_cast<CXXNamedCastExpr>(realCast)) {
         SourceRange range(NCE->getOperatorLoc(),
                           NCE->getAngleBrackets().getEnd());
@@ -3805,9 +3806,9 @@ static void addFixitForObjCARCConversion(
     return;
   }
 
-  if (CCK == CheckedConversionKind::CStyleCast) {
+  if (CCK == Sema::CCK_CStyleCast) {
     DiagB.AddFixItHint(FixItHint::CreateInsertion(afterLParen, bridgeKeyword));
-  } else if (CCK == CheckedConversionKind::OtherCast) {
+  } else if (CCK == Sema::CCK_OtherCast) {
     if (const CXXNamedCastExpr *NCE = dyn_cast<CXXNamedCastExpr>(realCast)) {
       std::string castCode = "(";
       castCode += bridgeKeyword;
@@ -3866,12 +3867,12 @@ static ObjCBridgeRelatedAttr *ObjCBridgeRelatedAttrFromType(QualType T,
   return nullptr;
 }
 
-static void diagnoseObjCARCConversion(Sema &S, SourceRange castRange,
-                                      QualType castType,
-                                      ARCConversionTypeClass castACTC,
-                                      Expr *castExpr, Expr *realCast,
-                                      ARCConversionTypeClass exprACTC,
-                                      CheckedConversionKind CCK) {
+static void
+diagnoseObjCARCConversion(Sema &S, SourceRange castRange,
+                          QualType castType, ARCConversionTypeClass castACTC,
+                          Expr *castExpr, Expr *realCast,
+                          ARCConversionTypeClass exprACTC,
+                          Sema::CheckedConversionKind CCK) {
   SourceLocation loc =
     (castRange.isValid() ? castRange.getBegin() : castExpr->getExprLoc());
 
@@ -3927,7 +3928,7 @@ static void diagnoseObjCARCConversion(Sema &S, SourceRange castRange,
     assert(CreateRule != ACC_bottom && "This cast should already be accepted.");
     if (CreateRule != ACC_plusOne)
     {
-      auto DiagB = (CCK != CheckedConversionKind::OtherCast)
+      auto DiagB = (CCK != Sema::CCK_OtherCast)
                        ? S.Diag(noteLoc, diag::note_arc_bridge)
                        : S.Diag(noteLoc, diag::note_arc_cstyle_bridge);
 
@@ -3937,7 +3938,7 @@ static void diagnoseObjCARCConversion(Sema &S, SourceRange castRange,
     }
     if (CreateRule != ACC_plusZero)
     {
-      auto DiagB = (CCK == CheckedConversionKind::OtherCast && !br)
+      auto DiagB = (CCK == Sema::CCK_OtherCast && !br)
                        ? S.Diag(noteLoc, diag::note_arc_cstyle_bridge_transfer)
                              << castExprType
                        : S.Diag(br ? castExpr->getExprLoc() : noteLoc,
@@ -3968,7 +3969,7 @@ static void diagnoseObjCARCConversion(Sema &S, SourceRange castRange,
     assert(CreateRule != ACC_bottom && "This cast should already be accepted.");
     if (CreateRule != ACC_plusOne)
     {
-      auto DiagB = (CCK != CheckedConversionKind::OtherCast)
+      auto DiagB = (CCK != Sema::CCK_OtherCast)
                        ? S.Diag(noteLoc, diag::note_arc_bridge)
                        : S.Diag(noteLoc, diag::note_arc_cstyle_bridge);
       addFixitForObjCARCConversion(S, DiagB, CCK, afterLParen,
@@ -3977,7 +3978,7 @@ static void diagnoseObjCARCConversion(Sema &S, SourceRange castRange,
     }
     if (CreateRule != ACC_plusZero)
     {
-      auto DiagB = (CCK == CheckedConversionKind::OtherCast && !br)
+      auto DiagB = (CCK == Sema::CCK_OtherCast && !br)
                        ? S.Diag(noteLoc, diag::note_arc_cstyle_bridge_retained)
                              << castType
                        : S.Diag(br ? castExpr->getExprLoc() : noteLoc,
@@ -4403,8 +4404,7 @@ Sema::CheckObjCConversion(SourceRange castRange, QualType castType,
     // Check for viability and report error if casting an rvalue to a
     // life-time qualifier.
     if (castACTC == ACTC_retainable &&
-        (CCK == CheckedConversionKind::CStyleCast ||
-         CCK == CheckedConversionKind::OtherCast) &&
+        (CCK == CCK_CStyleCast || CCK == CCK_OtherCast) &&
         castType != castExprType) {
       const Type *DT = castType.getTypePtr();
       QualType QDT = castType;
@@ -4518,11 +4518,11 @@ void Sema::diagnoseARCUnbridgedCast(Expr *e) {
   if (CStyleCastExpr *cast = dyn_cast<CStyleCastExpr>(realCast)) {
     castRange = SourceRange(cast->getLParenLoc(), cast->getRParenLoc());
     castType = cast->getTypeAsWritten();
-    CCK = CheckedConversionKind::CStyleCast;
+    CCK = CCK_CStyleCast;
   } else if (ExplicitCastExpr *cast = dyn_cast<ExplicitCastExpr>(realCast)) {
     castRange = cast->getTypeInfoAsWritten()->getTypeLoc().getSourceRange();
     castType = cast->getTypeAsWritten();
-    CCK = CheckedConversionKind::OtherCast;
+    CCK = CCK_OtherCast;
   } else {
     llvm_unreachable("Unexpected ImplicitCastExpr");
   }

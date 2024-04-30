@@ -519,9 +519,9 @@ class MsvcBuilder(Builder):
 
             # Windows SDK version numbers consist of 4 dotted components, so we
             # have to use LooseVersion, as StrictVersion supports 3 or fewer.
-            from pkg_resources import packaging
+            from distutils.version import LooseVersion
 
-            sdk_versions.sort(key=lambda x: packaging.version.parse(x), reverse=True)
+            sdk_versions.sort(key=lambda x: LooseVersion(x), reverse=True)
             option_value_name = "OptionId.DesktopCPP" + self.msvc_arch_str
             for v in sdk_versions:
                 try:
@@ -743,21 +743,11 @@ class GccBuilder(Builder):
             cmd = ["xcrun", "--sdk", args.apple_sdk, "--show-sdk-path"]
             self.apple_sdk = subprocess.check_output(cmd).strip().decode("utf-8")
 
-    def _add_m_option_if_needed(self, args):
-        # clang allows -m(32|64) for any target, gcc does not.
-        uname = platform.uname().machine.lower()
-        if self.toolchain_type != "gcc" or (
-            not "arm" in uname and not "aarch64" in uname
-        ):
-            args.append("-m" + self.arch)
-
-        return args
-
     def _get_compilation_command(self, source, obj):
         args = []
 
         args.append(self.compiler)
-        args = self._add_m_option_if_needed(args)
+        args.append("-m" + self.arch)
 
         args.append("-g")
         if self.opt == "none":
@@ -794,8 +784,7 @@ class GccBuilder(Builder):
     def _get_link_command(self):
         args = []
         args.append(self.compiler)
-        args = self._add_m_option_if_needed(args)
-
+        args.append("-m" + self.arch)
         if self.nodefaultlib:
             args.append("-nostdlib")
             args.append("-static")

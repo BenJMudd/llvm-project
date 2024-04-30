@@ -1,4 +1,4 @@
-! RUN: bbc -hlfir=false %s -o - | FileCheck %s
+! RUN: bbc %s -o - | FileCheck %s
 
 ! Test lowering of local character variables
 

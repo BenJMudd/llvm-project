@@ -30,7 +30,7 @@ public:
   RISCVDAGToDAGISel() = delete;
 
   explicit RISCVDAGToDAGISel(RISCVTargetMachine &TargetMachine,
-                             CodeGenOptLevel OptLevel)
+                             CodeGenOpt::Level OptLevel)
       : SelectionDAGISel(ID, TargetMachine, OptLevel) {}
 
   bool runOnMachineFunction(MachineFunction &MF) override {
@@ -43,8 +43,7 @@ public:
 
   void Select(SDNode *Node) override;
 
-  bool SelectInlineAsmMemoryOperand(const SDValue &Op,
-                                    InlineAsm::ConstraintCode ConstraintID,
+  bool SelectInlineAsmMemoryOperand(const SDValue &Op, unsigned ConstraintID,
                                     std::vector<SDValue> &OutOps) override;
 
   bool SelectAddrFrameIndex(SDValue Addr, SDValue &Base, SDValue &Offset);
@@ -54,7 +53,6 @@ public:
   bool SelectAddrRegImmINX(SDValue Addr, SDValue &Base, SDValue &Offset) {
     return SelectAddrRegImm(Addr, Base, Offset, true);
   }
-  bool SelectAddrRegImmLsb00000(SDValue Addr, SDValue &Base, SDValue &Offset);
 
   bool SelectAddrRegRegScale(SDValue Addr, unsigned MaxShiftAmount,
                              SDValue &Base, SDValue &Index, SDValue &Scale);
@@ -136,9 +134,7 @@ public:
   }
   bool selectVSplatSimm5Plus1(SDValue N, SDValue &SplatVal);
   bool selectVSplatSimm5Plus1NonZero(SDValue N, SDValue &SplatVal);
-  // Matches the splat of a value which can be extended or truncated, such that
-  // only the bottom 8 bits are preserved.
-  bool selectLow8BitsVSplat(SDValue N, SDValue &SplatVal);
+  bool selectExtOneUseVSplat(SDValue N, SDValue &SplatVal);
   bool selectFPImm(SDValue N, SDValue &Imm);
 
   bool selectRVVSimm5(SDValue N, unsigned Width, SDValue &Imm);
@@ -159,8 +155,6 @@ public:
   void selectVSXSEG(SDNode *Node, bool IsMasked, bool IsOrdered);
 
   void selectVSETVLI(SDNode *Node);
-
-  void selectSF_VC_X_SE(SDNode *Node);
 
   // Return the RISC-V condition code that matches the given DAG integer
   // condition code. The CondCode must be one of those supported by the RISC-V
@@ -189,9 +183,9 @@ public:
 
 private:
   bool doPeepholeSExtW(SDNode *Node);
-  bool doPeepholeMaskedRVV(MachineSDNode *Node);
+  bool doPeepholeMaskedRVV(SDNode *Node);
   bool doPeepholeMergeVVMFold();
-  bool doPeepholeNoRegPassThru();
+  bool performVMergeToVMv(SDNode *N);
   bool performCombineVMergeAndVOps(SDNode *N);
 };
 
@@ -261,6 +255,12 @@ struct VLX_VSXPseudo {
   uint16_t Pseudo;
 };
 
+struct RISCVMaskedPseudoInfo {
+  uint16_t MaskedPseudo;
+  uint16_t UnmaskedPseudo;
+  uint8_t MaskOpIdx;
+};
+
 #define GET_RISCVVSSEGTable_DECL
 #define GET_RISCVVLSEGTable_DECL
 #define GET_RISCVVLXSEGTable_DECL
@@ -269,6 +269,8 @@ struct VLX_VSXPseudo {
 #define GET_RISCVVSETable_DECL
 #define GET_RISCVVLXTable_DECL
 #define GET_RISCVVSXTable_DECL
+#define GET_RISCVMaskedPseudosTable_DECL
+#include "RISCVGenSearchableTables.inc"
 } // namespace RISCV
 
 } // namespace llvm

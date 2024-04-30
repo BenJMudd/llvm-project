@@ -118,13 +118,6 @@ void LLVMContext::addModule(Module *M) {
 
 void LLVMContext::removeModule(Module *M) {
   pImpl->OwnedModules.erase(M);
-  pImpl->MachineFunctionNums.erase(M);
-}
-
-unsigned LLVMContext::generateMachineFunctionNum(Function &F) {
-  Module *M = F.getParent();
-  assert(pImpl->OwnedModules.contains(M) && "Unexpected module!");
-  return pImpl->MachineFunctionNums[M]++;
 }
 
 //===----------------------------------------------------------------------===//
@@ -263,13 +256,10 @@ void LLVMContext::diagnose(const DiagnosticInfo &DI) {
       RS->emit(*OptDiagBase);
 
   // If there is a report handler, use it.
-  if (pImpl->DiagHandler) {
-    if (DI.getSeverity() == DS_Error)
-      pImpl->DiagHandler->HasErrors = true;
-    if ((!pImpl->RespectDiagnosticFilters || isDiagnosticEnabled(DI)) &&
-        pImpl->DiagHandler->handleDiagnostics(DI))
-      return;
-  }
+  if (pImpl->DiagHandler &&
+      (!pImpl->RespectDiagnosticFilters || isDiagnosticEnabled(DI)) &&
+      pImpl->DiagHandler->handleDiagnostics(DI))
+    return;
 
   if (!isDiagnosticEnabled(DI))
     return;

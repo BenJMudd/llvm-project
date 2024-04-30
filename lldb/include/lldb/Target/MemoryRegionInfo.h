@@ -81,11 +81,11 @@ public:
   // lldb::Permissions
   uint32_t GetLLDBPermissions() const {
     uint32_t permissions = 0;
-    if (m_read == eYes)
+    if (m_read)
       permissions |= lldb::ePermissionsReadable;
-    if (m_write == eYes)
+    if (m_write)
       permissions |= lldb::ePermissionsWritable;
-    if (m_execute == eYes)
+    if (m_execute)
       permissions |= lldb::ePermissionsExecutable;
     return permissions;
   }
@@ -151,7 +151,7 @@ protected:
   int m_pagesize = 0;
   std::optional<std::vector<lldb::addr_t>> m_dirty_pages;
 };
-
+  
 inline bool operator<(const MemoryRegionInfo &lhs,
                       const MemoryRegionInfo &rhs) {
   return lhs.GetRange() < rhs.GetRange();

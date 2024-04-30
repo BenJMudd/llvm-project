@@ -28,7 +28,6 @@ add_mlir_dialect_library(MLIRArithDialect
   MLIRInferIntRangeInterface
   MLIRInferTypeOpInterface
   MLIRIR
-  MLIRUBDialect
   )
 
 add_mlir_dialect_library(MLIRArithValueBoundsOpInterfaceImpl

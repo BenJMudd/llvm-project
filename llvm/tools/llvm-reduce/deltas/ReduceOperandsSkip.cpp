@@ -14,7 +14,6 @@
 #include "llvm/IR/InstIterator.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Operator.h"
-#include <queue>
 
 using namespace llvm;
 
@@ -150,13 +149,13 @@ opportunities(Function &F,
 
       // Regardless whether referenced, add the function arguments as
       // replacement possibility with the goal of reducing the number of (used)
-      // function arguments, possibly created by the operands-to-args.
+      // function arguments, possibly created by the the operands-to-args.
       for (Argument &Arg : F.args())
         ReferencedVals.insert(&Arg);
 
       // After all candidates have been added, it doesn't need to be a set
       // anymore.
-      auto Candidates = ReferencedVals.takeVector();
+      std::vector<Value *> Candidates = ReferencedVals.takeVector();
 
       // Remove ineligible candidates.
       llvm::erase_if(Candidates, [&, OpVal](Value *V) {
@@ -186,7 +185,7 @@ opportunities(Function &F,
       std::reverse(Candidates.begin(), Candidates.end());
 
       // Independency of collectReferencedValues's idea of reductive power,
-      // ensure the partial order of IsMoreReduced is enforced.
+      // ensure the the partial order of IsMoreReduced is enforced.
       llvm::stable_sort(Candidates, IsMoreReduced);
 
       Callback(Op, Candidates);

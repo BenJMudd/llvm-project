@@ -39,8 +39,6 @@ add_object_library(
     -O3
     -fno-omit-frame-pointer # This allows us to sniff out the thread args from
                             # the new thread's stack reliably.
-    -Wno-frame-address      # Yes, calling __builtin_return_address with a
-                            # value other than 0 is dangerous. We know.
 )
 
 add_object_library(
@@ -52,6 +50,5 @@ add_object_library(
   DEPENDS
     libc.include.sys_syscall
     libc.src.__support.CPP.atomic
-    libc.src.__support.CPP.limits
     libc.src.__support.OSUtil.osutil
 )

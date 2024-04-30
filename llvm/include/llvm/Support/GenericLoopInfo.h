@@ -241,14 +241,24 @@ public:
   bool isLoopLatch(const BlockT *BB) const {
     assert(!isInvalid() && "Loop not in a valid state!");
     assert(contains(BB) && "block does not belong to the loop");
-    return llvm::is_contained(inverse_children<BlockT *>(getHeader()), BB);
+
+    BlockT *Header = getHeader();
+    auto PredBegin = GraphTraits<Inverse<BlockT *>>::child_begin(Header);
+    auto PredEnd = GraphTraits<Inverse<BlockT *>>::child_end(Header);
+    return std::find(PredBegin, PredEnd, BB) != PredEnd;
   }
 
   /// Calculate the number of back edges to the loop header.
   unsigned getNumBackEdges() const {
     assert(!isInvalid() && "Loop not in a valid state!");
-    return llvm::count_if(inverse_children<BlockT *>(getHeader()),
-                          [&](BlockT *Pred) { return contains(Pred); });
+    unsigned NumBackEdges = 0;
+    BlockT *H = getHeader();
+
+    for (const auto Pred : children<Inverse<BlockT *>>(H))
+      if (contains(Pred))
+        ++NumBackEdges;
+
+    return NumBackEdges;
   }
 
   //===--------------------------------------------------------------------===//
@@ -326,7 +336,7 @@ public:
   void getLoopLatches(SmallVectorImpl<BlockT *> &LoopLatches) const {
     assert(!isInvalid() && "Loop not in a valid state!");
     BlockT *H = getHeader();
-    for (const auto Pred : inverse_children<BlockT *>(H))
+    for (const auto Pred : children<Inverse<BlockT *>>(H))
       if (contains(Pred))
         LoopLatches.push_back(Pred);
   }

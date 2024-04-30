@@ -154,10 +154,7 @@ public:
   void emitGNUAttribute(unsigned Tag, unsigned Value) override;
 
   StringRef getMnemonic(MCInst &MI) override {
-    auto [Ptr, Bits] = InstPrinter->getMnemonic(&MI);
-    assert((Bits != 0 || Ptr == nullptr) &&
-           "Invalid char pointer for instruction with no mnemonic");
-    return Ptr;
+    return InstPrinter->getMnemonic(&MI).first;
   }
 
   void emitLabel(MCSymbol *Symbol, SMLoc Loc = SMLoc()) override;
@@ -193,7 +190,7 @@ public:
   void emitXCOFFLocalCommonSymbol(MCSymbol *LabelSym, uint64_t Size,
                                   MCSymbol *CsectSym, Align Alignment) override;
   void emitXCOFFSymbolLinkageWithVisibility(MCSymbol *Symbol,
-                                            MCSymbolAttr Linkage,
+                                            MCSymbolAttr Linakge,
                                             MCSymbolAttr Visibility) override;
   void emitXCOFFRenameDirective(const MCSymbol *Name,
                                 StringRef Rename) override;
@@ -270,7 +267,7 @@ public:
                          SMLoc Loc) override;
 
   void emitFileDirective(StringRef Filename) override;
-  void emitFileDirective(StringRef Filename, StringRef CompilerVersion,
+  void emitFileDirective(StringRef Filename, StringRef CompilerVerion,
                          StringRef TimeStamp, StringRef Description) override;
   Expected<unsigned> tryEmitDwarfFileDirective(
       unsigned FileNo, StringRef Directory, StringRef Filename,
@@ -470,12 +467,12 @@ void MCAsmStreamer::addExplicitComment(const Twine &T) {
   StringRef c = T.getSingleStringRef();
   if (c.equals(StringRef(MAI->getSeparatorString())))
     return;
-  if (c.starts_with(StringRef("//"))) {
+  if (c.startswith(StringRef("//"))) {
     ExplicitCommentToEmit.append("\t");
     ExplicitCommentToEmit.append(MAI->getCommentString());
     // drop //
     ExplicitCommentToEmit.append(c.slice(2, c.size()).str());
-  } else if (c.starts_with(StringRef("/*"))) {
+  } else if (c.startswith(StringRef("/*"))) {
     size_t p = 2, len = c.size() - 2;
     // emit each line in comment as separate newline.
     do {
@@ -488,7 +485,7 @@ void MCAsmStreamer::addExplicitComment(const Twine &T) {
         ExplicitCommentToEmit.append("\n");
       p = newp + 1;
     } while (p < len);
-  } else if (c.starts_with(StringRef(MAI->getCommentString()))) {
+  } else if (c.startswith(StringRef(MAI->getCommentString()))) {
     ExplicitCommentToEmit.append("\t");
     ExplicitCommentToEmit.append(c.str());
   } else if (c.front() == '#') {
@@ -632,11 +629,18 @@ void MCAsmStreamer::emitVersionMin(MCVersionMinType Type, unsigned Major,
 
 static const char *getPlatformName(MachO::PlatformType Type) {
   switch (Type) {
-#define PLATFORM(platform, id, name, build_name, target, tapi_target,          \
-                 marketing)                                                    \
-  case MachO::PLATFORM_##platform:                                             \
-    return #build_name;
-#include "llvm/BinaryFormat/MachO.def"
+  case MachO::PLATFORM_UNKNOWN: /* silence warning*/
+    break;
+  case MachO::PLATFORM_MACOS:            return "macos";
+  case MachO::PLATFORM_IOS:              return "ios";
+  case MachO::PLATFORM_TVOS:             return "tvos";
+  case MachO::PLATFORM_WATCHOS:          return "watchos";
+  case MachO::PLATFORM_BRIDGEOS:         return "bridgeos";
+  case MachO::PLATFORM_MACCATALYST:      return "macCatalyst";
+  case MachO::PLATFORM_IOSSIMULATOR:     return "iossimulator";
+  case MachO::PLATFORM_TVOSSIMULATOR:    return "tvossimulator";
+  case MachO::PLATFORM_WATCHOSSIMULATOR: return "watchossimulator";
+  case MachO::PLATFORM_DRIVERKIT:        return "driverkit";
   }
   llvm_unreachable("Invalid Mach-O platform type");
 }
@@ -1584,28 +1588,23 @@ void MCAsmStreamer::emitFileDirective(StringRef Filename) {
 }
 
 void MCAsmStreamer::emitFileDirective(StringRef Filename,
-                                      StringRef CompilerVersion,
+                                      StringRef CompilerVerion,
                                       StringRef TimeStamp,
                                       StringRef Description) {
   assert(MAI->hasFourStringsDotFile());
   OS << "\t.file\t";
   PrintQuotedString(Filename, OS);
-  bool useTimeStamp = !TimeStamp.empty();
-  bool useCompilerVersion = !CompilerVersion.empty();
-  bool useDescription = !Description.empty();
-  if (useTimeStamp || useCompilerVersion || useDescription) {
+  OS << ",";
+  if (!CompilerVerion.empty()) {
+    PrintQuotedString(CompilerVerion, OS);
+  }
+  if (!TimeStamp.empty()) {
     OS << ",";
-    if (useTimeStamp)
-      PrintQuotedString(TimeStamp, OS);
-    if (useCompilerVersion || useDescription) {
-      OS << ",";
-      if (useCompilerVersion)
-        PrintQuotedString(CompilerVersion, OS);
-      if (useDescription) {
-        OS << ",";
-        PrintQuotedString(Description, OS);
-      }
-    }
+    PrintQuotedString(TimeStamp, OS);
+  }
+  if (!Description.empty()) {
+    OS << ",";
+    PrintQuotedString(Description, OS);
   }
   EmitEOL();
 }
@@ -2475,7 +2474,8 @@ void MCAsmStreamer::emitAddrsigSym(const MCSymbol *Sym) {
 /// the specified string in the output .s file.  This capability is
 /// indicated by the hasRawTextSupport() predicate.
 void MCAsmStreamer::emitRawTextImpl(StringRef String) {
-  String.consume_back("\n");
+  if (!String.empty() && String.back() == '\n')
+    String = String.substr(0, String.size()-1);
   OS << String;
   EmitEOL();
 }

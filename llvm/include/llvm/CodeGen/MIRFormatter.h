@@ -14,7 +14,6 @@
 #define LLVM_CODEGEN_MIRFORMATTER_H
 
 #include "llvm/CodeGen/PseudoSourceValue.h"
-#include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
 #include <cstdint>
 #include <optional>
@@ -23,10 +22,7 @@ namespace llvm {
 
 class MachineFunction;
 class MachineInstr;
-class ModuleSlotTracker;
 struct PerFunctionMIParsingState;
-class Twine;
-class Value;
 
 /// MIRFormater - Interface to format MIR operand based on target
 class MIRFormatter {

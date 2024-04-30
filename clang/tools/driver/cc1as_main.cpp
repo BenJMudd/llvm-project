@@ -89,15 +89,10 @@ struct AssemblerInvocation {
   /// @{
 
   std::vector<std::string> IncludePaths;
-  LLVM_PREFERRED_TYPE(bool)
   unsigned NoInitialTextSection : 1;
-  LLVM_PREFERRED_TYPE(bool)
   unsigned SaveTemporaryLabels : 1;
-  LLVM_PREFERRED_TYPE(bool)
   unsigned GenDwarfForAssembly : 1;
-  LLVM_PREFERRED_TYPE(bool)
   unsigned RelaxELFRelocations : 1;
-  LLVM_PREFERRED_TYPE(bool)
   unsigned Dwarf64 : 1;
   unsigned DwarfVersion;
   std::string DwarfDebugFlags;
@@ -122,9 +117,7 @@ struct AssemblerInvocation {
     FT_Obj   ///< Object file output.
   };
   FileType OutputType;
-  LLVM_PREFERRED_TYPE(bool)
   unsigned ShowHelp : 1;
-  LLVM_PREFERRED_TYPE(bool)
   unsigned ShowVersion : 1;
 
   /// @}
@@ -132,28 +125,19 @@ struct AssemblerInvocation {
   /// @{
 
   unsigned OutputAsmVariant;
-  LLVM_PREFERRED_TYPE(bool)
   unsigned ShowEncoding : 1;
-  LLVM_PREFERRED_TYPE(bool)
   unsigned ShowInst : 1;
 
   /// @}
   /// @name Assembler Options
   /// @{
 
-  LLVM_PREFERRED_TYPE(bool)
   unsigned RelaxAll : 1;
-  LLVM_PREFERRED_TYPE(bool)
   unsigned NoExecStack : 1;
-  LLVM_PREFERRED_TYPE(bool)
   unsigned FatalWarnings : 1;
-  LLVM_PREFERRED_TYPE(bool)
   unsigned NoWarn : 1;
-  LLVM_PREFERRED_TYPE(bool)
   unsigned NoTypeCheck : 1;
-  LLVM_PREFERRED_TYPE(bool)
   unsigned IncrementalLinkerCompatible : 1;
-  LLVM_PREFERRED_TYPE(bool)
   unsigned EmbedBitcode : 1;
 
   /// Whether to emit DWARF unwind info.
@@ -161,7 +145,6 @@ struct AssemblerInvocation {
 
   // Whether to emit compact-unwind for non-canonical entries.
   // Note: maybe overriden by other constraints.
-  LLVM_PREFERRED_TYPE(bool)
   unsigned EmitCompactUnwindNonCanonical : 1;
 
   /// The name of the relocation model to use.
@@ -221,10 +204,10 @@ bool AssemblerInvocation::CreateFromArgs(AssemblerInvocation &Opts,
   // Parse the arguments.
   const OptTable &OptTbl = getDriverOptTable();
 
-  llvm::opt::Visibility VisibilityMask(options::CC1AsOption);
+  const unsigned IncludedFlagsBitmask = options::CC1AsOption;
   unsigned MissingArgIndex, MissingArgCount;
-  InputArgList Args =
-      OptTbl.ParseArgs(Argv, MissingArgIndex, MissingArgCount, VisibilityMask);
+  InputArgList Args = OptTbl.ParseArgs(Argv, MissingArgIndex, MissingArgCount,
+                                       IncludedFlagsBitmask);
 
   // Check for missing argument error.
   if (MissingArgCount) {
@@ -237,7 +220,7 @@ bool AssemblerInvocation::CreateFromArgs(AssemblerInvocation &Opts,
   for (const Arg *A : Args.filtered(OPT_UNKNOWN)) {
     auto ArgString = A->getAsString(Args);
     std::string Nearest;
-    if (OptTbl.findNearest(ArgString, Nearest, VisibilityMask) > 1)
+    if (OptTbl.findNearest(ArgString, Nearest, IncludedFlagsBitmask) > 1)
       Diags.Report(diag::err_drv_unknown_argument) << ArgString;
     else
       Diags.Report(diag::err_drv_unknown_argument_with_suggestion)
@@ -426,11 +409,8 @@ static bool ExecuteAssemblerImpl(AssemblerInvocation &Opts,
   assert(MRI && "Unable to create target register info!");
 
   MCTargetOptions MCOptions;
-  MCOptions.MCRelaxAll = Opts.RelaxAll;
   MCOptions.EmitDwarfUnwind = Opts.EmitDwarfUnwind;
   MCOptions.EmitCompactUnwindNonCanonical = Opts.EmitCompactUnwindNonCanonical;
-  MCOptions.X86RelaxRelocations = Opts.RelaxELFRelocations;
-  MCOptions.CompressDebugSections = Opts.CompressDebugSections;
   MCOptions.AsSecureLogFile = Opts.AsSecureLogFile;
 
   std::unique_ptr<MCAsmInfo> MAI(
@@ -439,7 +419,9 @@ static bool ExecuteAssemblerImpl(AssemblerInvocation &Opts,
 
   // Ensure MCAsmInfo initialization occurs before any use, otherwise sections
   // may be created with a combination of default and explicit settings.
+  MAI->setCompressDebugSections(Opts.CompressDebugSections);
 
+  MAI->setRelaxELFRelocations(Opts.RelaxELFRelocations);
 
   bool IsBinary = Opts.OutputType == AssemblerInvocation::FT_Obj;
   if (Opts.OutputPath.empty())
@@ -661,10 +643,9 @@ int cc1as_main(ArrayRef<const char *> Argv, const char *Argv0, void *MainAddr) {
   if (Asm.ShowHelp) {
     getDriverOptTable().printHelp(
         llvm::outs(), "clang -cc1as [options] file...",
-        "Clang Integrated Assembler", /*ShowHidden=*/false,
-        /*ShowAllAliases=*/false,
-        llvm::opt::Visibility(driver::options::CC1AsOption));
-
+        "Clang Integrated Assembler",
+        /*Include=*/driver::options::CC1AsOption, /*Exclude=*/0,
+        /*ShowAllAliases=*/false);
     return 0;
   }
 

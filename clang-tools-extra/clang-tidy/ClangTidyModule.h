@@ -70,7 +70,7 @@ public:
   std::vector<std::unique_ptr<ClangTidyCheck>>
   createChecksForLanguage(ClangTidyContext *Context) const;
 
-  using FactoryMap = llvm::StringMap<CheckFactory>;
+  typedef llvm::StringMap<CheckFactory> FactoryMap;
   FactoryMap::const_iterator begin() const { return Factories.begin(); }
   FactoryMap::const_iterator end() const { return Factories.end(); }
   bool empty() const { return Factories.empty(); }

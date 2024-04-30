@@ -106,9 +106,4 @@ program openacc_serial_loop_validity
   end do
   !$acc end serial
 
-  !$acc serial loop
-  do i = 1, n
-    if(i == 10) cycle
-  end do
-
 end program openacc_serial_loop_validity

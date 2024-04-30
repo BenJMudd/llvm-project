@@ -6,6 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include <tuple>
+
 #include "PybindUtils.h"
 
 #include "Globals.h"
@@ -32,20 +34,14 @@ PYBIND11_MODULE(_mlir, m) {
           "append_dialect_search_prefix",
           [](PyGlobals &self, std::string moduleName) {
             self.getDialectSearchPrefixes().push_back(std::move(moduleName));
+            self.clearImportCache();
           },
           "module_name"_a)
-      .def(
-          "_check_dialect_module_loaded",
-          [](PyGlobals &self, const std::string &dialectNamespace) {
-            return self.loadDialectModule(dialectNamespace);
-          },
-          "dialect_namespace"_a)
       .def("_register_dialect_impl", &PyGlobals::registerDialectImpl,
            "dialect_namespace"_a, "dialect_class"_a,
            "Testing hook for directly registering a dialect")
       .def("_register_operation_impl", &PyGlobals::registerOperationImpl,
-           "operation_name"_a, "operation_class"_a, py::kw_only(),
-           "replace"_a = false,
+           "operation_name"_a, "operation_class"_a,
            "Testing hook for directly registering an operation");
 
   // Aside from making the globals accessible to python, having python manage
@@ -67,13 +63,12 @@ PYBIND11_MODULE(_mlir, m) {
       "Class decorator for registering a custom Dialect wrapper");
   m.def(
       "register_operation",
-      [](const py::object &dialectClass, bool replace) -> py::cpp_function {
+      [](const py::object &dialectClass) -> py::cpp_function {
         return py::cpp_function(
-            [dialectClass, replace](py::object opClass) -> py::object {
+            [dialectClass](py::object opClass) -> py::object {
               std::string operationName =
                   opClass.attr("OPERATION_NAME").cast<std::string>();
-              PyGlobals::get().registerOperationImpl(operationName, opClass,
-                                                     replace);
+              PyGlobals::get().registerOperationImpl(operationName, opClass);
 
               // Dict-stuff the new opClass by name onto the dialect class.
               py::object opClassName = opClass.attr("__name__");
@@ -81,32 +76,17 @@ PYBIND11_MODULE(_mlir, m) {
               return opClass;
             });
       },
-      "dialect_class"_a, py::kw_only(), "replace"_a = false,
+      "dialect_class"_a,
       "Produce a class decorator for registering an Operation class as part of "
       "a dialect");
   m.def(
       MLIR_PYTHON_CAPI_TYPE_CASTER_REGISTER_ATTR,
-      [](MlirTypeID mlirTypeID, bool replace) -> py::cpp_function {
-        return py::cpp_function([mlirTypeID,
-                                 replace](py::object typeCaster) -> py::object {
-          PyGlobals::get().registerTypeCaster(mlirTypeID, typeCaster, replace);
-          return typeCaster;
-        });
+      [](MlirTypeID mlirTypeID, py::function typeCaster, bool replace) {
+        PyGlobals::get().registerTypeCaster(mlirTypeID, std::move(typeCaster),
+                                            replace);
       },
-      "typeid"_a, py::kw_only(), "replace"_a = false,
+      "typeid"_a, "type_caster"_a, "replace"_a = false,
       "Register a type caster for casting MLIR types to custom user types.");
-  m.def(
-      MLIR_PYTHON_CAPI_VALUE_CASTER_REGISTER_ATTR,
-      [](MlirTypeID mlirTypeID, bool replace) -> py::cpp_function {
-        return py::cpp_function(
-            [mlirTypeID, replace](py::object valueCaster) -> py::object {
-              PyGlobals::get().registerValueCaster(mlirTypeID, valueCaster,
-                                                   replace);
-              return valueCaster;
-            });
-      },
-      "typeid"_a, py::kw_only(), "replace"_a = false,
-      "Register a value caster for casting MLIR values to custom user values.");
 
   // Define and populate IR submodule.
   auto irModule = m.def_submodule("ir", "MLIR IR Bindings");

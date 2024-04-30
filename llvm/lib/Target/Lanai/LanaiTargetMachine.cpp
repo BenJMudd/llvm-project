@@ -58,7 +58,7 @@ static Reloc::Model getEffectiveRelocModel(std::optional<Reloc::Model> RM) {
 LanaiTargetMachine::LanaiTargetMachine(
     const Target &T, const Triple &TT, StringRef Cpu, StringRef FeatureString,
     const TargetOptions &Options, std::optional<Reloc::Model> RM,
-    std::optional<CodeModel::Model> CodeModel, CodeGenOptLevel OptLevel,
+    std::optional<CodeModel::Model> CodeModel, CodeGenOpt::Level OptLevel,
     bool JIT)
     : LLVMTargetMachine(T, computeDataLayout(), TT, Cpu, FeatureString, Options,
                         getEffectiveRelocModel(RM),
@@ -93,7 +93,6 @@ public:
     return getTM<LanaiTargetMachine>();
   }
 
-  void addIRPasses() override;
   bool addInstSelector() override;
   void addPreSched2() override;
   void addPreEmitPass() override;
@@ -103,12 +102,6 @@ public:
 TargetPassConfig *
 LanaiTargetMachine::createPassConfig(PassManagerBase &PassManager) {
   return new LanaiPassConfig(*this, &PassManager);
-}
-
-void LanaiPassConfig::addIRPasses() {
-  addPass(createAtomicExpandLegacyPass());
-
-  TargetPassConfig::addIRPasses();
 }
 
 // Install an instruction selector pass.

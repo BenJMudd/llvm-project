@@ -225,10 +225,7 @@ void NodePrinter::printImpl(const AttributeExpr *expr) {
 void NodePrinter::printImpl(const CallExpr *expr) {
   os << "CallExpr " << expr << " Type<";
   print(expr->getType());
-  os << ">";
-  if (expr->getIsNegated())
-    os << " Negated";
-  os << "\n";
+  os << ">\n";
   printChildren(expr->getCallableExpr());
   printChildren("Arguments", expr->getArguments());
 }

@@ -73,12 +73,14 @@ bool IsRValueReferenceParam(const Expr *Invocation,
       Arg->isLValue()) {
     if (!Invocation->getType()->isRecordType())
       return true;
-    if (const auto *ConstructCallExpr =
-            dyn_cast<CXXConstructExpr>(Invocation)) {
-      if (const auto *ConstructorDecl = ConstructCallExpr->getConstructor()) {
-        if (!ConstructorDecl->isCopyOrMoveConstructor() &&
-            !ConstructorDecl->isDefaultConstructor())
-          return true;
+    else {
+      if (const auto *ConstructCallExpr =
+              dyn_cast<CXXConstructExpr>(Invocation)) {
+        if (const auto *ConstructorDecl = ConstructCallExpr->getConstructor()) {
+          if (!ConstructorDecl->isCopyOrMoveConstructor() &&
+              !ConstructorDecl->isDefaultConstructor())
+            return true;
+        }
       }
     }
   }

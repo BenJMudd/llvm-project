@@ -121,71 +121,51 @@ public:
                        const CallEvent *Call) const;
 
   using FnCheck = std::function<void(const CStringChecker *, CheckerContext &,
-                                     const CallEvent &)>;
+                                     const CallExpr *)>;
 
   CallDescriptionMap<FnCheck> Callbacks = {
-      {{CDM::CLibraryMaybeHardened, {"memcpy"}, 3},
+      {{CDF_MaybeBuiltin, {"memcpy"}, 3},
        std::bind(&CStringChecker::evalMemcpy, _1, _2, _3, CK_Regular)},
-      {{CDM::CLibraryMaybeHardened, {"wmemcpy"}, 3},
+      {{CDF_MaybeBuiltin, {"wmemcpy"}, 3},
        std::bind(&CStringChecker::evalMemcpy, _1, _2, _3, CK_Wide)},
-      {{CDM::CLibraryMaybeHardened, {"mempcpy"}, 3},
+      {{CDF_MaybeBuiltin, {"mempcpy"}, 3},
        std::bind(&CStringChecker::evalMempcpy, _1, _2, _3, CK_Regular)},
-      {{CDM::CLibraryMaybeHardened, {"wmempcpy"}, 3},
+      {{CDF_None, {"wmempcpy"}, 3},
        std::bind(&CStringChecker::evalMempcpy, _1, _2, _3, CK_Wide)},
-      {{CDM::CLibrary, {"memcmp"}, 3},
+      {{CDF_MaybeBuiltin, {"memcmp"}, 3},
        std::bind(&CStringChecker::evalMemcmp, _1, _2, _3, CK_Regular)},
-      {{CDM::CLibrary, {"wmemcmp"}, 3},
+      {{CDF_MaybeBuiltin, {"wmemcmp"}, 3},
        std::bind(&CStringChecker::evalMemcmp, _1, _2, _3, CK_Wide)},
-      {{CDM::CLibraryMaybeHardened, {"memmove"}, 3},
+      {{CDF_MaybeBuiltin, {"memmove"}, 3},
        std::bind(&CStringChecker::evalMemmove, _1, _2, _3, CK_Regular)},
-      {{CDM::CLibraryMaybeHardened, {"wmemmove"}, 3},
+      {{CDF_MaybeBuiltin, {"wmemmove"}, 3},
        std::bind(&CStringChecker::evalMemmove, _1, _2, _3, CK_Wide)},
-      {{CDM::CLibraryMaybeHardened, {"memset"}, 3},
-       &CStringChecker::evalMemset},
-      {{CDM::CLibrary, {"explicit_memset"}, 3}, &CStringChecker::evalMemset},
-      // FIXME: C23 introduces 'memset_explicit', maybe also model that
-      {{CDM::CLibraryMaybeHardened, {"strcpy"}, 2},
-       &CStringChecker::evalStrcpy},
-      {{CDM::CLibraryMaybeHardened, {"strncpy"}, 3},
-       &CStringChecker::evalStrncpy},
-      {{CDM::CLibraryMaybeHardened, {"stpcpy"}, 2},
-       &CStringChecker::evalStpcpy},
-      {{CDM::CLibraryMaybeHardened, {"strlcpy"}, 3},
-       &CStringChecker::evalStrlcpy},
-      {{CDM::CLibraryMaybeHardened, {"strcat"}, 2},
-       &CStringChecker::evalStrcat},
-      {{CDM::CLibraryMaybeHardened, {"strncat"}, 3},
-       &CStringChecker::evalStrncat},
-      {{CDM::CLibraryMaybeHardened, {"strlcat"}, 3},
-       &CStringChecker::evalStrlcat},
-      {{CDM::CLibraryMaybeHardened, {"strlen"}, 1},
-       &CStringChecker::evalstrLength},
-      {{CDM::CLibrary, {"wcslen"}, 1}, &CStringChecker::evalstrLength},
-      {{CDM::CLibraryMaybeHardened, {"strnlen"}, 2},
-       &CStringChecker::evalstrnLength},
-      {{CDM::CLibrary, {"wcsnlen"}, 2}, &CStringChecker::evalstrnLength},
-      {{CDM::CLibrary, {"strcmp"}, 2}, &CStringChecker::evalStrcmp},
-      {{CDM::CLibrary, {"strncmp"}, 3}, &CStringChecker::evalStrncmp},
-      {{CDM::CLibrary, {"strcasecmp"}, 2}, &CStringChecker::evalStrcasecmp},
-      {{CDM::CLibrary, {"strncasecmp"}, 3}, &CStringChecker::evalStrncasecmp},
-      {{CDM::CLibrary, {"strsep"}, 2}, &CStringChecker::evalStrsep},
-      {{CDM::CLibrary, {"bcopy"}, 3}, &CStringChecker::evalBcopy},
-      {{CDM::CLibrary, {"bcmp"}, 3},
+      {{CDF_MaybeBuiltin, {"memset"}, 3}, &CStringChecker::evalMemset},
+      {{CDF_MaybeBuiltin, {"explicit_memset"}, 3}, &CStringChecker::evalMemset},
+      {{CDF_MaybeBuiltin, {"strcpy"}, 2}, &CStringChecker::evalStrcpy},
+      {{CDF_MaybeBuiltin, {"strncpy"}, 3}, &CStringChecker::evalStrncpy},
+      {{CDF_MaybeBuiltin, {"stpcpy"}, 2}, &CStringChecker::evalStpcpy},
+      {{CDF_MaybeBuiltin, {"strlcpy"}, 3}, &CStringChecker::evalStrlcpy},
+      {{CDF_MaybeBuiltin, {"strcat"}, 2}, &CStringChecker::evalStrcat},
+      {{CDF_MaybeBuiltin, {"strncat"}, 3}, &CStringChecker::evalStrncat},
+      {{CDF_MaybeBuiltin, {"strlcat"}, 3}, &CStringChecker::evalStrlcat},
+      {{CDF_MaybeBuiltin, {"strlen"}, 1}, &CStringChecker::evalstrLength},
+      {{CDF_MaybeBuiltin, {"wcslen"}, 1}, &CStringChecker::evalstrLength},
+      {{CDF_MaybeBuiltin, {"strnlen"}, 2}, &CStringChecker::evalstrnLength},
+      {{CDF_MaybeBuiltin, {"wcsnlen"}, 2}, &CStringChecker::evalstrnLength},
+      {{CDF_MaybeBuiltin, {"strcmp"}, 2}, &CStringChecker::evalStrcmp},
+      {{CDF_MaybeBuiltin, {"strncmp"}, 3}, &CStringChecker::evalStrncmp},
+      {{CDF_MaybeBuiltin, {"strcasecmp"}, 2}, &CStringChecker::evalStrcasecmp},
+      {{CDF_MaybeBuiltin, {"strncasecmp"}, 3},
+       &CStringChecker::evalStrncasecmp},
+      {{CDF_MaybeBuiltin, {"strsep"}, 2}, &CStringChecker::evalStrsep},
+      {{CDF_MaybeBuiltin, {"bcopy"}, 3}, &CStringChecker::evalBcopy},
+      {{CDF_MaybeBuiltin, {"bcmp"}, 3},
        std::bind(&CStringChecker::evalMemcmp, _1, _2, _3, CK_Regular)},
-      {{CDM::CLibrary, {"bzero"}, 2}, &CStringChecker::evalBzero},
-      {{CDM::CLibraryMaybeHardened, {"explicit_bzero"}, 2},
-       &CStringChecker::evalBzero},
-
-      // When recognizing calls to the following variadic functions, we accept
-      // any number of arguments in the call (std::nullopt = accept any
-      // number), but check that in the declaration there are 2 and 3
-      // parameters respectively. (Note that the parameter count does not
-      // include the "...". Calls where the number of arguments is too small
-      // will be discarded by the callback.)
-      {{CDM::CLibraryMaybeHardened, {"sprintf"}, std::nullopt, 2},
-       &CStringChecker::evalSprintf},
-      {{CDM::CLibraryMaybeHardened, {"snprintf"}, std::nullopt, 3},
-       &CStringChecker::evalSnprintf},
+      {{CDF_MaybeBuiltin, {"bzero"}, 2}, &CStringChecker::evalBzero},
+      {{CDF_MaybeBuiltin, {"explicit_bzero"}, 2}, &CStringChecker::evalBzero},
+      {{CDF_MaybeBuiltin, {"sprintf"}, 2}, &CStringChecker::evalSprintf},
+      {{CDF_MaybeBuiltin, {"snprintf"}, 2}, &CStringChecker::evalSnprintf},
   };
 
   // These require a bit of special handling.
@@ -193,53 +173,56 @@ public:
       StdCopyBackward{{"std", "copy_backward"}, 3};
 
   FnCheck identifyCall(const CallEvent &Call, CheckerContext &C) const;
-  void evalMemcpy(CheckerContext &C, const CallEvent &Call, CharKind CK) const;
-  void evalMempcpy(CheckerContext &C, const CallEvent &Call, CharKind CK) const;
-  void evalMemmove(CheckerContext &C, const CallEvent &Call, CharKind CK) const;
-  void evalBcopy(CheckerContext &C, const CallEvent &Call) const;
-  void evalCopyCommon(CheckerContext &C, const CallEvent &Call,
+  void evalMemcpy(CheckerContext &C, const CallExpr *CE, CharKind CK) const;
+  void evalMempcpy(CheckerContext &C, const CallExpr *CE, CharKind CK) const;
+  void evalMemmove(CheckerContext &C, const CallExpr *CE, CharKind CK) const;
+  void evalBcopy(CheckerContext &C, const CallExpr *CE) const;
+  void evalCopyCommon(CheckerContext &C, const CallExpr *CE,
                       ProgramStateRef state, SizeArgExpr Size,
                       DestinationArgExpr Dest, SourceArgExpr Source,
                       bool Restricted, bool IsMempcpy, CharKind CK) const;
 
-  void evalMemcmp(CheckerContext &C, const CallEvent &Call, CharKind CK) const;
+  void evalMemcmp(CheckerContext &C, const CallExpr *CE, CharKind CK) const;
 
-  void evalstrLength(CheckerContext &C, const CallEvent &Call) const;
-  void evalstrnLength(CheckerContext &C, const CallEvent &Call) const;
-  void evalstrLengthCommon(CheckerContext &C, const CallEvent &Call,
+  void evalstrLength(CheckerContext &C, const CallExpr *CE) const;
+  void evalstrnLength(CheckerContext &C, const CallExpr *CE) const;
+  void evalstrLengthCommon(CheckerContext &C,
+                           const CallExpr *CE,
                            bool IsStrnlen = false) const;
 
-  void evalStrcpy(CheckerContext &C, const CallEvent &Call) const;
-  void evalStrncpy(CheckerContext &C, const CallEvent &Call) const;
-  void evalStpcpy(CheckerContext &C, const CallEvent &Call) const;
-  void evalStrlcpy(CheckerContext &C, const CallEvent &Call) const;
-  void evalStrcpyCommon(CheckerContext &C, const CallEvent &Call,
-                        bool ReturnEnd, bool IsBounded, ConcatFnKind appendK,
+  void evalStrcpy(CheckerContext &C, const CallExpr *CE) const;
+  void evalStrncpy(CheckerContext &C, const CallExpr *CE) const;
+  void evalStpcpy(CheckerContext &C, const CallExpr *CE) const;
+  void evalStrlcpy(CheckerContext &C, const CallExpr *CE) const;
+  void evalStrcpyCommon(CheckerContext &C, const CallExpr *CE, bool ReturnEnd,
+                        bool IsBounded, ConcatFnKind appendK,
                         bool returnPtr = true) const;
 
-  void evalStrcat(CheckerContext &C, const CallEvent &Call) const;
-  void evalStrncat(CheckerContext &C, const CallEvent &Call) const;
-  void evalStrlcat(CheckerContext &C, const CallEvent &Call) const;
+  void evalStrcat(CheckerContext &C, const CallExpr *CE) const;
+  void evalStrncat(CheckerContext &C, const CallExpr *CE) const;
+  void evalStrlcat(CheckerContext &C, const CallExpr *CE) const;
 
-  void evalStrcmp(CheckerContext &C, const CallEvent &Call) const;
-  void evalStrncmp(CheckerContext &C, const CallEvent &Call) const;
-  void evalStrcasecmp(CheckerContext &C, const CallEvent &Call) const;
-  void evalStrncasecmp(CheckerContext &C, const CallEvent &Call) const;
-  void evalStrcmpCommon(CheckerContext &C, const CallEvent &Call,
-                        bool IsBounded = false, bool IgnoreCase = false) const;
+  void evalStrcmp(CheckerContext &C, const CallExpr *CE) const;
+  void evalStrncmp(CheckerContext &C, const CallExpr *CE) const;
+  void evalStrcasecmp(CheckerContext &C, const CallExpr *CE) const;
+  void evalStrncasecmp(CheckerContext &C, const CallExpr *CE) const;
+  void evalStrcmpCommon(CheckerContext &C,
+                        const CallExpr *CE,
+                        bool IsBounded = false,
+                        bool IgnoreCase = false) const;
 
-  void evalStrsep(CheckerContext &C, const CallEvent &Call) const;
+  void evalStrsep(CheckerContext &C, const CallExpr *CE) const;
 
-  void evalStdCopy(CheckerContext &C, const CallEvent &Call) const;
-  void evalStdCopyBackward(CheckerContext &C, const CallEvent &Call) const;
-  void evalStdCopyCommon(CheckerContext &C, const CallEvent &Call) const;
-  void evalMemset(CheckerContext &C, const CallEvent &Call) const;
-  void evalBzero(CheckerContext &C, const CallEvent &Call) const;
+  void evalStdCopy(CheckerContext &C, const CallExpr *CE) const;
+  void evalStdCopyBackward(CheckerContext &C, const CallExpr *CE) const;
+  void evalStdCopyCommon(CheckerContext &C, const CallExpr *CE) const;
+  void evalMemset(CheckerContext &C, const CallExpr *CE) const;
+  void evalBzero(CheckerContext &C, const CallExpr *CE) const;
 
-  void evalSprintf(CheckerContext &C, const CallEvent &Call) const;
-  void evalSnprintf(CheckerContext &C, const CallEvent &Call) const;
-  void evalSprintfCommon(CheckerContext &C, const CallEvent &Call,
-                         bool IsBounded) const;
+  void evalSprintf(CheckerContext &C, const CallExpr *CE) const;
+  void evalSnprintf(CheckerContext &C, const CallExpr *CE) const;
+  void evalSprintfCommon(CheckerContext &C, const CallExpr *CE, bool IsBounded,
+                         bool IsBuiltin) const;
 
   // Utility methods
   std::pair<ProgramStateRef , ProgramStateRef >
@@ -497,14 +480,6 @@ CStringChecker::CheckBufferAccess(CheckerContext &C, ProgramStateRef State,
   if (!Filter.CheckCStringOutOfBounds)
     return State;
 
-  SVal BufStart =
-      svalBuilder.evalCast(BufVal, PtrTy, Buffer.Expression->getType());
-
-  // Check if the first byte of the buffer is accessible.
-  State = CheckLocation(C, State, Buffer, BufStart, Access, CK);
-  if (!State)
-    return nullptr;
-
   // Get the access length and make sure it is known.
   // FIXME: This assumes the caller has already checked that the access length
   // is positive. And that it's unsigned.
@@ -521,6 +496,8 @@ CStringChecker::CheckBufferAccess(CheckerContext &C, ProgramStateRef State,
   NonLoc LastOffset = Offset.castAs<NonLoc>();
 
   // Check that the first buffer is sufficiently long.
+  SVal BufStart =
+      svalBuilder.evalCast(BufVal, PtrTy, Buffer.Expression->getType());
   if (std::optional<Loc> BufLoc = BufStart.getAs<Loc>()) {
 
     SVal BufEnd =
@@ -676,15 +653,13 @@ void CStringChecker::emitOverlapBug(CheckerContext &C, ProgramStateRef state,
 void CStringChecker::emitNullArgBug(CheckerContext &C, ProgramStateRef State,
                                     const Stmt *S, StringRef WarningMsg) const {
   if (ExplodedNode *N = C.generateErrorNode(State)) {
-    if (!BT_Null) {
-      // FIXME: This call uses the string constant 'categories::UnixAPI' as the
-      // description of the bug; it should be replaced by a real description.
-      BT_Null.reset(
-          new BugType(Filter.CheckNameCStringNullArg, categories::UnixAPI));
-    }
+    if (!BT_Null)
+      BT_Null.reset(new BuiltinBug(
+          Filter.CheckNameCStringNullArg, categories::UnixAPI,
+          "Null pointer argument in call to byte string function"));
 
-    auto Report =
-        std::make_unique<PathSensitiveBugReport>(*BT_Null, WarningMsg, N);
+    BuiltinBug *BT = static_cast<BuiltinBug *>(BT_Null.get());
+    auto Report = std::make_unique<PathSensitiveBugReport>(*BT, WarningMsg, N);
     Report->addRange(S->getSourceRange());
     if (const auto *Ex = dyn_cast<Expr>(S))
       bugreporter::trackExpressionValue(N, Ex, *Report);
@@ -699,11 +674,13 @@ void CStringChecker::emitUninitializedReadBug(CheckerContext &C,
     const char *Msg =
         "Bytes string function accesses uninitialized/garbage values";
     if (!BT_UninitRead)
-      BT_UninitRead.reset(new BugType(Filter.CheckNameCStringUninitializedRead,
-                                      "Accessing unitialized/garbage values"));
+      BT_UninitRead.reset(
+          new BuiltinBug(Filter.CheckNameCStringUninitializedRead,
+                         "Accessing unitialized/garbage values", Msg));
 
-    auto Report =
-        std::make_unique<PathSensitiveBugReport>(*BT_UninitRead, Msg, N);
+    BuiltinBug *BT = static_cast<BuiltinBug *>(BT_UninitRead.get());
+
+    auto Report = std::make_unique<PathSensitiveBugReport>(*BT, Msg, N);
     Report->addRange(E->getSourceRange());
     bugreporter::trackExpressionValue(N, E, *Report);
     C.emitReport(std::move(Report));
@@ -715,16 +692,18 @@ void CStringChecker::emitOutOfBoundsBug(CheckerContext &C,
                                         StringRef WarningMsg) const {
   if (ExplodedNode *N = C.generateErrorNode(State)) {
     if (!BT_Bounds)
-      BT_Bounds.reset(new BugType(Filter.CheckCStringOutOfBounds
-                                      ? Filter.CheckNameCStringOutOfBounds
-                                      : Filter.CheckNameCStringNullArg,
-                                  "Out-of-bound array access"));
+      BT_Bounds.reset(new BuiltinBug(
+          Filter.CheckCStringOutOfBounds ? Filter.CheckNameCStringOutOfBounds
+                                         : Filter.CheckNameCStringNullArg,
+          "Out-of-bound array access",
+          "Byte string function accesses out-of-bound array element"));
+
+    BuiltinBug *BT = static_cast<BuiltinBug *>(BT_Bounds.get());
 
     // FIXME: It would be nice to eventually make this diagnostic more clear,
     // e.g., by referencing the original declaration or by saying *why* this
     // reference is outside the range.
-    auto Report =
-        std::make_unique<PathSensitiveBugReport>(*BT_Bounds, WarningMsg, N);
+    auto Report = std::make_unique<PathSensitiveBugReport>(*BT, WarningMsg, N);
     Report->addRange(S->getSourceRange());
     C.emitReport(std::move(Report));
   }
@@ -734,12 +713,10 @@ void CStringChecker::emitNotCStringBug(CheckerContext &C, ProgramStateRef State,
                                        const Stmt *S,
                                        StringRef WarningMsg) const {
   if (ExplodedNode *N = C.generateNonFatalErrorNode(State)) {
-    if (!BT_NotCString) {
-      // FIXME: This call uses the string constant 'categories::UnixAPI' as the
-      // description of the bug; it should be replaced by a real description.
-      BT_NotCString.reset(
-          new BugType(Filter.CheckNameCStringNotNullTerm, categories::UnixAPI));
-    }
+    if (!BT_NotCString)
+      BT_NotCString.reset(new BuiltinBug(
+          Filter.CheckNameCStringNotNullTerm, categories::UnixAPI,
+          "Argument is not a null-terminated string."));
 
     auto Report =
         std::make_unique<PathSensitiveBugReport>(*BT_NotCString, WarningMsg, N);
@@ -752,13 +729,10 @@ void CStringChecker::emitNotCStringBug(CheckerContext &C, ProgramStateRef State,
 void CStringChecker::emitAdditionOverflowBug(CheckerContext &C,
                                              ProgramStateRef State) const {
   if (ExplodedNode *N = C.generateErrorNode(State)) {
-    if (!BT_AdditionOverflow) {
-      // FIXME: This call uses the word "API" as the description of the bug;
-      // it should be replaced by a better error message (if this unlikely
-      // situation continues to exist as a separate bug type).
+    if (!BT_AdditionOverflow)
       BT_AdditionOverflow.reset(
-          new BugType(Filter.CheckNameCStringOutOfBounds, "API"));
-    }
+          new BuiltinBug(Filter.CheckNameCStringOutOfBounds, "API",
+                         "Sum of expressions causes overflow."));
 
     // This isn't a great error message, but this should never occur in real
     // code anyway -- you'd have to create a buffer longer than a size_t can
@@ -898,8 +872,8 @@ SVal CStringChecker::getCStringLengthForRegion(CheckerContext &C,
       const llvm::APSInt *maxLengthInt = BVF.evalAPSInt(BO_Div, maxValInt,
                                                         fourInt);
       NonLoc maxLength = svalBuilder.makeIntVal(*maxLengthInt);
-      SVal evalLength = svalBuilder.evalBinOpNN(state, BO_LE, *strLn, maxLength,
-                                                svalBuilder.getConditionType());
+      SVal evalLength = svalBuilder.evalBinOpNN(state, BO_LE, *strLn,
+                                                maxLength, sizeTy);
       state = state->assume(evalLength.castAs<DefinedOrUnknownSVal>(), true);
     }
     state = state->set<CStringLength>(MR, strLength);
@@ -947,23 +921,9 @@ SVal CStringChecker::getCStringLength(CheckerContext &C, ProgramStateRef &state,
     const StringLiteral *strLit = cast<StringRegion>(MR)->getStringLiteral();
     return svalBuilder.makeIntVal(strLit->getLength(), sizeTy);
   }
-  case MemRegion::NonParamVarRegionKind: {
-    // If we have a global constant with a string literal initializer,
-    // compute the initializer's length.
-    const VarDecl *Decl = cast<NonParamVarRegion>(MR)->getDecl();
-    if (Decl->getType().isConstQualified() && Decl->hasGlobalStorage()) {
-      if (const Expr *Init = Decl->getInit()) {
-        if (auto *StrLit = dyn_cast<StringLiteral>(Init)) {
-          SValBuilder &SvalBuilder = C.getSValBuilder();
-          QualType SizeTy = SvalBuilder.getContext().getSizeType();
-          return SvalBuilder.makeIntVal(StrLit->getLength(), SizeTy);
-        }
-      }
-    }
-    [[fallthrough]];
-  }
   case MemRegion::SymbolicRegionKind:
   case MemRegion::AllocaRegionKind:
+  case MemRegion::NonParamVarRegionKind:
   case MemRegion::ParamVarRegionKind:
   case MemRegion::FieldRegionKind:
   case MemRegion::ObjCIvarRegionKind:
@@ -1308,7 +1268,7 @@ bool CStringChecker::memsetAux(const Expr *DstBuffer, SVal CharVal,
 // evaluation of individual function calls.
 //===----------------------------------------------------------------------===//
 
-void CStringChecker::evalCopyCommon(CheckerContext &C, const CallEvent &Call,
+void CStringChecker::evalCopyCommon(CheckerContext &C, const CallExpr *CE,
                                     ProgramStateRef state, SizeArgExpr Size,
                                     DestinationArgExpr Dest,
                                     SourceArgExpr Source, bool Restricted,
@@ -1330,8 +1290,7 @@ void CStringChecker::evalCopyCommon(CheckerContext &C, const CallEvent &Call,
   // If the size is zero, there won't be any actual memory access, so
   // just bind the return value to the destination buffer and return.
   if (stateZeroSize && !stateNonZeroSize) {
-    stateZeroSize =
-        stateZeroSize->BindExpr(Call.getOriginExpr(), LCtx, destVal);
+    stateZeroSize = stateZeroSize->BindExpr(CE, LCtx, destVal);
     C.addTransition(stateZeroSize);
     return;
   }
@@ -1379,15 +1338,15 @@ void CStringChecker::evalCopyCommon(CheckerContext &C, const CallEvent &Call,
       // If we don't know how much we copied, we can at least
       // conjure a return value for later.
       if (lastElement.isUnknown())
-        lastElement = C.getSValBuilder().conjureSymbolVal(
-            nullptr, Call.getOriginExpr(), LCtx, C.blockCount());
+        lastElement = C.getSValBuilder().conjureSymbolVal(nullptr, CE, LCtx,
+                                                          C.blockCount());
 
       // The byte after the last byte copied is the return value.
-      state = state->BindExpr(Call.getOriginExpr(), LCtx, lastElement);
+      state = state->BindExpr(CE, LCtx, lastElement);
     } else {
       // All other copies return the destination buffer.
       // (Well, bcopy() has a void return type, but this won't hurt.)
-      state = state->BindExpr(Call.getOriginExpr(), LCtx, destVal);
+      state = state->BindExpr(CE, LCtx, destVal);
     }
 
     // Invalidate the destination (regular invalidation without pointer-escaping
@@ -1409,69 +1368,69 @@ void CStringChecker::evalCopyCommon(CheckerContext &C, const CallEvent &Call,
   }
 }
 
-void CStringChecker::evalMemcpy(CheckerContext &C, const CallEvent &Call,
+void CStringChecker::evalMemcpy(CheckerContext &C, const CallExpr *CE,
                                 CharKind CK) const {
   // void *memcpy(void *restrict dst, const void *restrict src, size_t n);
   // The return value is the address of the destination buffer.
-  DestinationArgExpr Dest = {{Call.getArgExpr(0), 0}};
-  SourceArgExpr Src = {{Call.getArgExpr(1), 1}};
-  SizeArgExpr Size = {{Call.getArgExpr(2), 2}};
+  DestinationArgExpr Dest = {{CE->getArg(0), 0}};
+  SourceArgExpr Src = {{CE->getArg(1), 1}};
+  SizeArgExpr Size = {{CE->getArg(2), 2}};
 
   ProgramStateRef State = C.getState();
 
   constexpr bool IsRestricted = true;
   constexpr bool IsMempcpy = false;
-  evalCopyCommon(C, Call, State, Size, Dest, Src, IsRestricted, IsMempcpy, CK);
+  evalCopyCommon(C, CE, State, Size, Dest, Src, IsRestricted, IsMempcpy, CK);
 }
 
-void CStringChecker::evalMempcpy(CheckerContext &C, const CallEvent &Call,
+void CStringChecker::evalMempcpy(CheckerContext &C, const CallExpr *CE,
                                  CharKind CK) const {
   // void *mempcpy(void *restrict dst, const void *restrict src, size_t n);
   // The return value is a pointer to the byte following the last written byte.
-  DestinationArgExpr Dest = {{Call.getArgExpr(0), 0}};
-  SourceArgExpr Src = {{Call.getArgExpr(1), 1}};
-  SizeArgExpr Size = {{Call.getArgExpr(2), 2}};
+  DestinationArgExpr Dest = {{CE->getArg(0), 0}};
+  SourceArgExpr Src = {{CE->getArg(1), 1}};
+  SizeArgExpr Size = {{CE->getArg(2), 2}};
 
   constexpr bool IsRestricted = true;
   constexpr bool IsMempcpy = true;
-  evalCopyCommon(C, Call, C.getState(), Size, Dest, Src, IsRestricted,
-                 IsMempcpy, CK);
+  evalCopyCommon(C, CE, C.getState(), Size, Dest, Src, IsRestricted, IsMempcpy,
+                 CK);
 }
 
-void CStringChecker::evalMemmove(CheckerContext &C, const CallEvent &Call,
+void CStringChecker::evalMemmove(CheckerContext &C, const CallExpr *CE,
                                  CharKind CK) const {
   // void *memmove(void *dst, const void *src, size_t n);
   // The return value is the address of the destination buffer.
-  DestinationArgExpr Dest = {{Call.getArgExpr(0), 0}};
-  SourceArgExpr Src = {{Call.getArgExpr(1), 1}};
-  SizeArgExpr Size = {{Call.getArgExpr(2), 2}};
+  DestinationArgExpr Dest = {{CE->getArg(0), 0}};
+  SourceArgExpr Src = {{CE->getArg(1), 1}};
+  SizeArgExpr Size = {{CE->getArg(2), 2}};
 
   constexpr bool IsRestricted = false;
   constexpr bool IsMempcpy = false;
-  evalCopyCommon(C, Call, C.getState(), Size, Dest, Src, IsRestricted,
-                 IsMempcpy, CK);
+  evalCopyCommon(C, CE, C.getState(), Size, Dest, Src, IsRestricted, IsMempcpy,
+                 CK);
 }
 
-void CStringChecker::evalBcopy(CheckerContext &C, const CallEvent &Call) const {
+void CStringChecker::evalBcopy(CheckerContext &C, const CallExpr *CE) const {
   // void bcopy(const void *src, void *dst, size_t n);
-  SourceArgExpr Src{{Call.getArgExpr(0), 0}};
-  DestinationArgExpr Dest = {{Call.getArgExpr(1), 1}};
-  SizeArgExpr Size = {{Call.getArgExpr(2), 2}};
+  SourceArgExpr Src{{CE->getArg(0), 0}};
+  DestinationArgExpr Dest = {{CE->getArg(1), 1}};
+  SizeArgExpr Size = {{CE->getArg(2), 2}};
 
   constexpr bool IsRestricted = false;
   constexpr bool IsMempcpy = false;
-  evalCopyCommon(C, Call, C.getState(), Size, Dest, Src, IsRestricted,
-                 IsMempcpy, CharKind::Regular);
+  evalCopyCommon(C, CE, C.getState(), Size, Dest, Src, IsRestricted, IsMempcpy,
+                 CharKind::Regular);
 }
 
-void CStringChecker::evalMemcmp(CheckerContext &C, const CallEvent &Call,
+void CStringChecker::evalMemcmp(CheckerContext &C, const CallExpr *CE,
                                 CharKind CK) const {
   // int memcmp(const void *s1, const void *s2, size_t n);
   CurrentFunctionDescription = "memory comparison function";
 
-  AnyArgExpr Left = {Call.getArgExpr(0), 0};
-  AnyArgExpr Right = {Call.getArgExpr(1), 1};
-  SizeArgExpr Size = {{Call.getArgExpr(2), 2}};
+  AnyArgExpr Left = {CE->getArg(0), 0};
+  AnyArgExpr Right = {CE->getArg(1), 1};
+  SizeArgExpr Size = {{CE->getArg(2), 2}};
 
   ProgramStateRef State = C.getState();
   SValBuilder &Builder = C.getSValBuilder();
@@ -1489,8 +1448,7 @@ void CStringChecker::evalMemcmp(CheckerContext &C, const CallEvent &Call,
   // have to check either of the buffers.
   if (stateZeroSize) {
     State = stateZeroSize;
-    State = State->BindExpr(Call.getOriginExpr(), LCtx,
-                            Builder.makeZeroVal(Call.getResultType()));
+    State = State->BindExpr(CE, LCtx, Builder.makeZeroVal(CE->getType()));
     C.addTransition(State);
   }
 
@@ -1516,8 +1474,8 @@ void CStringChecker::evalMemcmp(CheckerContext &C, const CallEvent &Call,
       State = SameBuffer;
       State = CheckBufferAccess(C, State, Left, Size, AccessKind::read);
       if (State) {
-        State = SameBuffer->BindExpr(Call.getOriginExpr(), LCtx,
-                                     Builder.makeZeroVal(Call.getResultType()));
+        State =
+            SameBuffer->BindExpr(CE, LCtx, Builder.makeZeroVal(CE->getType()));
         C.addTransition(State);
       }
       return;
@@ -1530,35 +1488,33 @@ void CStringChecker::evalMemcmp(CheckerContext &C, const CallEvent &Call,
     State = CheckBufferAccess(C, State, Left, Size, AccessKind::read, CK);
     if (State) {
       // The return value is the comparison result, which we don't know.
-      SVal CmpV = Builder.conjureSymbolVal(nullptr, Call.getOriginExpr(), LCtx,
-                                           C.blockCount());
-      State = State->BindExpr(Call.getOriginExpr(), LCtx, CmpV);
+      SVal CmpV = Builder.conjureSymbolVal(nullptr, CE, LCtx, C.blockCount());
+      State = State->BindExpr(CE, LCtx, CmpV);
       C.addTransition(State);
     }
   }
 }
 
 void CStringChecker::evalstrLength(CheckerContext &C,
-                                   const CallEvent &Call) const {
+                                   const CallExpr *CE) const {
   // size_t strlen(const char *s);
-  evalstrLengthCommon(C, Call, /* IsStrnlen = */ false);
+  evalstrLengthCommon(C, CE, /* IsStrnlen = */ false);
 }
 
 void CStringChecker::evalstrnLength(CheckerContext &C,
-                                    const CallEvent &Call) const {
+                                    const CallExpr *CE) const {
   // size_t strnlen(const char *s, size_t maxlen);
-  evalstrLengthCommon(C, Call, /* IsStrnlen = */ true);
+  evalstrLengthCommon(C, CE, /* IsStrnlen = */ true);
 }
 
-void CStringChecker::evalstrLengthCommon(CheckerContext &C,
-                                         const CallEvent &Call,
+void CStringChecker::evalstrLengthCommon(CheckerContext &C, const CallExpr *CE,
                                          bool IsStrnlen) const {
   CurrentFunctionDescription = "string length function";
   ProgramStateRef state = C.getState();
   const LocationContext *LCtx = C.getLocationContext();
 
   if (IsStrnlen) {
-    const Expr *maxlenExpr = Call.getArgExpr(1);
+    const Expr *maxlenExpr = CE->getArg(1);
     SVal maxlenVal = state->getSVal(maxlenExpr, LCtx);
 
     ProgramStateRef stateZeroSize, stateNonZeroSize;
@@ -1568,8 +1524,8 @@ void CStringChecker::evalstrLengthCommon(CheckerContext &C,
     // If the size can be zero, the result will be 0 in that case, and we don't
     // have to check the string itself.
     if (stateZeroSize) {
-      SVal zero = C.getSValBuilder().makeZeroVal(Call.getResultType());
-      stateZeroSize = stateZeroSize->BindExpr(Call.getOriginExpr(), LCtx, zero);
+      SVal zero = C.getSValBuilder().makeZeroVal(CE->getType());
+      stateZeroSize = stateZeroSize->BindExpr(CE, LCtx, zero);
       C.addTransition(stateZeroSize);
     }
 
@@ -1582,7 +1538,7 @@ void CStringChecker::evalstrLengthCommon(CheckerContext &C,
   }
 
   // Check that the string argument is non-null.
-  AnyArgExpr Arg = {Call.getArgExpr(0), 0};
+  AnyArgExpr Arg = {CE->getArg(0), 0};
   SVal ArgVal = state->getSVal(Arg.Expression, LCtx);
   state = checkNonNull(C, state, Arg, ArgVal);
 
@@ -1605,7 +1561,7 @@ void CStringChecker::evalstrLengthCommon(CheckerContext &C,
 
     // It's a little unfortunate to be getting this again,
     // but it's not that expensive...
-    const Expr *maxlenExpr = Call.getArgExpr(1);
+    const Expr *maxlenExpr = CE->getArg(1);
     SVal maxlenVal = state->getSVal(maxlenExpr, LCtx);
 
     std::optional<NonLoc> strLengthNL = strLength.getAs<NonLoc>();
@@ -1634,8 +1590,8 @@ void CStringChecker::evalstrLengthCommon(CheckerContext &C,
       // no guarantee the full string length will actually be returned.
       // All we know is the return value is the min of the string length
       // and the limit. This is better than nothing.
-      result = C.getSValBuilder().conjureSymbolVal(
-          nullptr, Call.getOriginExpr(), LCtx, C.blockCount());
+      result = C.getSValBuilder().conjureSymbolVal(nullptr, CE, LCtx,
+                                                   C.blockCount());
       NonLoc resultNL = result.castAs<NonLoc>();
 
       if (strLengthNL) {
@@ -1658,85 +1614,78 @@ void CStringChecker::evalstrLengthCommon(CheckerContext &C,
     // If we don't know the length of the string, conjure a return
     // value, so it can be used in constraints, at least.
     if (result.isUnknown()) {
-      result = C.getSValBuilder().conjureSymbolVal(
-          nullptr, Call.getOriginExpr(), LCtx, C.blockCount());
+      result = C.getSValBuilder().conjureSymbolVal(nullptr, CE, LCtx,
+                                                   C.blockCount());
     }
   }
 
   // Bind the return value.
   assert(!result.isUnknown() && "Should have conjured a value by now");
-  state = state->BindExpr(Call.getOriginExpr(), LCtx, result);
+  state = state->BindExpr(CE, LCtx, result);
   C.addTransition(state);
 }
 
-void CStringChecker::evalStrcpy(CheckerContext &C,
-                                const CallEvent &Call) const {
+void CStringChecker::evalStrcpy(CheckerContext &C, const CallExpr *CE) const {
   // char *strcpy(char *restrict dst, const char *restrict src);
-  evalStrcpyCommon(C, Call,
+  evalStrcpyCommon(C, CE,
                    /* ReturnEnd = */ false,
                    /* IsBounded = */ false,
                    /* appendK = */ ConcatFnKind::none);
 }
 
-void CStringChecker::evalStrncpy(CheckerContext &C,
-                                 const CallEvent &Call) const {
+void CStringChecker::evalStrncpy(CheckerContext &C, const CallExpr *CE) const {
   // char *strncpy(char *restrict dst, const char *restrict src, size_t n);
-  evalStrcpyCommon(C, Call,
+  evalStrcpyCommon(C, CE,
                    /* ReturnEnd = */ false,
                    /* IsBounded = */ true,
                    /* appendK = */ ConcatFnKind::none);
 }
 
-void CStringChecker::evalStpcpy(CheckerContext &C,
-                                const CallEvent &Call) const {
+void CStringChecker::evalStpcpy(CheckerContext &C, const CallExpr *CE) const {
   // char *stpcpy(char *restrict dst, const char *restrict src);
-  evalStrcpyCommon(C, Call,
+  evalStrcpyCommon(C, CE,
                    /* ReturnEnd = */ true,
                    /* IsBounded = */ false,
                    /* appendK = */ ConcatFnKind::none);
 }
 
-void CStringChecker::evalStrlcpy(CheckerContext &C,
-                                 const CallEvent &Call) const {
+void CStringChecker::evalStrlcpy(CheckerContext &C, const CallExpr *CE) const {
   // size_t strlcpy(char *dest, const char *src, size_t size);
-  evalStrcpyCommon(C, Call,
+  evalStrcpyCommon(C, CE,
                    /* ReturnEnd = */ true,
                    /* IsBounded = */ true,
                    /* appendK = */ ConcatFnKind::none,
                    /* returnPtr = */ false);
 }
 
-void CStringChecker::evalStrcat(CheckerContext &C,
-                                const CallEvent &Call) const {
+void CStringChecker::evalStrcat(CheckerContext &C, const CallExpr *CE) const {
   // char *strcat(char *restrict s1, const char *restrict s2);
-  evalStrcpyCommon(C, Call,
+  evalStrcpyCommon(C, CE,
                    /* ReturnEnd = */ false,
                    /* IsBounded = */ false,
                    /* appendK = */ ConcatFnKind::strcat);
 }
 
-void CStringChecker::evalStrncat(CheckerContext &C,
-                                 const CallEvent &Call) const {
+void CStringChecker::evalStrncat(CheckerContext &C, const CallExpr *CE) const {
   // char *strncat(char *restrict s1, const char *restrict s2, size_t n);
-  evalStrcpyCommon(C, Call,
+  evalStrcpyCommon(C, CE,
                    /* ReturnEnd = */ false,
                    /* IsBounded = */ true,
                    /* appendK = */ ConcatFnKind::strcat);
 }
 
-void CStringChecker::evalStrlcat(CheckerContext &C,
-                                 const CallEvent &Call) const {
+void CStringChecker::evalStrlcat(CheckerContext &C, const CallExpr *CE) const {
   // size_t strlcat(char *dst, const char *src, size_t size);
   // It will append at most size - strlen(dst) - 1 bytes,
   // NULL-terminating the result.
-  evalStrcpyCommon(C, Call,
+  evalStrcpyCommon(C, CE,
                    /* ReturnEnd = */ false,
                    /* IsBounded = */ true,
                    /* appendK = */ ConcatFnKind::strlcat,
                    /* returnPtr = */ false);
 }
 
-void CStringChecker::evalStrcpyCommon(CheckerContext &C, const CallEvent &Call,
+void CStringChecker::evalStrcpyCommon(CheckerContext &C, const CallExpr *CE,
                                       bool ReturnEnd, bool IsBounded,
                                       ConcatFnKind appendK,
                                       bool returnPtr) const {
@@ -1749,14 +1698,14 @@ void CStringChecker::evalStrcpyCommon(CheckerContext &C, const CallEvent &Call,
   const LocationContext *LCtx = C.getLocationContext();
 
   // Check that the destination is non-null.
-  DestinationArgExpr Dst = {{Call.getArgExpr(0), 0}};
+  DestinationArgExpr Dst = {{CE->getArg(0), 0}};
   SVal DstVal = state->getSVal(Dst.Expression, LCtx);
   state = checkNonNull(C, state, Dst, DstVal);
   if (!state)
     return;
 
   // Check that the source is non-null.
-  SourceArgExpr srcExpr = {{Call.getArgExpr(1), 1}};
+  SourceArgExpr srcExpr = {{CE->getArg(1), 1}};
   SVal srcVal = state->getSVal(srcExpr.Expression, LCtx);
   state = checkNonNull(C, state, srcExpr, srcVal);
   if (!state)
@@ -1791,8 +1740,8 @@ void CStringChecker::evalStrcpyCommon(CheckerContext &C, const CallEvent &Call,
       {srcExpr.Expression, srcExpr.ArgumentIndex}};
   state = CheckOverlap(
       C, state,
-      (IsBounded ? SizeArgExpr{{Call.getArgExpr(2), 2}} : SrcExprAsSizeDummy),
-      Dst, srcExpr);
+      (IsBounded ? SizeArgExpr{{CE->getArg(2), 2}} : SrcExprAsSizeDummy), Dst,
+      srcExpr);
 
   if (!state)
     return;
@@ -1800,7 +1749,7 @@ void CStringChecker::evalStrcpyCommon(CheckerContext &C, const CallEvent &Call,
   // If the function is strncpy, strncat, etc... it is bounded.
   if (IsBounded) {
     // Get the max number of characters to copy.
-    SizeArgExpr lenExpr = {{Call.getArgExpr(2), 2}};
+    SizeArgExpr lenExpr = {{CE->getArg(2), 2}};
     SVal lenVal = state->getSVal(lenExpr.Expression, LCtx);
 
     // Protect against misdeclared strncpy().
@@ -1914,19 +1863,16 @@ void CStringChecker::evalStrcpyCommon(CheckerContext &C, const CallEvent &Call,
         // If the size is known to be zero, we're done.
         if (StateZeroSize && !StateNonZeroSize) {
           if (returnPtr) {
-            StateZeroSize =
-                StateZeroSize->BindExpr(Call.getOriginExpr(), LCtx, DstVal);
+            StateZeroSize = StateZeroSize->BindExpr(CE, LCtx, DstVal);
           } else {
             if (appendK == ConcatFnKind::none) {
               // strlcpy returns strlen(src)
-              StateZeroSize = StateZeroSize->BindExpr(Call.getOriginExpr(),
-                                                      LCtx, strLength);
+              StateZeroSize = StateZeroSize->BindExpr(CE, LCtx, strLength);
             } else {
               // strlcat returns strlen(src) + strlen(dst)
               SVal retSize = svalBuilder.evalBinOp(
                   state, BO_Add, strLength, dstStrLength, sizeTy);
-              StateZeroSize =
-                  StateZeroSize->BindExpr(Call.getOriginExpr(), LCtx, retSize);
+              StateZeroSize = StateZeroSize->BindExpr(CE, LCtx, retSize);
             }
           }
           C.addTransition(StateZeroSize);
@@ -1995,8 +1941,7 @@ void CStringChecker::evalStrcpyCommon(CheckerContext &C, const CallEvent &Call,
     if (finalStrLength.isUnknown()) {
       // Try to get a "hypothetical" string length symbol, which we can later
       // set as a real value if that turns out to be the case.
-      finalStrLength =
-          getCStringLength(C, state, Call.getOriginExpr(), DstVal, true);
+      finalStrLength = getCStringLength(C, state, CE, DstVal, true);
       assert(!finalStrLength.isUndef());
 
       if (std::optional<NonLoc> finalStrLengthNL =
@@ -2061,11 +2006,6 @@ void CStringChecker::evalStrcpyCommon(CheckerContext &C, const CallEvent &Call,
       SVal maxLastElement =
           svalBuilder.evalBinOpLN(state, BO_Add, *dstRegVal, *maxLastNL, ptrTy);
 
-      // Check if the first byte of the destination is writable.
-      state = CheckLocation(C, state, Dst, DstVal, AccessKind::write);
-      if (!state)
-        return;
-      // Check if the last byte of the destination is writable.
       state = CheckLocation(C, state, Dst, maxLastElement, AccessKind::write);
       if (!state)
         return;
@@ -2078,11 +2018,6 @@ void CStringChecker::evalStrcpyCommon(CheckerContext &C, const CallEvent &Call,
 
       // ...and we haven't checked the bound, we'll check the actual copy.
       if (!boundWarning) {
-        // Check if the first byte of the destination is writable.
-        state = CheckLocation(C, state, Dst, DstVal, AccessKind::write);
-        if (!state)
-          return;
-        // Check if the last byte of the destination is writable.
         state = CheckLocation(C, state, Dst, lastElement, AccessKind::write);
         if (!state)
           return;
@@ -2126,54 +2061,51 @@ void CStringChecker::evalStrcpyCommon(CheckerContext &C, const CallEvent &Call,
     // If this is a stpcpy-style copy, but we were unable to check for a buffer
     // overflow, we still need a result. Conjure a return value.
     if (ReturnEnd && Result.isUnknown()) {
-      Result = svalBuilder.conjureSymbolVal(nullptr, Call.getOriginExpr(), LCtx,
-                                            C.blockCount());
+      Result = svalBuilder.conjureSymbolVal(nullptr, CE, LCtx, C.blockCount());
     }
   }
   // Set the return value.
-  state = state->BindExpr(Call.getOriginExpr(), LCtx, Result);
+  state = state->BindExpr(CE, LCtx, Result);
   C.addTransition(state);
 }
 
-void CStringChecker::evalStrcmp(CheckerContext &C,
-                                const CallEvent &Call) const {
+void CStringChecker::evalStrcmp(CheckerContext &C, const CallExpr *CE) const {
   //int strcmp(const char *s1, const char *s2);
-  evalStrcmpCommon(C, Call, /* IsBounded = */ false, /* IgnoreCase = */ false);
+  evalStrcmpCommon(C, CE, /* IsBounded = */ false, /* IgnoreCase = */ false);
 }
 
-void CStringChecker::evalStrncmp(CheckerContext &C,
-                                 const CallEvent &Call) const {
+void CStringChecker::evalStrncmp(CheckerContext &C, const CallExpr *CE) const {
   //int strncmp(const char *s1, const char *s2, size_t n);
-  evalStrcmpCommon(C, Call, /* IsBounded = */ true, /* IgnoreCase = */ false);
+  evalStrcmpCommon(C, CE, /* IsBounded = */ true, /* IgnoreCase = */ false);
 }
 
 void CStringChecker::evalStrcasecmp(CheckerContext &C,
-                                    const CallEvent &Call) const {
+    const CallExpr *CE) const {
   //int strcasecmp(const char *s1, const char *s2);
-  evalStrcmpCommon(C, Call, /* IsBounded = */ false, /* IgnoreCase = */ true);
+  evalStrcmpCommon(C, CE, /* IsBounded = */ false, /* IgnoreCase = */ true);
 }
 
 void CStringChecker::evalStrncasecmp(CheckerContext &C,
-                                     const CallEvent &Call) const {
+    const CallExpr *CE) const {
   //int strncasecmp(const char *s1, const char *s2, size_t n);
-  evalStrcmpCommon(C, Call, /* IsBounded = */ true, /* IgnoreCase = */ true);
+  evalStrcmpCommon(C, CE, /* IsBounded = */ true, /* IgnoreCase = */ true);
 }
 
-void CStringChecker::evalStrcmpCommon(CheckerContext &C, const CallEvent &Call,
-                                      bool IsBounded, bool IgnoreCase) const {
+void CStringChecker::evalStrcmpCommon(CheckerContext &C, const CallExpr *CE,
+    bool IsBounded, bool IgnoreCase) const {
   CurrentFunctionDescription = "string comparison function";
   ProgramStateRef state = C.getState();
   const LocationContext *LCtx = C.getLocationContext();
 
   // Check that the first string is non-null
-  AnyArgExpr Left = {Call.getArgExpr(0), 0};
+  AnyArgExpr Left = {CE->getArg(0), 0};
   SVal LeftVal = state->getSVal(Left.Expression, LCtx);
   state = checkNonNull(C, state, Left, LeftVal);
   if (!state)
     return;
 
   // Check that the second string is non-null.
-  AnyArgExpr Right = {Call.getArgExpr(1), 1};
+  AnyArgExpr Right = {CE->getArg(1), 1};
   SVal RightVal = state->getSVal(Right.Expression, LCtx);
   state = checkNonNull(C, state, Right, RightVal);
   if (!state)
@@ -2204,9 +2136,8 @@ void CStringChecker::evalStrcmpCommon(CheckerContext &C, const CallEvent &Call,
   // If the two arguments might be the same buffer, we know the result is 0,
   // and we only need to check one size.
   if (StSameBuf) {
-    StSameBuf =
-        StSameBuf->BindExpr(Call.getOriginExpr(), LCtx,
-                            svalBuilder.makeZeroVal(Call.getResultType()));
+    StSameBuf = StSameBuf->BindExpr(CE, LCtx,
+        svalBuilder.makeZeroVal(CE->getType()));
     C.addTransition(StSameBuf);
 
     // If the two arguments are GUARANTEED to be the same, we're done!
@@ -2226,8 +2157,8 @@ void CStringChecker::evalStrcmpCommon(CheckerContext &C, const CallEvent &Call,
   const StringLiteral *RightStrLiteral =
       getCStringLiteral(C, state, Right.Expression, RightVal);
   bool canComputeResult = false;
-  SVal resultVal = svalBuilder.conjureSymbolVal(nullptr, Call.getOriginExpr(),
-                                                LCtx, C.blockCount());
+  SVal resultVal = svalBuilder.conjureSymbolVal(nullptr, CE, LCtx,
+      C.blockCount());
 
   if (LeftStrLiteral && RightStrLiteral) {
     StringRef LeftStrRef = LeftStrLiteral->getString();
@@ -2235,7 +2166,7 @@ void CStringChecker::evalStrcmpCommon(CheckerContext &C, const CallEvent &Call,
 
     if (IsBounded) {
       // Get the max number of characters to compare.
-      const Expr *lenExpr = Call.getArgExpr(2);
+      const Expr *lenExpr = CE->getArg(2);
       SVal lenVal = state->getSVal(lenExpr, LCtx);
 
       // If the length is known, we can get the right substrings.
@@ -2267,10 +2198,10 @@ void CStringChecker::evalStrcmpCommon(CheckerContext &C, const CallEvent &Call,
       // The strcmp function returns an integer greater than, equal to, or less
       // than zero, [c11, p7.24.4.2].
       if (compareRes == 0) {
-        resultVal = svalBuilder.makeIntVal(compareRes, Call.getResultType());
+        resultVal = svalBuilder.makeIntVal(compareRes, CE->getType());
       }
       else {
-        DefinedSVal zeroVal = svalBuilder.makeIntVal(0, Call.getResultType());
+        DefinedSVal zeroVal = svalBuilder.makeIntVal(0, CE->getType());
         // Constrain strcmp's result range based on the result of StringRef's
         // comparison methods.
         BinaryOperatorKind op = (compareRes > 0) ? BO_GT : BO_LT;
@@ -2283,21 +2214,20 @@ void CStringChecker::evalStrcmpCommon(CheckerContext &C, const CallEvent &Call,
     }
   }
 
-  state = state->BindExpr(Call.getOriginExpr(), LCtx, resultVal);
+  state = state->BindExpr(CE, LCtx, resultVal);
 
   // Record this as a possible path.
   C.addTransition(state);
 }
 
-void CStringChecker::evalStrsep(CheckerContext &C,
-                                const CallEvent &Call) const {
+void CStringChecker::evalStrsep(CheckerContext &C, const CallExpr *CE) const {
   // char *strsep(char **stringp, const char *delim);
   // Verify whether the search string parameter matches the return type.
-  SourceArgExpr SearchStrPtr = {{Call.getArgExpr(0), 0}};
+  SourceArgExpr SearchStrPtr = {{CE->getArg(0), 0}};
 
   QualType CharPtrTy = SearchStrPtr.Expression->getType()->getPointeeType();
-  if (CharPtrTy.isNull() || Call.getResultType().getUnqualifiedType() !=
-                                CharPtrTy.getUnqualifiedType())
+  if (CharPtrTy.isNull() ||
+      CE->getType().getUnqualifiedType() != CharPtrTy.getUnqualifiedType())
     return;
 
   CurrentFunctionDescription = "strsep()";
@@ -2312,7 +2242,7 @@ void CStringChecker::evalStrsep(CheckerContext &C,
     return;
 
   // Check that the delimiter string is non-null.
-  AnyArgExpr DelimStr = {Call.getArgExpr(1), 1};
+  AnyArgExpr DelimStr = {CE->getArg(1), 1};
   SVal DelimStrVal = State->getSVal(DelimStr.Expression, LCtx);
   State = checkNonNull(C, State, DelimStr, DelimStrVal);
   if (!State)
@@ -2332,37 +2262,37 @@ void CStringChecker::evalStrsep(CheckerContext &C,
 
     // Overwrite the search string pointer. The new value is either an address
     // further along in the same string, or NULL if there are no more tokens.
-    State =
-        State->bindLoc(*SearchStrLoc,
-                       SVB.conjureSymbolVal(getTag(), Call.getOriginExpr(),
-                                            LCtx, CharPtrTy, C.blockCount()),
-                       LCtx);
+    State = State->bindLoc(*SearchStrLoc,
+        SVB.conjureSymbolVal(getTag(),
+          CE,
+          LCtx,
+          CharPtrTy,
+          C.blockCount()),
+        LCtx);
   } else {
     assert(SearchStrVal.isUnknown());
     // Conjure a symbolic value. It's the best we can do.
-    Result = SVB.conjureSymbolVal(nullptr, Call.getOriginExpr(), LCtx,
-                                  C.blockCount());
+    Result = SVB.conjureSymbolVal(nullptr, CE, LCtx, C.blockCount());
   }
 
   // Set the return value, and finish.
-  State = State->BindExpr(Call.getOriginExpr(), LCtx, Result);
+  State = State->BindExpr(CE, LCtx, Result);
   C.addTransition(State);
 }
 
 // These should probably be moved into a C++ standard library checker.
-void CStringChecker::evalStdCopy(CheckerContext &C,
-                                 const CallEvent &Call) const {
-  evalStdCopyCommon(C, Call);
+void CStringChecker::evalStdCopy(CheckerContext &C, const CallExpr *CE) const {
+  evalStdCopyCommon(C, CE);
 }
 
 void CStringChecker::evalStdCopyBackward(CheckerContext &C,
-                                         const CallEvent &Call) const {
-  evalStdCopyCommon(C, Call);
+    const CallExpr *CE) const {
+  evalStdCopyCommon(C, CE);
 }
 
 void CStringChecker::evalStdCopyCommon(CheckerContext &C,
-                                       const CallEvent &Call) const {
-  if (!Call.getArgExpr(2)->getType()->isPointerType())
+    const CallExpr *CE) const {
+  if (!CE->getArg(2)->getType()->isPointerType())
     return;
 
   ProgramStateRef State = C.getState();
@@ -2375,7 +2305,7 @@ void CStringChecker::evalStdCopyCommon(CheckerContext &C,
   //        _OutputIterator __result)
 
   // Invalidate the destination buffer
-  const Expr *Dst = Call.getArgExpr(2);
+  const Expr *Dst = CE->getArg(2);
   SVal DstVal = State->getSVal(Dst, LCtx);
   // FIXME: As we do not know how many items are copied, we also invalidate the
   // super region containing the target location.
@@ -2384,21 +2314,19 @@ void CStringChecker::evalStdCopyCommon(CheckerContext &C,
 
   SValBuilder &SVB = C.getSValBuilder();
 
-  SVal ResultVal =
-      SVB.conjureSymbolVal(nullptr, Call.getOriginExpr(), LCtx, C.blockCount());
-  State = State->BindExpr(Call.getOriginExpr(), LCtx, ResultVal);
+  SVal ResultVal = SVB.conjureSymbolVal(nullptr, CE, LCtx, C.blockCount());
+  State = State->BindExpr(CE, LCtx, ResultVal);
 
   C.addTransition(State);
 }
 
-void CStringChecker::evalMemset(CheckerContext &C,
-                                const CallEvent &Call) const {
+void CStringChecker::evalMemset(CheckerContext &C, const CallExpr *CE) const {
   // void *memset(void *s, int c, size_t n);
   CurrentFunctionDescription = "memory set function";
 
-  DestinationArgExpr Buffer = {{Call.getArgExpr(0), 0}};
-  AnyArgExpr CharE = {Call.getArgExpr(1), 1};
-  SizeArgExpr Size = {{Call.getArgExpr(2), 2}};
+  DestinationArgExpr Buffer = {{CE->getArg(0), 0}};
+  AnyArgExpr CharE = {CE->getArg(1), 1};
+  SizeArgExpr Size = {{CE->getArg(2), 2}};
 
   ProgramStateRef State = C.getState();
 
@@ -2416,7 +2344,7 @@ void CStringChecker::evalMemset(CheckerContext &C,
   // If the size is zero, there won't be any actual memory access, so
   // just bind the return value to the buffer and return.
   if (ZeroSize && !NonZeroSize) {
-    ZeroSize = ZeroSize->BindExpr(Call.getOriginExpr(), LCtx, BufferPtrVal);
+    ZeroSize = ZeroSize->BindExpr(CE, LCtx, BufferPtrVal);
     C.addTransition(ZeroSize);
     return;
   }
@@ -2438,15 +2366,15 @@ void CStringChecker::evalMemset(CheckerContext &C,
                  Size.Expression, C, State))
     return;
 
-  State = State->BindExpr(Call.getOriginExpr(), LCtx, BufferPtrVal);
+  State = State->BindExpr(CE, LCtx, BufferPtrVal);
   C.addTransition(State);
 }
 
-void CStringChecker::evalBzero(CheckerContext &C, const CallEvent &Call) const {
+void CStringChecker::evalBzero(CheckerContext &C, const CallExpr *CE) const {
   CurrentFunctionDescription = "memory clearance function";
 
-  DestinationArgExpr Buffer = {{Call.getArgExpr(0), 0}};
-  SizeArgExpr Size = {{Call.getArgExpr(1), 1}};
+  DestinationArgExpr Buffer = {{CE->getArg(0), 0}};
+  SizeArgExpr Size = {{CE->getArg(1), 1}};
   SVal Zero = C.getSValBuilder().makeZeroVal(C.getASTContext().IntTy);
 
   ProgramStateRef State = C.getState();
@@ -2485,29 +2413,25 @@ void CStringChecker::evalBzero(CheckerContext &C, const CallEvent &Call) const {
   C.addTransition(State);
 }
 
-void CStringChecker::evalSprintf(CheckerContext &C,
-                                 const CallEvent &Call) const {
+void CStringChecker::evalSprintf(CheckerContext &C, const CallExpr *CE) const {
   CurrentFunctionDescription = "'sprintf'";
-  evalSprintfCommon(C, Call, /* IsBounded = */ false);
+  bool IsBI = CE->getBuiltinCallee() == Builtin::BI__builtin___sprintf_chk;
+  evalSprintfCommon(C, CE, /* IsBounded */ false, IsBI);
 }
 
-void CStringChecker::evalSnprintf(CheckerContext &C,
-                                  const CallEvent &Call) const {
+void CStringChecker::evalSnprintf(CheckerContext &C, const CallExpr *CE) const {
   CurrentFunctionDescription = "'snprintf'";
-  evalSprintfCommon(C, Call, /* IsBounded = */ true);
+  bool IsBI = CE->getBuiltinCallee() == Builtin::BI__builtin___snprintf_chk;
+  evalSprintfCommon(C, CE, /* IsBounded */ true, IsBI);
 }
 
-void CStringChecker::evalSprintfCommon(CheckerContext &C, const CallEvent &Call,
-                                       bool IsBounded) const {
+void CStringChecker::evalSprintfCommon(CheckerContext &C, const CallExpr *CE,
+                                       bool IsBounded, bool IsBuiltin) const {
   ProgramStateRef State = C.getState();
-  const auto *CE = cast<CallExpr>(Call.getOriginExpr());
-  DestinationArgExpr Dest = {{Call.getArgExpr(0), 0}};
+  DestinationArgExpr Dest = {{CE->getArg(0), 0}};
 
-  const auto NumParams = Call.parameters().size();
-  if (CE->getNumArgs() < NumParams) {
-    // This is an invalid call, let's just ignore it.
-    return;
-  }
+  const auto NumParams = CE->getCalleeDecl()->getAsFunction()->getNumParams();
+  assert(CE->getNumArgs() >= NumParams);
 
   const auto AllArguments =
       llvm::make_range(CE->getArgs(), CE->getArgs() + CE->getNumArgs());
@@ -2526,7 +2450,7 @@ void CStringChecker::evalSprintfCommon(CheckerContext &C, const CallEvent &Call,
         {Source.Expression, Source.ArgumentIndex}};
     State = CheckOverlap(
         C, State,
-        (IsBounded ? SizeArgExpr{{Call.getArgExpr(1), 1}} : SrcExprAsSizeDummy),
+        (IsBounded ? SizeArgExpr{{CE->getArg(1), 1}} : SrcExprAsSizeDummy),
         Dest, Source);
     if (!State)
       return;
@@ -2579,8 +2503,8 @@ bool CStringChecker::evalCall(const CallEvent &Call, CheckerContext &C) const {
     return false;
 
   // Check and evaluate the call.
-  assert(isa<CallExpr>(Call.getOriginExpr()));
-  Callback(this, C, Call);
+  const auto *CE = cast<CallExpr>(Call.getOriginExpr());
+  Callback(this, C, CE);
 
   // If the evaluate call resulted in no change, chain to the next eval call
   // handler.

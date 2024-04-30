@@ -32,9 +32,8 @@ class NamespaceBreakpointTestCase(TestBase):
         )
         for bp_loc in bp:
             name = bp_loc.GetAddress().GetFunction().GetName()
-            self.assertIn(
-                name,
-                names,
+            self.assertTrue(
+                name in names,
                 "make sure breakpoint locations are correct for 'func' with eFunctionNameTypeAuto",
             )
 
@@ -62,9 +61,8 @@ class NamespaceBreakpointTestCase(TestBase):
         )
         for bp_loc in bp:
             name = bp_loc.GetAddress().GetFunction().GetName()
-            self.assertIn(
-                name,
-                names,
+            self.assertTrue(
+                name in names,
                 "make sure breakpoint locations are correct for 'func' with eFunctionNameTypeFull",
             )
 
@@ -90,9 +88,8 @@ class NamespaceBreakpointTestCase(TestBase):
         )
         for bp_loc in bp:
             name = bp_loc.GetAddress().GetFunction().GetName()
-            self.assertIn(
-                name,
-                names,
+            self.assertTrue(
+                name in names,
                 "make sure breakpoint locations are correct for 'A::func' with eFunctionNameTypeFull",
             )
 

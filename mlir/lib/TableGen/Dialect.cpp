@@ -32,7 +32,7 @@ StringRef Dialect::getCppNamespace() const {
 std::string Dialect::getCppClassName() const {
   // Simply use the name and remove any '_' tokens.
   std::string cppName = def->getName().str();
-  llvm::erase(cppName, '_');
+  llvm::erase_value(cppName, '_');
   return cppName;
 }
 
@@ -104,10 +104,6 @@ bool Dialect::isExtensible() const {
 
 bool Dialect::usePropertiesForAttributes() const {
   return def->getValueAsBit("usePropertiesForAttributes");
-}
-
-llvm::DagInit *Dialect::getDiscardableAttributes() const {
-  return def->getValueAsDag("discardableAttrs");
 }
 
 bool Dialect::operator==(const Dialect &other) const {

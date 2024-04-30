@@ -8,6 +8,8 @@
 ///
 /// This file describes the RISC-V instructions from the 'Zc*' compressed
 /// instruction extensions, version 1.0.3.
+/// This version is still experimental as the 'Zc*' extensions haven't been
+/// ratified yet.
 ///
 //===----------------------------------------------------------------------===//
 
@@ -15,12 +17,13 @@
 // Operand and SDNode transformation definitions.
 //===----------------------------------------------------------------------===//
 
-def uimm2_lsb0 : RISCVOp,
+def uimm2_lsb0 : Operand<XLenVT>,
                  ImmLeaf<XLenVT, [{return isShiftedUInt<1, 1>(Imm);}]> {
   let ParserMatchClass = UImmAsmOperand<2, "Lsb0">;
   let EncoderMethod = "getImmOpValue";
   let DecoderMethod = "decodeUImmOperand<2>";
   let OperandType = "OPERAND_UIMM2_LSB0";
+  let OperandNamespace = "RISCVOp";
   let MCOperandPredicate = [{
     int64_t Imm;
     if (!MCOp.evaluateAsConstantImm(Imm))
@@ -29,10 +32,11 @@ def uimm2_lsb0 : RISCVOp,
   }];
 }
 
-def uimm8ge32 : RISCVOp {
+def uimm8ge32 : Operand<XLenVT> {
   let ParserMatchClass = UImmAsmOperand<8, "GE32">;
   let DecoderMethod = "decodeUImmOperand<8>";
   let OperandType = "OPERAND_UIMM8_GE32";
+  let OperandNamespace = "RISCVOp";
 }
 
 def RlistAsmOperand : AsmOperandClass {
@@ -41,20 +45,10 @@ def RlistAsmOperand : AsmOperandClass {
   let DiagnosticType = "InvalidRlist";
 }
 
-def StackAdjAsmOperand : AsmOperandClass {
-  let Name = "StackAdj";
-  let ParserMethod = "parseZcmpStackAdj";
-  let DiagnosticType = "InvalidStackAdj";
-  let PredicateMethod = "isSpimm";
-  let RenderMethod = "addSpimmOperands";
-}
-
-def NegStackAdjAsmOperand : AsmOperandClass {
-  let Name = "NegStackAdj";
-  let ParserMethod = "parseZcmpNegStackAdj";
-  let DiagnosticType = "InvalidStackAdj";
-  let PredicateMethod = "isSpimm";
-  let RenderMethod = "addSpimmOperands";
+def SpimmAsmOperand : AsmOperandClass {
+  let Name = "Spimm";
+  let ParserMethod = "parseZcmpSpimm";
+  let DiagnosticType = "InvalidSpimm";
 }
 
 def rlist : Operand<OtherVT> {
@@ -66,34 +60,21 @@ def rlist : Operand<OtherVT> {
     int64_t Imm;
     if (!MCOp.evaluateAsConstantImm(Imm))
       return false;
+    if (!isUInt<4>(Imm)) return false;
     // 0~3 Reserved for EABI
-    return isUInt<4>(Imm) && Imm >= 4;
+    return (Imm >= 4) && (Imm <= 15);
   }];
-}
+ }
 
-def stackadj : RISCVOp<OtherVT> {
-  let ParserMatchClass = StackAdjAsmOperand;
-  let PrintMethod = "printStackAdj";
+def spimm : Operand<OtherVT> {
+  let ParserMatchClass = SpimmAsmOperand;
+  let PrintMethod = "printSpimm";
   let DecoderMethod = "decodeZcmpSpimm";
-  let OperandType = "OPERAND_SPIMM";
   let MCOperandPredicate = [{
     int64_t Imm;
     if (!MCOp.evaluateAsConstantImm(Imm))
       return false;
-    return isShiftedUInt<2, 4>(Imm);
-  }];
-}
-
-def negstackadj : RISCVOp<OtherVT> {
-  let ParserMatchClass = NegStackAdjAsmOperand;
-  let PrintMethod = "printNegStackAdj";
-  let DecoderMethod = "decodeZcmpSpimm";
-  let OperandType = "OPERAND_SPIMM";
-  let MCOperandPredicate = [{
-    int64_t Imm;
-    if (!MCOp.evaluateAsConstantImm(Imm))
-      return false;
-    return isShiftedUInt<2, 4>(Imm);
+    return isShiftedUInt<5, 4>(Imm);
   }];
 }
 
@@ -148,15 +129,14 @@ class RVZcArith_r<bits<5> funct5, string OpcodeStr> :
   let Constraints = "$rd = $rd_wb";
 }
 
-class RVInstZcCPPP<bits<5> funct5, string opcodestr,
-                   DAGOperand immtype = stackadj>
-    : RVInst16<(outs), (ins rlist:$rlist, immtype:$stackadj),
-               opcodestr, "$rlist, $stackadj", [], InstFormatOther> {
+class RVInstZcCPPP<bits<5> funct5, string opcodestr>
+    : RVInst16<(outs), (ins rlist:$rlist, spimm:$spimm),
+               opcodestr, "{$rlist}, $spimm", [], InstFormatOther> {
   bits<4> rlist;
-  bits<16> stackadj;
+  bits<16> spimm;
 
   let Inst{1-0} = 0b10;
-  let Inst{3-2} = stackadj{5-4};
+  let Inst{3-2} = spimm{5-4};
   let Inst{7-4} = rlist;
   let Inst{12-8} = funct5;
   let Inst{15-13} = 0b101;
@@ -206,47 +186,26 @@ def C_SH : CStoreH_rri<0b100011, 0b0, "c.sh">,
 
 // Zcmp
 let DecoderNamespace = "RVZcmp", Predicates = [HasStdExtZcmp],
-    hasSideEffects = 0, mayLoad = 0, mayStore = 0 in {
-let Defs = [X10, X11] in
+    Defs = [X10, X11], hasSideEffects = 0, mayLoad = 0, mayStore = 0 in {
 def CM_MVA01S : RVInst16CA<0b101011, 0b11, 0b10, (outs),
-                            (ins SR07:$rs1, SR07:$rs2), "cm.mva01s", "$rs1, $rs2">,
-                Sched<[WriteIALU, WriteIALU, ReadIALU, ReadIALU]>;
+                            (ins SR07:$rs1, SR07:$rs2), "cm.mva01s", "$rs1, $rs2">;
 
-let Uses = [X10, X11] in
 def CM_MVSA01 : RVInst16CA<0b101011, 0b01, 0b10, (outs SR07:$rs1, SR07:$rs2),
-                            (ins), "cm.mvsa01", "$rs1, $rs2">,
-                Sched<[WriteIALU, WriteIALU, ReadIALU, ReadIALU]>;
+                            (ins), "cm.mvsa01", "$rs1, $rs2">;
 } // DecoderNamespace = "RVZcmp", Predicates = [HasStdExtZcmp]...
 
 let DecoderNamespace = "RVZcmp", Predicates = [HasStdExtZcmp] in {
-let hasSideEffects = 0, mayLoad = 0, mayStore = 1, Uses = [X2], Defs = [X2] in
-def CM_PUSH : RVInstZcCPPP<0b11000, "cm.push", negstackadj>,
-              Sched<[WriteIALU, ReadIALU, ReadStoreData, ReadStoreData,
-                     ReadStoreData, ReadStoreData, ReadStoreData, ReadStoreData,
-                     ReadStoreData, ReadStoreData, ReadStoreData, ReadStoreData,
-                     ReadStoreData, ReadStoreData, ReadStoreData]>;
+let hasSideEffects = 0, mayLoad = 0, mayStore = 1 in
+def CM_PUSH : RVInstZcCPPP<0b11000, "cm.push">;
 
-let hasSideEffects = 0, mayLoad = 1, mayStore = 0, isReturn = 1,
-    Uses = [X2], Defs = [X2] in
-def CM_POPRET : RVInstZcCPPP<0b11110, "cm.popret">,
-                Sched<[WriteIALU, WriteLDW, WriteLDW, WriteLDW, WriteLDW,
-                       WriteLDW, WriteLDW, WriteLDW, WriteLDW, WriteLDW,
-                       WriteLDW, WriteLDW, WriteLDW, WriteLDW, ReadIALU]>;
+let hasSideEffects = 0, mayLoad = 1, mayStore = 0 in
+def CM_POPRET : RVInstZcCPPP<0b11110, "cm.popret">;
 
-let hasSideEffects = 0, mayLoad = 1, mayStore = 0, isReturn = 1,
-    Uses = [X2], Defs = [X2, X10] in
-def CM_POPRETZ : RVInstZcCPPP<0b11100, "cm.popretz">,
-                 Sched<[WriteIALU, WriteIALU, WriteLDW, WriteLDW, WriteLDW,
-                        WriteLDW, WriteLDW, WriteLDW, WriteLDW, WriteLDW,
-                        WriteLDW, WriteLDW, WriteLDW, WriteLDW, WriteLDW,
-                        ReadIALU]>;
+let hasSideEffects = 0, mayLoad = 1, mayStore = 0 in
+def CM_POPRETZ : RVInstZcCPPP<0b11100, "cm.popretz">;
 
-let hasSideEffects = 0, mayLoad = 1, mayStore = 0,
-    Uses = [X2], Defs = [X2] in
-def CM_POP : RVInstZcCPPP<0b11010, "cm.pop">,
-             Sched<[WriteIALU, WriteLDW, WriteLDW, WriteLDW, WriteLDW,
-                    WriteLDW, WriteLDW, WriteLDW, WriteLDW, WriteLDW, WriteLDW,
-                    WriteLDW, WriteLDW, WriteLDW, ReadIALU]>;
+let hasSideEffects = 0, mayLoad = 1, mayStore = 0 in
+def CM_POP : RVInstZcCPPP<0b11010, "cm.pop">;
 } // DecoderNamespace = "RVZcmp", Predicates = [HasStdExtZcmp]...
 
 let DecoderNamespace = "RVZcmt", Predicates = [HasStdExtZcmt],
@@ -326,9 +285,9 @@ def : CompressPat<(SH GPRC:$rs2, GPRCMem:$rs1, uimm2_lsb0:$imm),
 //===----------------------------------------------------------------------===//
 
 let Predicates = [HasStdExtZcb] in {
-def : InstAlias<"c.lbu $rd, (${rs1})",(C_LBU GPRC:$rd, GPRC:$rs1, 0), 0>;
-def : InstAlias<"c.lhu $rd, (${rs1})",(C_LHU GPRC:$rd, GPRC:$rs1, 0), 0>;
-def : InstAlias<"c.lh $rd, (${rs1})", (C_LH GPRC:$rd, GPRC:$rs1, 0), 0>;
-def : InstAlias<"c.sb $rd, (${rs1})", (C_SB GPRC:$rd, GPRC:$rs1, 0), 0>;
-def : InstAlias<"c.sh $rd, (${rs1})", (C_SH GPRC:$rd, GPRC:$rs1, 0), 0>;
+def : InstAlias<"c.lbu $rd, (${rs1})",(C_LBU GPRC:$rd, GPRC:$rs1, 0)>;
+def : InstAlias<"c.lhu $rd, (${rs1})",(C_LHU GPRC:$rd, GPRC:$rs1, 0)>;
+def : InstAlias<"c.lh $rd, (${rs1})", (C_LH GPRC:$rd, GPRC:$rs1, 0)>;
+def : InstAlias<"c.sb $rd, (${rs1})", (C_SB GPRC:$rd, GPRC:$rs1, 0)>;
+def : InstAlias<"c.sh $rd, (${rs1})", (C_SH GPRC:$rd, GPRC:$rs1, 0)>;
 }

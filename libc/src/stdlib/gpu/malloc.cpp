@@ -7,14 +7,20 @@
 //===----------------------------------------------------------------------===//
 
 #include "src/stdlib/malloc.h"
-
-#include "src/__support/GPU/allocator.h"
+#include "src/__support/RPC/rpc_client.h"
 #include "src/__support/common.h"
 
-namespace LIBC_NAMESPACE {
+namespace __llvm_libc {
 
 LLVM_LIBC_FUNCTION(void *, malloc, (size_t size)) {
-  return gpu::allocate(size);
+  void *ptr = nullptr;
+  rpc::Client::Port port = rpc::client.open<RPC_MALLOC>();
+  port.send_and_recv([=](rpc::Buffer *buffer) { buffer->data[0] = size; },
+                     [&](rpc::Buffer *buffer) {
+                       ptr = reinterpret_cast<void *>(buffer->data[0]);
+                     });
+  port.close();
+  return ptr;
 }
 
-} // namespace LIBC_NAMESPACE
+} // namespace __llvm_libc

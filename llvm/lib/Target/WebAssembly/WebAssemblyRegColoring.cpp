@@ -129,7 +129,7 @@ buildVRegToDbgValueMap(MachineFunction &MF, const LiveIntervals *Liveness) {
 // changes.
 static void undefInvalidDbgValues(
     const LiveIntervals *Liveness,
-    ArrayRef<SmallVector<LiveInterval *, 4>> Assignments,
+    const ArrayRef<SmallVector<LiveInterval *, 4>> &Assignments,
     DenseMap<Register, std::vector<std::pair<SlotIndex, MachineInstr *>>>
         &DbgVRegToValues) {
 #ifndef NDEBUG
@@ -226,7 +226,7 @@ bool WebAssemblyRegColoring::runOnMachineFunction(MachineFunction &MF) {
 
   // If there are calls to setjmp or sigsetjmp, don't perform coloring. Virtual
   // registers could be modified before the longjmp is executed, resulting in
-  // the wrong value being used afterwards.
+  // the wrong value being used afterwards. (See <rdar://problem/8007500>.)
   // TODO: Does WebAssembly need to care about setjmp for register coloring?
   if (MF.exposesReturnsTwice())
     return false;

@@ -80,7 +80,7 @@ public:
     auto newType = FunctionType::get(rewriter.getContext(),
                                      argumentMapping.getConvertedTypes(),
                                      funcResultMapping.getConvertedTypes());
-    rewriter.modifyOpInPlace(op, [&] { op.setType(newType); });
+    rewriter.updateRootInPlace(op, [&] { op.setType(newType); });
 
     // Update block signatures.
     if (!op.isExternal()) {
@@ -105,7 +105,7 @@ public:
       return failure();
 
     // Convert operands.
-    rewriter.modifyOpInPlace(
+    rewriter.updateRootInPlace(
         op, [&] { op->setOperands(adaptor.getFlatOperands()); });
 
     return success();

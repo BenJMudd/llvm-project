@@ -139,7 +139,7 @@ class ShrinkWrap : public MachineFunctionPass {
   MachineOptimizationRemarkEmitter *ORE = nullptr;
 
   /// Frequency of the Entry block.
-  BlockFrequency EntryFreq;
+  uint64_t EntryFreq = 0;
 
   /// Current opcode for frame setup.
   unsigned FrameSetupOpcode = ~0u;
@@ -161,11 +161,9 @@ class ShrinkWrap : public MachineFunctionPass {
   /// Current MachineFunction.
   MachineFunction *MachineFunc = nullptr;
 
-  /// Is `true` for the block numbers where we assume possible stack accesses
-  /// or computation of stack-relative addresses on any CFG path including the
-  /// block itself. Is `false` for basic blocks where we can guarantee the
-  /// opposite. False positives won't lead to incorrect analysis results,
-  /// therefore this approach is fair.
+  /// Is `true` for block numbers where we can guarantee no stack access
+  /// or computation of stack-relative addresses on any CFG path including
+  /// the block itself.
   BitVector StackAddressUsedBlockInfo;
 
   /// Check if \p MI uses or defines a callee-saved register or
@@ -642,7 +640,7 @@ bool ShrinkWrap::postShrinkWrapping(bool HasCandidate, MachineFunction &MF,
       FindIDom<>(**DirtyPreds.begin(), DirtyPreds, *MDT, false);
 
   while (NewSave && (hasDirtyPred(ReachableByDirty, *NewSave) ||
-                     EntryFreq < MBFI->getBlockFreq(NewSave) ||
+                     EntryFreq < MBFI->getBlockFreq(NewSave).getFrequency() ||
                      /*Entry freq has been observed more than a loop block in
                         some cases*/
                      MLI->getLoopFor(NewSave)))
@@ -677,8 +675,8 @@ bool ShrinkWrap::postShrinkWrapping(bool HasCandidate, MachineFunction &MF,
          "Incorrect save or restore point due to dominance relations");
   assert((!MLI->getLoopFor(Save) && !MLI->getLoopFor(Restore)) &&
          "Unexpected save or restore point in a loop");
-  assert((EntryFreq >= MBFI->getBlockFreq(Save) &&
-          EntryFreq >= MBFI->getBlockFreq(Restore)) &&
+  assert((EntryFreq >= MBFI->getBlockFreq(Save).getFrequency() &&
+          EntryFreq >= MBFI->getBlockFreq(Restore).getFrequency()) &&
          "Incorrect save or restore point based on block frequency");
   return true;
 }
@@ -880,21 +878,21 @@ bool ShrinkWrap::performShrinkWrapping(
     return false;
   }
 
-  LLVM_DEBUG(dbgs() << "\n ** Results **\nFrequency of the Entry: "
-                    << EntryFreq.getFrequency() << '\n');
+  LLVM_DEBUG(dbgs() << "\n ** Results **\nFrequency of the Entry: " << EntryFreq
+                    << '\n');
 
   const TargetFrameLowering *TFI =
       MachineFunc->getSubtarget().getFrameLowering();
   do {
     LLVM_DEBUG(dbgs() << "Shrink wrap candidates (#, Name, Freq):\nSave: "
                       << printMBBReference(*Save) << ' '
-                      << printBlockFreq(*MBFI, *Save)
+                      << MBFI->getBlockFreq(Save).getFrequency()
                       << "\nRestore: " << printMBBReference(*Restore) << ' '
-                      << printBlockFreq(*MBFI, *Restore) << '\n');
+                      << MBFI->getBlockFreq(Restore).getFrequency() << '\n');
 
     bool IsSaveCheap, TargetCanUseSaveAsPrologue = false;
-    if (((IsSaveCheap = EntryFreq >= MBFI->getBlockFreq(Save)) &&
-         EntryFreq >= MBFI->getBlockFreq(Restore)) &&
+    if (((IsSaveCheap = EntryFreq >= MBFI->getBlockFreq(Save).getFrequency()) &&
+         EntryFreq >= MBFI->getBlockFreq(Restore).getFrequency()) &&
         ((TargetCanUseSaveAsPrologue = TFI->canUseAsPrologue(*Save)) &&
          TFI->canUseAsEpilogue(*Restore)))
       break;
@@ -950,9 +948,6 @@ bool ShrinkWrap::runOnMachineFunction(MachineFunction &MF) {
 
   bool Changed = false;
 
-  // Initially, conservatively assume that stack addresses can be used in each
-  // basic block and change the state only for those basic blocks for which we
-  // were able to prove the opposite.
   StackAddressUsedBlockInfo.resize(MF.getNumBlockIDs(), true);
   bool HasCandidate = performShrinkWrapping(RPOT, RS.get());
   StackAddressUsedBlockInfo.clear();

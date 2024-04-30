@@ -153,15 +153,10 @@ private:
   /// a vectorization chain.
   bool vectorizeChainsInBlock(BasicBlock *BB, slpvectorizer::BoUpSLP &R);
 
-  std::optional<bool> vectorizeStoreChain(ArrayRef<Value *> Chain,
-                                          slpvectorizer::BoUpSLP &R,
-                                          unsigned Idx, unsigned MinVF,
-                                          unsigned &Size);
+  bool vectorizeStoreChain(ArrayRef<Value *> Chain, slpvectorizer::BoUpSLP &R,
+                           unsigned Idx, unsigned MinVF);
 
-  bool vectorizeStores(
-      ArrayRef<StoreInst *> Stores, slpvectorizer::BoUpSLP &R,
-      DenseSet<std::tuple<Value *, Value *, Value *, Value *, unsigned>>
-          &Visited);
+  bool vectorizeStores(ArrayRef<StoreInst *> Stores, slpvectorizer::BoUpSLP &R);
 
   /// The store instructions in a basic block organized by base pointer.
   StoreListMap Stores;

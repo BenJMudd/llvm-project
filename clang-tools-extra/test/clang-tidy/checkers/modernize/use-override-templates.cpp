@@ -1,5 +1,5 @@
 // RUN: %check_clang_tidy %s modernize-use-override %t -- \
-// RUN:   -config="{CheckOptions: {modernize-use-override.IgnoreTemplateInstantiations: true}}"
+// RUN:   -config="{CheckOptions: [{key: modernize-use-override.IgnoreTemplateInstantiations, value: true}]}"
 
 struct Base {
   virtual void foo();

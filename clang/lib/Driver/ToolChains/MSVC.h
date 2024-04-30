@@ -11,7 +11,6 @@
 
 #include "AMDGPU.h"
 #include "Cuda.h"
-#include "LazyDetector.h"
 #include "clang/Driver/Compilation.h"
 #include "clang/Driver/Tool.h"
 #include "clang/Driver/ToolChain.h"
@@ -24,7 +23,7 @@ namespace tools {
 
 /// Visual studio tools.
 namespace visualstudio {
-class LLVM_LIBRARY_VISIBILITY Linker final : public Tool {
+class LLVM_LIBRARY_VISIBILITY Linker : public Tool {
 public:
   Linker(const ToolChain &TC) : Tool("visualstudio::Linker", "linker", TC) {}
 
@@ -137,8 +136,8 @@ private:
   std::optional<llvm::StringRef> WinSdkDir, WinSdkVersion, WinSysRoot;
   std::string VCToolChainPath;
   llvm::ToolsetLayout VSLayout = llvm::ToolsetLayout::OlderVS;
-  LazyDetector<CudaInstallationDetector> CudaInstallation;
-  LazyDetector<RocmInstallationDetector> RocmInstallation;
+  CudaInstallationDetector CudaInstallation;
+  RocmInstallationDetector RocmInstallation;
 };
 
 } // end namespace toolchains

@@ -32,8 +32,7 @@ public:
                           StringRef FileName, bool IsAngled,
                           CharSourceRange FilenameRange,
                           OptionalFileEntryRef File, StringRef SearchPath,
-                          StringRef RelativePath, const Module *SuggestedModule,
-                          bool ModuleImported,
+                          StringRef RelativePath, const Module *Imported,
                           SrcMgr::CharacteristicKind FileType) override;
 
 private:
@@ -58,7 +57,7 @@ public:
   bool shouldVisitLambdaBody() const { return false; }
 
   bool VisitLinkageSpecDecl(LinkageSpecDecl *LinkSpecDecl) const {
-    if (LinkSpecDecl->getLanguage() != LinkageSpecLanguageIDs::C ||
+    if (LinkSpecDecl->getLanguage() != LinkageSpecDecl::lang_c ||
         !LinkSpecDecl->hasBraces())
       return true;
 
@@ -158,7 +157,7 @@ IncludeModernizePPCallbacks::IncludeModernizePPCallbacks(
             {"wctype.h", "cwctype"}})) {
     CStyledHeaderToCxx.insert(KeyValue);
   }
-  // Add C++11 headers.
+  // Add C++ 11 headers.
   if (LangOpts.CPlusPlus11) {
     for (const auto &KeyValue :
          std::vector<std::pair<llvm::StringRef, std::string>>(
@@ -179,8 +178,8 @@ IncludeModernizePPCallbacks::IncludeModernizePPCallbacks(
 void IncludeModernizePPCallbacks::InclusionDirective(
     SourceLocation HashLoc, const Token &IncludeTok, StringRef FileName,
     bool IsAngled, CharSourceRange FilenameRange, OptionalFileEntryRef File,
-    StringRef SearchPath, StringRef RelativePath, const Module *SuggestedModule,
-    bool ModuleImported, SrcMgr::CharacteristicKind FileType) {
+    StringRef SearchPath, StringRef RelativePath, const Module *Imported,
+    SrcMgr::CharacteristicKind FileType) {
 
   // If we don't want to warn for non-main file reports and this is one, skip
   // it.
@@ -200,12 +199,11 @@ void IncludeModernizePPCallbacks::InclusionDirective(
   // 3. Do nothing and let the user deal with the migration himself.
   SourceLocation DiagLoc = FilenameRange.getBegin();
   if (CStyledHeaderToCxx.count(FileName) != 0) {
-    IncludesToBeProcessed.emplace_back(
+    IncludesToBeProcessed.push_back(
         IncludeMarker{CStyledHeaderToCxx[FileName], FileName,
                       FilenameRange.getAsRange(), DiagLoc});
   } else if (DeleteHeaders.count(FileName) != 0) {
-    IncludesToBeProcessed.emplace_back(
-        // NOLINTNEXTLINE(modernize-use-emplace) - false-positive
+    IncludesToBeProcessed.push_back(
         IncludeMarker{std::string{}, FileName,
                       SourceRange{HashLoc, FilenameRange.getEnd()}, DiagLoc});
   }

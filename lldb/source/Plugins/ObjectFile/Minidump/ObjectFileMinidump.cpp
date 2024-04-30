@@ -14,7 +14,6 @@
 #include "lldb/Core/PluginManager.h"
 #include "lldb/Core/Section.h"
 #include "lldb/Target/Process.h"
-#include "lldb/Utility/LLDBLog.h"
 
 #include "llvm/Support/FileSystem.h"
 
@@ -58,9 +57,10 @@ bool ObjectFileMinidump::SaveCore(const lldb::ProcessSP &process_sp,
                                   const lldb_private::FileSpec &outfile,
                                   lldb::SaveCoreStyle &core_style,
                                   lldb_private::Status &error) {
-  // Set default core style if it isn't set.
-  if (core_style == SaveCoreStyle::eSaveCoreUnspecified)
-    core_style = SaveCoreStyle::eSaveCoreStackOnly;
+  if (core_style != SaveCoreStyle::eSaveCoreStackOnly) {
+    error.SetErrorString("Only stack minidumps supported yet.");
+    return false;
+  }
 
   if (!process_sp)
     return false;
@@ -69,34 +69,28 @@ bool ObjectFileMinidump::SaveCore(const lldb::ProcessSP &process_sp,
 
   Target &target = process_sp->GetTarget();
 
-  Log *log = GetLog(LLDBLog::Object);
   error = builder.AddSystemInfo(target.GetArchitecture().GetTriple());
-  if (error.Fail()) {
-    LLDB_LOG(log, "AddSystemInfo failed: %s", error.AsCString());
+  if (error.Fail())
     return false;
-  }
 
   error = builder.AddModuleList(target);
-  if (error.Fail()) {
-    LLDB_LOG(log, "AddModuleList failed: %s", error.AsCString());
+  if (error.Fail())
     return false;
-  }
 
   builder.AddMiscInfo(process_sp);
 
-  error = builder.AddThreadList(process_sp);
-  if (error.Fail()) {
-    LLDB_LOG(log, "AddThreadList failed: %s", error.AsCString());
-    return false;
-  }
+  if (target.GetArchitecture().GetMachine() == llvm::Triple::ArchType::x86_64) {
+    error = builder.AddThreadList(process_sp);
+    if (error.Fail())
+      return false;
 
-  // Add any exceptions but only if there are any in any threads.
-  builder.AddExceptions(process_sp);
+    error = builder.AddException(process_sp);
+    if (error.Fail())
+      return false;
 
-  error = builder.AddMemoryList(process_sp, core_style);
-  if (error.Fail()) {
-    LLDB_LOG(log, "AddMemoryList failed: %s", error.AsCString());
-    return false;
+    error = builder.AddMemoryList(process_sp);
+    if (error.Fail())
+      return false;
   }
 
   if (target.GetArchitecture().GetTriple().getOS() ==

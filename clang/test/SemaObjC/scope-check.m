@@ -60,6 +60,7 @@ void test2(int a) {
   return;
 }
 
+// rdar://6803963
 void test3(void) {
   @try {
     goto blargh;

@@ -20,11 +20,12 @@
 //===----------------------------------------------------------------------===//
 
 #include "MCTargetDesc/WebAssemblyMCTargetDesc.h" // for WebAssembly::ARGUMENT_*
+#include "Utils/WebAssemblyUtilities.h"
 #include "WebAssembly.h"
 #include "WebAssemblyDebugValueManager.h"
 #include "WebAssemblyMachineFunctionInfo.h"
 #include "WebAssemblySubtarget.h"
-#include "WebAssemblyUtilities.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/CodeGen/LiveIntervals.h"
 #include "llvm/CodeGen/MachineBlockFrequencyInfo.h"
@@ -80,13 +81,13 @@ FunctionPass *llvm::createWebAssemblyRegStackify() {
 // the expression stack.
 static void imposeStackOrdering(MachineInstr *MI) {
   // Write the opaque VALUE_STACK register.
-  if (!MI->definesRegister(WebAssembly::VALUE_STACK, /*TRI=*/nullptr))
+  if (!MI->definesRegister(WebAssembly::VALUE_STACK))
     MI->addOperand(MachineOperand::CreateReg(WebAssembly::VALUE_STACK,
                                              /*isDef=*/true,
                                              /*isImp=*/true));
 
   // Also read the opaque VALUE_STACK register.
-  if (!MI->readsRegister(WebAssembly::VALUE_STACK, /*TRI=*/nullptr))
+  if (!MI->readsRegister(WebAssembly::VALUE_STACK))
     MI->addOperand(MachineOperand::CreateReg(WebAssembly::VALUE_STACK,
                                              /*isDef=*/false,
                                              /*isImp=*/true));
@@ -371,8 +372,8 @@ static bool isSafeToMove(const MachineOperand *Def, const MachineOperand *Use,
     Register Reg = MO.getReg();
 
     // If the register is dead here and at Insert, ignore it.
-    if (MO.isDead() && Insert->definesRegister(Reg, /*TRI=*/nullptr) &&
-        !Insert->readsRegister(Reg, /*TRI=*/nullptr))
+    if (MO.isDead() && Insert->definesRegister(Reg) &&
+        !Insert->readsRegister(Reg))
       continue;
 
     if (Reg.isPhysical()) {
@@ -864,8 +865,7 @@ bool WebAssemblyRegStackify::runOnMachineFunction(MachineFunction &MF) {
         if (WebAssembly::isArgument(DefI->getOpcode()))
           continue;
 
-        MachineOperand *Def =
-            DefI->findRegisterDefOperand(Reg, /*TRI=*/nullptr);
+        MachineOperand *Def = DefI->findRegisterDefOperand(Reg);
         assert(Def != nullptr);
 
         // Decide which strategy to take. Prefer to move a single-use value

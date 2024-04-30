@@ -11,7 +11,6 @@
 ; CHECK-NEXT: gdsSize: 0
 ; CHECK-NEXT: dynLDSAlign: 1
 ; CHECK-NEXT: isEntryFunction: true
-; CHECK-NEXT: isChainFunction: false
 ; CHECK-NEXT: noSignedZerosFPMath: false
 ; CHECK-NEXT: memoryBound: false
 ; CHECK-NEXT: waveLimiter: false

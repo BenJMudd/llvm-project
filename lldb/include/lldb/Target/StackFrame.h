@@ -1,4 +1,3 @@
-
 //===-- StackFrame.h --------------------------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
@@ -15,7 +14,6 @@
 
 #include "lldb/Utility/Flags.h"
 
-#include "lldb/Core/FormatEntity.h"
 #include "lldb/Core/ValueObjectList.h"
 #include "lldb/Symbol/SymbolContext.h"
 #include "lldb/Target/ExecutionContextScope.h"
@@ -326,23 +324,8 @@ public:
   ///    C string with the assembly instructions for this function.
   const char *Disassemble();
 
-  /// Print a description of this frame using the provided frame format.
-  ///
-  /// \param[out] strm
-  ///   The Stream to print the description to.
-  ///
-  /// \param[in] frame_marker
-  ///   Optional string that will be prepended to the frame output description.
-  ///
-  /// \return
-  ///   \b true if and only if dumping with the given \p format worked.
-  bool DumpUsingFormat(Stream &strm,
-                       const lldb_private::FormatEntity::Entry *format,
-                       llvm::StringRef frame_marker = {});
-
   /// Print a description for this frame using the frame-format formatter
-  /// settings. If the current frame-format settings are invalid, then the
-  /// default formatter will be used (see \a StackFrame::Dump()).
+  /// settings.
   ///
   /// \param [in] strm
   ///   The Stream to print the description to.
@@ -447,12 +430,13 @@ public:
   /// Query this frame to determine what the default language should be when
   /// parsing expressions given the execution context.
   ///
-  /// \return   The language of the frame if known.
-  SourceLanguage GetLanguage();
+  /// \return
+  ///   The language of the frame if known, else lldb::eLanguageTypeUnknown.
+  lldb::LanguageType GetLanguage();
 
-  /// Similar to GetLanguage(), but is allowed to take a potentially incorrect
-  /// guess if exact information is not available.
-  SourceLanguage GuessLanguage();
+  // similar to GetLanguage(), but is allowed to take a potentially incorrect
+  // guess if exact information is not available
+  lldb::LanguageType GuessLanguage();
 
   /// Attempt to econstruct the ValueObject for a given raw address touched by
   /// the current instruction.  The ExpressionPath should indicate how to get

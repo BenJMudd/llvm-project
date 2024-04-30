@@ -52,7 +52,6 @@ stages there is no ABI stability in any form.
    usage_modes
    overlay_mode
    fullbuild_mode
-   configure
    gpu/index.rst
 
 .. toctree::
@@ -65,14 +64,6 @@ stages there is no ABI stability in any form.
    math/index.rst
    strings
    stdio
-   stdbit
-   fenv
-   libc_search
-   c23
-   ctype
-   signal
-   threads
-   setjmp
 
 .. toctree::
    :hidden:
@@ -83,7 +74,6 @@ stages there is no ABI stability in any form.
    dev/index.rst
    porting
    contributing
-   talks
 
 .. toctree::
    :hidden:

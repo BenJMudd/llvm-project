@@ -47,22 +47,6 @@ void LoongArchInstrInfo::copyPhysReg(MachineBasicBlock &MBB,
     return;
   }
 
-  // VR->VR copies.
-  if (LoongArch::LSX128RegClass.contains(DstReg, SrcReg)) {
-    BuildMI(MBB, MBBI, DL, get(LoongArch::VORI_B), DstReg)
-        .addReg(SrcReg, getKillRegState(KillSrc))
-        .addImm(0);
-    return;
-  }
-
-  // XR->XR copies.
-  if (LoongArch::LASX256RegClass.contains(DstReg, SrcReg)) {
-    BuildMI(MBB, MBBI, DL, get(LoongArch::XVORI_B), DstReg)
-        .addReg(SrcReg, getKillRegState(KillSrc))
-        .addImm(0);
-    return;
-  }
-
   // GPR->CFR copy.
   if (LoongArch::CFRRegClass.contains(DstReg) &&
       LoongArch::GPRRegClass.contains(SrcReg)) {
@@ -90,14 +74,6 @@ void LoongArchInstrInfo::copyPhysReg(MachineBasicBlock &MBB,
     Opc = LoongArch::FMOV_S;
   } else if (LoongArch::FPR64RegClass.contains(DstReg, SrcReg)) {
     Opc = LoongArch::FMOV_D;
-  } else if (LoongArch::GPRRegClass.contains(DstReg) &&
-             LoongArch::FPR32RegClass.contains(SrcReg)) {
-    // FPR32 -> GPR copies
-    Opc = LoongArch::MOVFR2GR_S;
-  } else if (LoongArch::GPRRegClass.contains(DstReg) &&
-             LoongArch::FPR64RegClass.contains(SrcReg)) {
-    // FPR64 -> GPR copies
-    Opc = LoongArch::MOVFR2GR_D;
   } else {
     // TODO: support other copies.
     llvm_unreachable("Impossible reg-to-reg copy");
@@ -123,10 +99,6 @@ void LoongArchInstrInfo::storeRegToStackSlot(
     Opcode = LoongArch::FST_S;
   else if (LoongArch::FPR64RegClass.hasSubClassEq(RC))
     Opcode = LoongArch::FST_D;
-  else if (LoongArch::LSX128RegClass.hasSubClassEq(RC))
-    Opcode = LoongArch::VST;
-  else if (LoongArch::LASX256RegClass.hasSubClassEq(RC))
-    Opcode = LoongArch::XVST;
   else if (LoongArch::CFRRegClass.hasSubClassEq(RC))
     Opcode = LoongArch::PseudoST_CFR;
   else
@@ -161,10 +133,6 @@ void LoongArchInstrInfo::loadRegFromStackSlot(MachineBasicBlock &MBB,
     Opcode = LoongArch::FLD_S;
   else if (LoongArch::FPR64RegClass.hasSubClassEq(RC))
     Opcode = LoongArch::FLD_D;
-  else if (LoongArch::LSX128RegClass.hasSubClassEq(RC))
-    Opcode = LoongArch::VLD;
-  else if (LoongArch::LASX256RegClass.hasSubClassEq(RC))
-    Opcode = LoongArch::XVLD;
   else if (LoongArch::CFRRegClass.hasSubClassEq(RC))
     Opcode = LoongArch::PseudoLD_CFR;
   else
@@ -530,12 +498,6 @@ LoongArchInstrInfo::getSerializableDirectMachineOperandTargetFlags() const {
       {MO_IE_PC_LO, "loongarch-ie-pc-lo"},
       {MO_IE_PC64_LO, "loongarch-ie-pc64-lo"},
       {MO_IE_PC64_HI, "loongarch-ie-pc64-hi"},
-      {MO_DESC_PC_HI, "loongarch-desc-pc-hi"},
-      {MO_DESC_PC_LO, "loongarch-desc-pc-lo"},
-      {MO_DESC64_PC_LO, "loongarch-desc64-pc-lo"},
-      {MO_DESC64_PC_HI, "loongarch-desc64-pc-hi"},
-      {MO_DESC_LD, "loongarch-desc-ld"},
-      {MO_DESC_CALL, "loongarch-desc-call"},
       {MO_LD_PC_HI, "loongarch-ld-pc-hi"},
       {MO_GD_PC_HI, "loongarch-gd-pc-hi"}};
   return ArrayRef(TargetFlags);

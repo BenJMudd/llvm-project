@@ -24,10 +24,13 @@ Introduction
 
 }];
 
-  string Program = "Flang";
-  list<string> VisibilityMask = ["FlangOption"];
-  list<string> IgnoreFlags = ["HelpHidden", "Unsupported", "Ignored"];
+  string Program = "flang";
+
+  list<string> ExcludedFlags = ["HelpHidden", "NoDriverOption",
+                                "CLOption", "Unsupported", "Ignored"];
+  list<string> IncludedFlags = ["FlangOption"];
+
 }
 
-#define GENERATING_DOCS
+
 include "Options.td"

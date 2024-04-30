@@ -547,25 +547,24 @@ static void printf_common(void *ctx, const char *format, va_list aq) {
       continue;
     } else if (size == FSS_STRLEN) {
       if (void *argp = va_arg(aq, void *)) {
-        uptr len;
         if (dir.starredPrecision) {
           // FIXME: properly support starred precision for strings.
-          len = 0;
+          size = 0;
         } else if (dir.fieldPrecision > 0) {
           // Won't read more than "precision" symbols.
-          len = internal_strnlen((const char *)argp, dir.fieldPrecision);
-          if (len < (uptr)dir.fieldPrecision)
-            len++;
+          size = internal_strnlen((const char *)argp, dir.fieldPrecision);
+          if (size < dir.fieldPrecision) size++;
         } else {
           // Whole string will be accessed.
-          len = internal_strlen((const char *)argp) + 1;
+          size = internal_strlen((const char *)argp) + 1;
         }
-        COMMON_INTERCEPTOR_READ_RANGE(ctx, argp, len);
+        COMMON_INTERCEPTOR_READ_RANGE(ctx, argp, size);
       }
     } else if (size == FSS_WCSLEN) {
       if (void *argp = va_arg(aq, void *)) {
         // FIXME: Properly support wide-character strings (via wcsrtombs).
-        COMMON_INTERCEPTOR_READ_RANGE(ctx, argp, 0);
+        size = 0;
+        COMMON_INTERCEPTOR_READ_RANGE(ctx, argp, size);
       }
     } else {
       // Skip non-pointer args

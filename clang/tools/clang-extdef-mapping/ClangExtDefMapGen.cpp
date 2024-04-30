@@ -98,14 +98,12 @@ void MapExtDefNamesConsumer::addIfInMain(const DeclaratorDecl *DD,
   }
 
   switch (DD->getLinkageInternal()) {
-  case Linkage::External:
-  case Linkage::VisibleNone:
-  case Linkage::UniqueExternal:
+  case ExternalLinkage:
+  case VisibleNoLinkage:
+  case UniqueExternalLinkage:
     if (SM.isInMainFile(defStart))
       Index[*LookupName] = CurrentFileName;
     break;
-  case Linkage::Invalid:
-    llvm_unreachable("Linkage has not been computed!");
   default:
     break;
   }
@@ -181,7 +179,7 @@ static int HandleFiles(ArrayRef<std::string> SourceFiles,
   // process them directly in HandleAST, otherwise put them
   // on a list for ClangTool to handle.
   for (StringRef Src : SourceFiles) {
-    if (Src.ends_with(".ast")) {
+    if (Src.endswith(".ast")) {
       if (!HandleAST(Src)) {
         return 1;
       }

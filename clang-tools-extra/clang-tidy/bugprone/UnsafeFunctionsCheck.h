@@ -12,7 +12,9 @@
 #include "../ClangTidyCheck.h"
 #include <optional>
 
-namespace clang::tidy::bugprone {
+namespace clang {
+namespace tidy {
+namespace bugprone {
 
 /// Checks for functions that have safer, more secure replacements available, or
 /// are considered deprecated due to design flaws. This check relies heavily on,
@@ -43,6 +45,8 @@ private:
   std::optional<bool> IsAnnexKAvailable;
 };
 
-} // namespace clang::tidy::bugprone
+} // namespace bugprone
+} // namespace tidy
+} // namespace clang
 
 #endif // LLVM_CLANG_TOOLS_EXTRA_CLANG_TIDY_BUGPRONE_UNSAFEFUNCTIONSCHECK_H

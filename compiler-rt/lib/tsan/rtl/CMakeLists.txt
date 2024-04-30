@@ -220,10 +220,6 @@ else()
       set(TSAN_ASM_SOURCES
         tsan_rtl_mips64.S
         )
-    elseif(arch MATCHES "riscv64")
-      set(TSAN_ASM_SOURCES
-        tsan_rtl_riscv64.S
-        )
     elseif(arch MATCHES "s390x")
       set(TSAN_ASM_SOURCES
         tsan_rtl_s390x.S
@@ -250,7 +246,6 @@ else()
               $<TARGET_OBJECTS:RTSanitizerCommonLibc.${arch}>
               $<TARGET_OBJECTS:RTSanitizerCommonCoverage.${arch}>
               $<TARGET_OBJECTS:RTSanitizerCommonSymbolizer.${arch}>
-              $<TARGET_OBJECTS:RTSanitizerCommonSymbolizerInternal.${arch}>
               $<TARGET_OBJECTS:RTUbsan.${arch}>
       ADDITIONAL_HEADERS ${TSAN_HEADERS}
       CFLAGS ${TSAN_RTL_CFLAGS}
@@ -274,7 +269,6 @@ else()
               $<TARGET_OBJECTS:RTSanitizerCommonLibc.${arch}>
               $<TARGET_OBJECTS:RTSanitizerCommonCoverage.${arch}>
               $<TARGET_OBJECTS:RTSanitizerCommonSymbolizer.${arch}>
-              $<TARGET_OBJECTS:RTSanitizerCommonSymbolizerInternal.${arch}>
               $<TARGET_OBJECTS:RTUbsan.${arch}>
       ADDITIONAL_HEADERS ${TSAN_HEADERS}
       CFLAGS ${TSAN_RTL_DYNAMIC_CFLAGS}

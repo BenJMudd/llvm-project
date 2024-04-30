@@ -6,7 +6,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "Common/OptEmitter.h"
+#include "OptEmitter.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/TableGen/Record.h"
@@ -91,7 +91,7 @@ static void EmitOptRST(RecordKeeper &Records, raw_ostream &OS) {
           HelpText += join(Values.begin(), Values.end() - 1, "', '");
           HelpText += "' or '";
         }
-        HelpText += (Values.back() + "'.").str();
+        HelpText += (Values.front() + "'.").str();
       }
 
       if (!HelpText.empty()) {

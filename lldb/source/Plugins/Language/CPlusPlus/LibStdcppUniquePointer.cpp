@@ -26,11 +26,11 @@ class LibStdcppUniquePtrSyntheticFrontEnd : public SyntheticChildrenFrontEnd {
 public:
   explicit LibStdcppUniquePtrSyntheticFrontEnd(lldb::ValueObjectSP valobj_sp);
 
-  llvm::Expected<uint32_t> CalculateNumChildren() override;
+  size_t CalculateNumChildren() override;
 
-  lldb::ValueObjectSP GetChildAtIndex(uint32_t idx) override;
+  lldb::ValueObjectSP GetChildAtIndex(size_t idx) override;
 
-  lldb::ChildCacheState Update() override;
+  bool Update() override;
 
   bool MightHaveChildren() override;
 
@@ -84,11 +84,11 @@ ValueObjectSP LibStdcppUniquePtrSyntheticFrontEnd::GetTuple() {
   return obj_child_sp;
 }
 
-lldb::ChildCacheState LibStdcppUniquePtrSyntheticFrontEnd::Update() {
+bool LibStdcppUniquePtrSyntheticFrontEnd::Update() {
   ValueObjectSP tuple_sp = GetTuple();
 
   if (!tuple_sp)
-    return lldb::ChildCacheState::eRefetch;
+    return false;
 
   std::unique_ptr<SyntheticChildrenFrontEnd> tuple_frontend(
       LibStdcppTupleSyntheticFrontEndCreator(nullptr, tuple_sp));
@@ -108,35 +108,32 @@ lldb::ChildCacheState LibStdcppUniquePtrSyntheticFrontEnd::Update() {
     if (del_obj)
       m_del_obj = del_obj->Clone(ConstString("deleter")).get();
   }
-  m_obj_obj = nullptr;
 
-  return lldb::ChildCacheState::eRefetch;
+  if (m_ptr_obj) {
+    Status error;
+    ValueObjectSP obj_obj = m_ptr_obj->Dereference(error);
+    if (error.Success()) {
+      m_obj_obj = obj_obj->Clone(ConstString("object")).get();
+    }
+  }
+
+  return false;
 }
 
 bool LibStdcppUniquePtrSyntheticFrontEnd::MightHaveChildren() { return true; }
 
 lldb::ValueObjectSP
-LibStdcppUniquePtrSyntheticFrontEnd::GetChildAtIndex(uint32_t idx) {
+LibStdcppUniquePtrSyntheticFrontEnd::GetChildAtIndex(size_t idx) {
   if (idx == 0 && m_ptr_obj)
     return m_ptr_obj->GetSP();
   if (idx == 1 && m_del_obj)
     return m_del_obj->GetSP();
-  if (idx == 2) {
-    if (m_ptr_obj && !m_obj_obj) {
-      Status error;
-      ValueObjectSP obj_obj = m_ptr_obj->Dereference(error);
-      if (error.Success()) {
-        m_obj_obj = obj_obj->Clone(ConstString("object")).get();
-      }
-    }
-    if (m_obj_obj)
-      return m_obj_obj->GetSP();
-  }
+  if (idx == 2 && m_obj_obj)
+    return m_obj_obj->GetSP();
   return lldb::ValueObjectSP();
 }
 
-llvm::Expected<uint32_t>
-LibStdcppUniquePtrSyntheticFrontEnd::CalculateNumChildren() {
+size_t LibStdcppUniquePtrSyntheticFrontEnd::CalculateNumChildren() {
   if (m_del_obj)
     return 2;
   return 1;

@@ -563,15 +563,13 @@ VNInfo *LiveRange::extendInBlock(SlotIndex StartIdx, SlotIndex Kill) {
   return CalcLiveRangeUtilVector(this).extendInBlock(StartIdx, Kill);
 }
 
+/// Remove the specified segment from this range.  Note that the segment must
+/// be in a single Segment in its entirety.
 void LiveRange::removeSegment(SlotIndex Start, SlotIndex End,
                               bool RemoveDeadValNo) {
   // Find the Segment containing this span.
   iterator I = find(Start);
-
-  // No Segment found, so nothing to do.
-  if (I == end())
-    return;
-
+  assert(I != end() && "Segment is not in range!");
   assert(I->containsInterval(Start, End)
          && "Segment is not entirely in range!");
 
@@ -631,7 +629,6 @@ void LiveRange::join(LiveRange &Other,
                      const int *RHSValNoAssignments,
                      SmallVectorImpl<VNInfo *> &NewVNInfo) {
   verify();
-  Other.verify();
 
   // Determine if any of our values are mapped.  This is uncommon, so we want
   // to avoid the range scan if not.

@@ -5,10 +5,9 @@
 
 // RUN: not %clang -### -x hip \
 // RUN:   --target=x86_64-unknown-linux-gnu \
-// RUN:   --no-offload-new-driver \
 // RUN:   --offload-arch=gfx900 \
 // RUN:   --offload-arch=gfx906 \
-// RUN:   -c -nogpuinc -nogpulib -fuse-cuid=invalid \
+// RUN:   -c -nogpulib -fuse-cuid=invalid \
 // RUN:   %S/Inputs/hip_multiple_inputs/a.cu \
 // RUN:   %S/Inputs/hip_multiple_inputs/b.hip \
 // RUN: 2>&1 | FileCheck -check-prefixes=INVALID %s
@@ -17,10 +16,9 @@
 
 // RUN: %clang -### -x hip \
 // RUN:   --target=x86_64-unknown-linux-gnu \
-// RUN:   --no-offload-new-driver \
 // RUN:   --offload-arch=gfx900 \
 // RUN:   --offload-arch=gfx906 \
-// RUN:   -c -nogpuinc -nogpulib -fuse-cuid=random \
+// RUN:   -c -nogpulib -fuse-cuid=random \
 // RUN:   %S/Inputs/hip_multiple_inputs/a.cu \
 // RUN:   %S/Inputs/hip_multiple_inputs/b.hip \
 // RUN: 2>&1 | FileCheck -check-prefixes=COMMON,HEX %s
@@ -29,10 +27,9 @@
 
 // RUN: %clang -### -x hip \
 // RUN:   --target=x86_64-unknown-linux-gnu \
-// RUN:   --no-offload-new-driver \
 // RUN:   --offload-arch=gfx900 \
 // RUN:   --offload-arch=gfx906 \
-// RUN:   -c -nogpuinc -nogpulib -cuid=xyz_123 \
+// RUN:   -c -nogpulib -cuid=xyz_123 \
 // RUN:   %S/Inputs/hip_multiple_inputs/a.cu \
 // RUN:   %S/Inputs/hip_multiple_inputs/b.hip \
 // RUN: 2>&1 | FileCheck -check-prefixes=COMMON,FIXED %s
@@ -41,10 +38,9 @@
 
 // RUN: %clang -### -x hip \
 // RUN:   --target=x86_64-unknown-linux-gnu \
-// RUN:   --no-offload-new-driver \
 // RUN:   --offload-arch=gfx900 \
 // RUN:   --offload-arch=gfx906 \
-// RUN:   -c -nogpuinc -nogpulib -fuse-cuid=random -cuid=xyz_123 \
+// RUN:   -c -nogpulib -fuse-cuid=random -cuid=xyz_123 \
 // RUN:   %S/Inputs/hip_multiple_inputs/a.cu \
 // RUN:   %S/Inputs/hip_multiple_inputs/b.hip \
 // RUN: 2>&1 | FileCheck -check-prefixes=COMMON,FIXED %s
@@ -53,10 +49,9 @@
 
 // RUN: %clang -### -x hip \
 // RUN:   --target=x86_64-unknown-linux-gnu \
-// RUN:   --no-offload-new-driver \
 // RUN:   --offload-arch=gfx900 \
 // RUN:   --offload-arch=gfx906 \
-// RUN:   -c -nogpuinc -nogpulib -fuse-cuid=hash \
+// RUN:   -c -nogpulib -fuse-cuid=hash \
 // RUN:   %S/Inputs/hip_multiple_inputs/a.cu \
 // RUN:   %S/Inputs/hip_multiple_inputs/b.hip \
 // RUN: 2>&1 | FileCheck -check-prefixes=COMMON,HEX %s

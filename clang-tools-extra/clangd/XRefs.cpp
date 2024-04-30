@@ -427,7 +427,7 @@ locateASTReferent(SourceLocation CurLoc, const syntax::Token *TouchedIdentifier,
       // Special case: virtual void ^method() = 0: jump to all overrides.
       // FIXME: extend it to ^virtual, unfortunately, virtual location is not
       // saved in the AST.
-      if (CMD->isPureVirtual()) {
+      if (CMD->isPure()) {
         if (TouchedIdentifier && SM.getSpellingLoc(CMD->getLocation()) ==
                                      TouchedIdentifier->location()) {
           VirtualMethods.insert(getSymbolID(CMD));
@@ -1334,16 +1334,22 @@ maybeFindIncludeReferences(ParsedAST &AST, Position Pos,
   if (IncludeOnLine == Includes.end())
     return std::nullopt;
 
+  const auto &Inc = *IncludeOnLine;
   const SourceManager &SM = AST.getSourceManager();
   ReferencesResult Results;
-  auto Converted = convertIncludes(AST);
+  auto ConvertedMainFileIncludes = convertIncludes(SM, Includes);
+  auto ReferencedInclude = convertIncludes(SM, Inc);
   include_cleaner::walkUsed(
       AST.getLocalTopLevelDecls(), collectMacroReferences(AST),
-      &AST.getPragmaIncludes(), AST.getPreprocessor(),
+      AST.getPragmaIncludes().get(), SM,
       [&](const include_cleaner::SymbolReference &Ref,
           llvm::ArrayRef<include_cleaner::Header> Providers) {
-        if (Ref.RT != include_cleaner::RefType::Explicit ||
-            !isPreferredProvider(*IncludeOnLine, Converted, Providers))
+        if (Ref.RT != include_cleaner::RefType::Explicit)
+          return;
+
+        auto Provider =
+            firstMatchedProvider(ConvertedMainFileIncludes, Providers);
+        if (!Provider || ReferencedInclude.match(*Provider).empty())
           return;
 
         auto Loc = SM.getFileLoc(Ref.RefLocation);
@@ -1364,8 +1370,8 @@ maybeFindIncludeReferences(ParsedAST &AST, Position Pos,
 
   // Add the #include line to the references list.
   ReferencesResult::Reference Result;
-  Result.Loc.range = rangeTillEOL(SM.getBufferData(SM.getMainFileID()),
-                                  IncludeOnLine->HashOffset);
+  Result.Loc.range =
+      rangeTillEOL(SM.getBufferData(SM.getMainFileID()), Inc.HashOffset);
   Result.Loc.uri = URIMainFile;
   Results.References.push_back(std::move(Result));
   return Results;
@@ -1619,7 +1625,7 @@ std::vector<SymbolDetails> getSymbolInfo(ParsedAST &AST, Position Pos) {
     }
     llvm::SmallString<32> USR;
     if (!index::generateUSRForDecl(D, USR)) {
-      NewSymbol.USR = std::string(USR);
+      NewSymbol.USR = std::string(USR.str());
       NewSymbol.ID = SymbolID(NewSymbol.USR);
     }
     if (const NamedDecl *Def = getDefinition(D))
@@ -1642,7 +1648,7 @@ std::vector<SymbolDetails> getSymbolInfo(ParsedAST &AST, Position Pos) {
     llvm::SmallString<32> USR;
     if (!index::generateUSRForMacro(NewMacro.name, M->Info->getDefinitionLoc(),
                                     SM, USR)) {
-      NewMacro.USR = std::string(USR);
+      NewMacro.USR = std::string(USR.str());
       NewMacro.ID = SymbolID(NewMacro.USR);
     }
     Results.push_back(std::move(NewMacro));

@@ -504,7 +504,7 @@ ValueType
 
 .. py:data:: eValueTypeVariableArgument
 
-   Function argument variable.
+   Funfction argument variable.
 
 .. py:data:: eValueTypeVariableLocal
 

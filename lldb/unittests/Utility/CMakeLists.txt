@@ -4,7 +4,6 @@ add_lldb_unittest(UtilityTests
   OptionsWithRawTest.cpp
   ArchSpecTest.cpp
   BroadcasterTest.cpp
-  ChecksumTest.cpp
   ConstStringTest.cpp
   CompletionRequestTest.cpp
   DataBufferTest.cpp

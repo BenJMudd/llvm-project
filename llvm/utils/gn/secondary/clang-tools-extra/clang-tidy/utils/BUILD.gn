@@ -13,9 +13,7 @@ static_library("utils") {
   sources = [
     "ASTUtils.cpp",
     "Aliasing.cpp",
-    "BracesAroundStatement.cpp",
     "DeclRefExprUtils.cpp",
-    "DesignatedInitializers.cpp",
     "ExceptionAnalyzer.cpp",
     "ExceptionSpecAnalyzer.cpp",
     "ExprSequence.cpp",
@@ -26,7 +24,6 @@ static_library("utils") {
     "IncludeInserter.cpp",
     "IncludeSorter.cpp",
     "LexerUtils.cpp",
-    "Matchers.cpp",
     "NamespaceAliaser.cpp",
     "OptionsUtils.cpp",
     "RenamerClangTidyCheck.cpp",

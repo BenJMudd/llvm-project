@@ -1,4 +1,4 @@
-# Stack arrays pass
+# -fstack-arrays
 ## Problem Description
 In gfortran, `-fstack-arrays` will cause all local arrays, including those of
 unknown size, to be allocated from stack memory. Gfortran enables this flag by
@@ -129,7 +129,7 @@ TODO
 
 ### Detecting Allocations to Move
 Allocations which could be moved to the stack will be detected by performing a
-forward dense data flow analysis using `mlir::dataflow::DenseForwardDataFlowAnalysis`.
+forward dense data flow analysis using `mlir::dataflow::DenseDataFlowAnalysis`.
 This analysis will search for SSA values created by a `fir.allocmem` which are
 always freed using `fir.freemem` within the same function.
 

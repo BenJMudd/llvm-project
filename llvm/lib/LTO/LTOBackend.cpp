@@ -225,12 +225,7 @@ createTargetMachine(const Config &Conf, const Target *TheTarget, Module &M) {
   std::unique_ptr<TargetMachine> TM(TheTarget->createTargetMachine(
       TheTriple, Conf.CPU, Features.getString(), Conf.Options, RelocModel,
       CodeModel, Conf.CGOptLevel));
-
   assert(TM && "Failed to create target machine");
-
-  if (std::optional<uint64_t> LargeDataThreshold = M.getLargeDataThreshold())
-    TM->setLargeDataThreshold(*LargeDataThreshold);
-
   return TM;
 }
 
@@ -243,23 +238,19 @@ static void runNewPMPasses(const Config &Conf, Module &Mod, TargetMachine *TM,
   if (!Conf.SampleProfile.empty())
     PGOOpt = PGOOptions(Conf.SampleProfile, "", Conf.ProfileRemapping,
                         /*MemoryProfile=*/"", FS, PGOOptions::SampleUse,
-                        PGOOptions::NoCSAction,
-                        PGOOptions::ColdFuncOpt::Default, true);
+                        PGOOptions::NoCSAction, true);
   else if (Conf.RunCSIRInstr) {
     PGOOpt = PGOOptions("", Conf.CSIRProfile, Conf.ProfileRemapping,
                         /*MemoryProfile=*/"", FS, PGOOptions::IRUse,
-                        PGOOptions::CSIRInstr, PGOOptions::ColdFuncOpt::Default,
-                        Conf.AddFSDiscriminator);
+                        PGOOptions::CSIRInstr, Conf.AddFSDiscriminator);
   } else if (!Conf.CSIRProfile.empty()) {
     PGOOpt = PGOOptions(Conf.CSIRProfile, "", Conf.ProfileRemapping,
                         /*MemoryProfile=*/"", FS, PGOOptions::IRUse,
-                        PGOOptions::CSIRUse, PGOOptions::ColdFuncOpt::Default,
-                        Conf.AddFSDiscriminator);
+                        PGOOptions::CSIRUse, Conf.AddFSDiscriminator);
     NoPGOWarnMismatch = !Conf.PGOWarnMismatch;
   } else if (Conf.AddFSDiscriminator) {
     PGOOpt = PGOOptions("", "", "", /*MemoryProfile=*/"", nullptr,
-                        PGOOptions::NoAction, PGOOptions::NoCSAction,
-                        PGOOptions::ColdFuncOpt::Default, true);
+                        PGOOptions::NoAction, PGOOptions::NoCSAction, true);
   }
   TM->setPGOOption(PGOOpt);
 
@@ -330,6 +321,8 @@ static void runNewPMPasses(const Config &Conf, Module &Mod, TargetMachine *TM,
       report_fatal_error(Twine("unable to parse pass pipeline description '") +
                          Conf.OptPipeline + "': " + toString(std::move(Err)));
     }
+  } else if (Conf.UseDefaultPipeline) {
+    MPM.addPass(PB.buildPerModuleDefaultPipeline(OL));
   } else if (IsThinLTO) {
     MPM.addPass(PB.buildThinLTODefaultPipeline(OL, ImportSummary));
   } else {
@@ -431,12 +424,13 @@ static void splitCodeGen(const Config &C, TargetMachine *TM,
                          AddStreamFn AddStream,
                          unsigned ParallelCodeGenParallelismLevel, Module &Mod,
                          const ModuleSummaryIndex &CombinedIndex) {
-  DefaultThreadPool CodegenThreadPool(
+  ThreadPool CodegenThreadPool(
       heavyweight_hardware_concurrency(ParallelCodeGenParallelismLevel));
   unsigned ThreadCount = 0;
   const Target *T = &TM->getTarget();
 
-  const auto HandleModulePartition =
+  SplitModule(
+      Mod, ParallelCodeGenParallelismLevel,
       [&](std::unique_ptr<Module> MPart) {
         // We want to clone the module in a new context to multi-thread the
         // codegen. We do it by serializing partition modules to bitcode
@@ -468,14 +462,8 @@ static void splitCodeGen(const Config &C, TargetMachine *TM,
             // Pass BC using std::move to ensure that it get moved rather than
             // copied into the thread's context.
             std::move(BC), ThreadCount++);
-      };
-
-  // Try target-specific module splitting first, then fallback to the default.
-  if (!TM->splitModule(Mod, ParallelCodeGenParallelismLevel,
-                       HandleModulePartition)) {
-    SplitModule(Mod, ParallelCodeGenParallelismLevel, HandleModulePartition,
-                false);
-  }
+      },
+      false);
 
   // Because the inner lambda (which runs in a worker thread) captures our local
   // variables, we need to wait for the worker threads to terminate before we

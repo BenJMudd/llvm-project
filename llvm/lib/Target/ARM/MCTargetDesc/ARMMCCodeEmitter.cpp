@@ -29,7 +29,6 @@
 #include "llvm/MC/MCSubtargetInfo.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/Compiler.h"
-#include "llvm/Support/EndianStream.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/raw_ostream.h"
@@ -437,7 +436,19 @@ public:
                               SmallVectorImpl<MCFixup> &Fixups,
                               const MCSubtargetInfo &STI) const;
 
-  void encodeInstruction(const MCInst &MI, SmallVectorImpl<char> &CB,
+  void EmitByte(unsigned char C, raw_ostream &OS) const {
+    OS << (char)C;
+  }
+
+  void EmitConstant(uint64_t Val, unsigned Size, raw_ostream &OS) const {
+    // Output the constant in little endian byte order.
+    for (unsigned i = 0; i != Size; ++i) {
+      unsigned Shift = IsLittleEndian ? i * 8 : (Size - 1 - i) * 8;
+      EmitByte((Val >> Shift) & 0xff, OS);
+    }
+  }
+
+  void encodeInstruction(const MCInst &MI, raw_ostream &OS,
                          SmallVectorImpl<MCFixup> &Fixups,
                          const MCSubtargetInfo &STI) const override;
 
@@ -1883,10 +1894,10 @@ getShiftRight64Imm(const MCInst &MI, unsigned Op,
   return 64 - MI.getOperand(Op).getImm();
 }
 
-void ARMMCCodeEmitter::encodeInstruction(const MCInst &MI,
-                                         SmallVectorImpl<char> &CB,
-                                         SmallVectorImpl<MCFixup> &Fixups,
-                                         const MCSubtargetInfo &STI) const {
+void ARMMCCodeEmitter::
+encodeInstruction(const MCInst &MI, raw_ostream &OS,
+                  SmallVectorImpl<MCFixup> &Fixups,
+                  const MCSubtargetInfo &STI) const {
   // Pseudo instructions don't get encoded.
   const MCInstrDesc &Desc = MCII.get(MI.getOpcode());
   uint64_t TSFlags = Desc.TSFlags;
@@ -1899,19 +1910,14 @@ void ARMMCCodeEmitter::encodeInstruction(const MCInst &MI,
   else
     llvm_unreachable("Unexpected instruction size!");
 
-  auto Endian =
-      IsLittleEndian ? llvm::endianness::little : llvm::endianness::big;
   uint32_t Binary = getBinaryCodeForInstr(MI, Fixups, STI);
-  if (Size == 2) {
-    support::endian::write<uint16_t>(CB, Binary, Endian);
-  } else if (isThumb(STI)) {
-    // Thumb 32-bit wide instructions need to emit the high order halfword
-    // first.
-    support::endian::write<uint16_t>(CB, Binary >> 16, Endian);
-    support::endian::write<uint16_t>(CB, Binary & 0xffff, Endian);
-  } else {
-    support::endian::write<uint32_t>(CB, Binary, Endian);
-  }
+  // Thumb 32-bit wide instructions need to emit the high order halfword
+  // first.
+  if (isThumb(STI) && Size == 4) {
+    EmitConstant(Binary >> 16, 2, OS);
+    EmitConstant(Binary & 0xffff, 2, OS);
+  } else
+    EmitConstant(Binary, Size, OS);
   ++MCNumEmitted;  // Keep track of the # of mi's emitted.
 }
 

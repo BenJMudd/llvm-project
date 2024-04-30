@@ -9,7 +9,6 @@
 #include "mlir/Conversion/MathToLLVM/MathToLLVM.h"
 
 #include "mlir/Conversion/ArithCommon/AttrToLLVMConverter.h"
-#include "mlir/Conversion/ConvertToLLVM/ToLLVMInterface.h"
 #include "mlir/Conversion/LLVMCommon/ConversionTarget.h"
 #include "mlir/Conversion/LLVMCommon/Pattern.h"
 #include "mlir/Conversion/LLVMCommon/VectorPattern.h"
@@ -148,10 +147,10 @@ struct ExpM1OpLowering : public ConvertOpToLLVMPattern<math::ExpM1Op> {
     return LLVM::detail::handleMultidimensionalVectors(
         op.getOperation(), adaptor.getOperands(), *getTypeConverter(),
         [&](Type llvm1DVectorTy, ValueRange operands) {
-          auto numElements = LLVM::getVectorNumElements(llvm1DVectorTy);
           auto splatAttr = SplatElementsAttr::get(
-              mlir::VectorType::get({numElements.getKnownMinValue()}, floatType,
-                                    {numElements.isScalable()}),
+              mlir::VectorType::get(
+                  {LLVM::getVectorNumElements(llvm1DVectorTy).getFixedValue()},
+                  floatType),
               floatOne);
           auto one =
               rewriter.create<LLVM::ConstantOp>(loc, llvm1DVectorTy, splatAttr);
@@ -207,10 +206,10 @@ struct Log1pOpLowering : public ConvertOpToLLVMPattern<math::Log1pOp> {
     return LLVM::detail::handleMultidimensionalVectors(
         op.getOperation(), adaptor.getOperands(), *getTypeConverter(),
         [&](Type llvm1DVectorTy, ValueRange operands) {
-          auto numElements = LLVM::getVectorNumElements(llvm1DVectorTy);
           auto splatAttr = SplatElementsAttr::get(
-              mlir::VectorType::get({numElements.getKnownMinValue()}, floatType,
-                                    {numElements.isScalable()}),
+              mlir::VectorType::get(
+                  {LLVM::getVectorNumElements(llvm1DVectorTy).getFixedValue()},
+                  floatType),
               floatOne);
           auto one =
               rewriter.create<LLVM::ConstantOp>(loc, llvm1DVectorTy, splatAttr);
@@ -266,10 +265,10 @@ struct RsqrtOpLowering : public ConvertOpToLLVMPattern<math::RsqrtOp> {
     return LLVM::detail::handleMultidimensionalVectors(
         op.getOperation(), adaptor.getOperands(), *getTypeConverter(),
         [&](Type llvm1DVectorTy, ValueRange operands) {
-          auto numElements = LLVM::getVectorNumElements(llvm1DVectorTy);
           auto splatAttr = SplatElementsAttr::get(
-              mlir::VectorType::get({numElements.getKnownMinValue()}, floatType,
-                                    {numElements.isScalable()}),
+              mlir::VectorType::get(
+                  {LLVM::getVectorNumElements(llvm1DVectorTy).getFixedValue()},
+                  floatType),
               floatOne);
           auto one =
               rewriter.create<LLVM::ConstantOp>(loc, llvm1DVectorTy, splatAttr);
@@ -331,32 +330,4 @@ void mlir::populateMathToLLVMConversionPatterns(LLVMTypeConverter &converter,
     FTruncOpLowering
   >(converter);
   // clang-format on
-}
-
-//===----------------------------------------------------------------------===//
-// ConvertToLLVMPatternInterface implementation
-//===----------------------------------------------------------------------===//
-
-namespace {
-/// Implement the interface to convert Math to LLVM.
-struct MathToLLVMDialectInterface : public ConvertToLLVMPatternInterface {
-  using ConvertToLLVMPatternInterface::ConvertToLLVMPatternInterface;
-  void loadDependentDialects(MLIRContext *context) const final {
-    context->loadDialect<LLVM::LLVMDialect>();
-  }
-
-  /// Hook for derived dialect interface to provide conversion patterns
-  /// and mark dialect legal for the conversion target.
-  void populateConvertToLLVMConversionPatterns(
-      ConversionTarget &target, LLVMTypeConverter &typeConverter,
-      RewritePatternSet &patterns) const final {
-    populateMathToLLVMConversionPatterns(typeConverter, patterns);
-  }
-};
-} // namespace
-
-void mlir::registerConvertMathToLLVMInterface(DialectRegistry &registry) {
-  registry.addExtension(+[](MLIRContext *ctx, math::MathDialect *dialect) {
-    dialect->addInterfaces<MathToLLVMDialectInterface>();
-  });
 }

@@ -60,7 +60,9 @@ define i32 @loop_header_dom(i32 %y, i1 %c) {
 ; CHECK-NEXT:    [[C_1:%.*]] = icmp ule i32 [[X]], 10
 ; CHECK-NEXT:    br i1 [[C_1]], label [[LOOP_LATCH]], label [[EXIT]]
 ; CHECK:       loop.latch:
+; CHECK-NEXT:    [[T_1:%.*]] = icmp ule i32 [[X]], 10
 ; CHECK-NEXT:    call void @use(i1 true)
+; CHECK-NEXT:    [[F_1:%.*]] = icmp ugt i32 [[X]], 10
 ; CHECK-NEXT:    call void @use(i1 false)
 ; CHECK-NEXT:    [[C_2:%.*]] = icmp ule i32 [[X]], 9
 ; CHECK-NEXT:    call void @use(i1 [[C_2]])
@@ -110,7 +112,9 @@ define i32 @loop_header_dom_successors_flipped(i32 %y, i1 %c) {
 ; CHECK-NEXT:    [[C_1:%.*]] = icmp ule i32 [[X]], 10
 ; CHECK-NEXT:    br i1 [[C_1]], label [[EXIT]], label [[LOOP_LATCH]]
 ; CHECK:       loop.latch:
+; CHECK-NEXT:    [[F_1:%.*]] = icmp ule i32 [[X]], 10
 ; CHECK-NEXT:    call void @use(i1 false)
+; CHECK-NEXT:    [[T_1:%.*]] = icmp ugt i32 [[X]], 10
 ; CHECK-NEXT:    call void @use(i1 true)
 ; CHECK-NEXT:    [[C_2:%.*]] = icmp ugt i32 [[X]], 11
 ; CHECK-NEXT:    call void @use(i1 [[C_2]])
@@ -162,13 +166,17 @@ define void @loop_header_dom_or(i32 %y, i1 %c, i32 %start) {
 ; CHECK-NEXT:    [[OR:%.*]] = or i1 [[X_1]], [[Y_1]]
 ; CHECK-NEXT:    br i1 [[OR]], label [[EXIT]], label [[LOOP_LATCH]]
 ; CHECK:       loop.latch:
+; CHECK-NEXT:    [[T_1:%.*]] = icmp ugt i32 [[X]], 10
 ; CHECK-NEXT:    call void @use(i1 true)
+; CHECK-NEXT:    [[F_1:%.*]] = icmp ule i32 [[X]], 10
 ; CHECK-NEXT:    call void @use(i1 false)
 ; CHECK-NEXT:    [[C_1:%.*]] = icmp ugt i32 [[X]], 11
 ; CHECK-NEXT:    call void @use(i1 [[C_1]])
 ; CHECK-NEXT:    [[C_2:%.*]] = icmp ule i32 [[X]], 11
 ; CHECK-NEXT:    call void @use(i1 [[C_2]])
+; CHECK-NEXT:    [[T_2:%.*]] = icmp ule i32 [[Y]], 99
 ; CHECK-NEXT:    call void @use(i1 true)
+; CHECK-NEXT:    [[F_2:%.*]] = icmp ugt i32 [[Y]], 99
 ; CHECK-NEXT:    call void @use(i1 false)
 ; CHECK-NEXT:    [[C_3:%.*]] = icmp ule i32 [[Y]], 98
 ; CHECK-NEXT:    call void @use(i1 [[C_3]])
@@ -311,13 +319,17 @@ define void @loop_header_dom_and(i32 %y, i1 %c) {
 ; CHECK-NEXT:    [[AND:%.*]] = and i1 [[X_1]], [[Y_1]]
 ; CHECK-NEXT:    br i1 [[AND]], label [[LOOP_LATCH]], label [[EXIT_1:%.*]]
 ; CHECK:       loop.latch:
+; CHECK-NEXT:    [[T_1:%.*]] = icmp ule i32 [[X]], 10
 ; CHECK-NEXT:    call void @use(i1 true)
+; CHECK-NEXT:    [[F_1:%.*]] = icmp ugt i32 [[X]], 10
 ; CHECK-NEXT:    call void @use(i1 false)
 ; CHECK-NEXT:    [[C_1:%.*]] = icmp ule i32 [[X]], 9
 ; CHECK-NEXT:    call void @use(i1 [[C_1]])
 ; CHECK-NEXT:    [[C_2:%.*]] = icmp ugt i32 [[X]], 9
 ; CHECK-NEXT:    call void @use(i1 [[C_2]])
+; CHECK-NEXT:    [[T_2:%.*]] = icmp ugt i32 [[Y]], 99
 ; CHECK-NEXT:    call void @use(i1 true)
+; CHECK-NEXT:    [[F_2:%.*]] = icmp ule i32 [[Y]], 99
 ; CHECK-NEXT:    call void @use(i1 false)
 ; CHECK-NEXT:    [[C_3:%.*]] = icmp ugt i32 [[Y]], 100
 ; CHECK-NEXT:    call void @use(i1 [[C_3]])
@@ -409,6 +421,7 @@ define void @loop_header_dom_and_successors_flipped(i32 %y, i1 %c) {
 ; CHECK-NEXT:    [[X_NEXT]] = add i32 [[X]], 1
 ; CHECK-NEXT:    br label [[LOOP_HEADER]]
 ; CHECK:       exit.1:
+; CHECK-NEXT:    [[T_1:%.*]] = icmp ugt i32 [[Y]], 10
 ; CHECK-NEXT:    call void @use(i1 true)
 ; CHECK-NEXT:    ret void
 ;

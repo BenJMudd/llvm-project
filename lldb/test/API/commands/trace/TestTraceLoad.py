@@ -82,7 +82,10 @@ class TestTraceLoad(TraceIntelPTTestCaseBase):
   "traceTechnology": "intel-pt",
   "threadStats": {
     "tid": 3497496,
-    "traceItemsCount": 19527,""",
+    "traceItemsCount": 19527,
+    "memoryUsage": {
+      "totalInBytes": "175819",
+      "avgPerItemInBytes": 9.0038920469094084""",
                 """},
     "timingInSeconds": {
       "Decoding instructions": """,
@@ -155,7 +158,7 @@ class TestTraceLoad(TraceIntelPTTestCaseBase):
         self.expect(
             "thread trace dump instructions 2 -t",
             substrs=[
-                "19526: [19691636.212 ns] (error)",
+                "19526: [19691636.212 ns] (error) decoding truncated: TSC 40450075478109270 exceeds maximum TSC value 40450075477704372, will skip decoding the remaining data of the PSB (skipping 774 of 825 bytes)",
                 "m.out`foo() + 65 at multi_thread.cpp:12:21",
                 "19524: [19691632.221 ns] 0x0000000000400ba7    jg     0x400bb3",
             ],
@@ -163,7 +166,7 @@ class TestTraceLoad(TraceIntelPTTestCaseBase):
         self.expect(
             "thread trace dump instructions 3 -t",
             substrs=[
-                "61833: [19736136.079 ns] (error)",
+                "61833: [19736136.079 ns] (error) decoding truncated: TSC 40450075478174268 exceeds maximum TSC value 40450075477820383, will skip decoding the remaining data of the PSB (skipping 296 of 297 bytes)",
                 "61831: [19736132.088 ns] 0x0000000000400bd7    addl   $0x1, -0x4(%rbp)",
                 "m.out`bar() + 26 at multi_thread.cpp:20:6",
             ],
@@ -190,7 +193,7 @@ class TestTraceLoad(TraceIntelPTTestCaseBase):
         self.expect(
             "thread trace dump instructions 2 -t",
             substrs=[
-                "19526: [19691636.212 ns] (error)",
+                "19526: [19691636.212 ns] (error) decoding truncated: TSC 40450075478109270 exceeds maximum TSC value 40450075477704372, will skip decoding the remaining data of the PSB (skipping 774 of 825 bytes)",
                 "m.out`foo() + 65 at multi_thread.cpp:12:21",
                 "19524: [19691632.221 ns] 0x0000000000400ba7    jg     0x400bb3",
             ],
@@ -215,7 +218,7 @@ class TestTraceLoad(TraceIntelPTTestCaseBase):
         self.expect(
             "thread trace dump instructions 3 -t",
             substrs=[
-                "19526: [19691636.212 ns] (error)",
+                "19526: [19691636.212 ns] (error) decoding truncated: TSC 40450075478109270 exceeds maximum TSC value 40450075477704372, will skip decoding the remaining data of the PSB (skipping 774 of 825 bytes)",
                 "m.out`foo() + 65 at multi_thread.cpp:12:21",
                 "19524: [19691632.221 ns] 0x0000000000400ba7    jg     0x400bb3",
             ],
@@ -269,7 +272,12 @@ class TestTraceLoad(TraceIntelPTTestCaseBase):
   Total number of trace items: 28
 
   Memory usage:
-    Raw trace size: 4 KiB""",
+    Raw trace size: 4 KiB
+    Total approximate memory usage (excluding raw trace): 0.25 KiB
+    Average memory usage per item (excluding raw trace): 9.00 bytes
+
+  Timing for this thread:
+    Decoding instructions: """,
                 """
 
   Events:

@@ -28,12 +28,12 @@ struct S {
 // CHECK:     void foo() __attribute__((assume("ompx_global_assumption")))     {
 
 #pragma omp begin assumes no_openmp
-// CHECK: __attribute__((assume("omp_no_openmp"))) void S_with_assumes_no_call() __attribute__((assume("ompx_global_assumption"))) {
+// CHECK: void S_with_assumes_no_call() __attribute__((assume("omp_no_openmp"))) __attribute__((assume("ompx_global_assumption"))) {
 void S_with_assumes_no_call() {
   S<int> s;
   s.a = 0;
 }
-// CHECK: __attribute__((assume("omp_no_openmp"))) void S_with_assumes_call() __attribute__((assume("ompx_global_assumption"))) {
+// CHECK: void S_with_assumes_call() __attribute__((assume("omp_no_openmp"))) __attribute__((assume("ompx_global_assumption"))) {
 void S_with_assumes_call() {
   S<int> s;
   s.a = 0;
@@ -54,7 +54,7 @@ void S_without_assumes() {
 template <typename T>
 struct P {
 // CHECK: template <typename T> struct P {
-// CHECK:    __attribute__((assume("ompx_global_assumption"))) void foo()      {
+// CHECK:     void foo() __attribute__((assume("ompx_global_assumption")))     {
   int a;
   void foo() {
     #pragma omp parallel
@@ -65,21 +65,21 @@ struct P {
 // TODO: Avoid the duplication here:
 
 // CHECK: template<> struct P<int> {
-// CHECK:      __attribute__((assume("ompx_global_assumption"))) __attribute__((assume("ompx_global_assumption"))) void foo()   {
+// CHECK:     void foo() __attribute__((assume("ompx_global_assumption"))) __attribute__((assume("ompx_global_assumption")))     {
 
-// CHECK: __attribute__((assume("ompx_global_assumption"))) void P_without_assumes() {
+// CHECK: void P_without_assumes() __attribute__((assume("ompx_global_assumption"))) {
 void P_without_assumes() {
   P<int> p;
   p.foo();
 }
 
 #pragma omp begin assumes no_openmp
-// CHECK: __attribute__((assume("omp_no_openmp"))) __attribute__((assume("ompx_global_assumption"))) void P_with_assumes_no_call() {
+// CHECK: void P_with_assumes_no_call() __attribute__((assume("omp_no_openmp"))) __attribute__((assume("ompx_global_assumption"))) {
 void P_with_assumes_no_call() {
   P<int> p;
   p.a = 0;
 }
-// CHECK: __attribute__((assume("omp_no_openmp"))) __attribute__((assume("ompx_global_assumption"))) void P_with_assumes_call() {
+// CHECK: void P_with_assumes_call() __attribute__((assume("omp_no_openmp"))) __attribute__((assume("ompx_global_assumption"))) {
 void P_with_assumes_call() {
   P<int> p;
   p.a = 0;

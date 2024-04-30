@@ -503,8 +503,6 @@ Value *HardwareLoop::InitLoopCount() {
 
 Value* HardwareLoop::InsertIterationSetup(Value *LoopCountInit) {
   IRBuilder<> Builder(BeginBB->getTerminator());
-  if (BeginBB->getParent()->getAttributes().hasFnAttr(Attribute::StrictFP))
-    Builder.setIsFPConstrained(true);
   Type *Ty = LoopCountInit->getType();
   bool UsePhi = UsePHICounter || Opts.ForcePhi;
   Intrinsic::ID ID = UseLoopGuard
@@ -537,9 +535,6 @@ Value* HardwareLoop::InsertIterationSetup(Value *LoopCountInit) {
 
 void HardwareLoop::InsertLoopDec() {
   IRBuilder<> CondBuilder(ExitBranch);
-  if (ExitBranch->getParent()->getParent()->getAttributes().hasFnAttr(
-          Attribute::StrictFP))
-    CondBuilder.setIsFPConstrained(true);
 
   Function *DecFunc =
     Intrinsic::getDeclaration(M, Intrinsic::loop_decrement,
@@ -562,9 +557,6 @@ void HardwareLoop::InsertLoopDec() {
 
 Instruction* HardwareLoop::InsertLoopRegDec(Value *EltsRem) {
   IRBuilder<> CondBuilder(ExitBranch);
-  if (ExitBranch->getParent()->getParent()->getAttributes().hasFnAttr(
-          Attribute::StrictFP))
-    CondBuilder.setIsFPConstrained(true);
 
   Function *DecFunc =
       Intrinsic::getDeclaration(M, Intrinsic::loop_decrement_reg,
@@ -580,7 +572,7 @@ PHINode* HardwareLoop::InsertPHICounter(Value *NumElts, Value *EltsRem) {
   BasicBlock *Preheader = L->getLoopPreheader();
   BasicBlock *Header = L->getHeader();
   BasicBlock *Latch = ExitBranch->getParent();
-  IRBuilder<> Builder(Header, Header->getFirstNonPHIIt());
+  IRBuilder<> Builder(Header->getFirstNonPHI());
   PHINode *Index = Builder.CreatePHI(NumElts->getType(), 2);
   Index->addIncoming(NumElts, Preheader);
   Index->addIncoming(EltsRem, Latch);

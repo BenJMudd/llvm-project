@@ -34,8 +34,6 @@
 #include "CompileCommands.h"
 #include "Compiler.h"
 #include "Config.h"
-#include "ConfigFragment.h"
-#include "ConfigProvider.h"
 #include "Diagnostics.h"
 #include "Feature.h"
 #include "GlobalCompilationDatabase.h"
@@ -105,19 +103,15 @@ llvm::cl::opt<bool> CheckCompletion{
     "check-completion",
     llvm::cl::desc("Run code-completion at each point (slow)"),
     llvm::cl::init(false)};
-llvm::cl::opt<bool> CheckWarnings{
-    "check-warnings",
-    llvm::cl::desc("Print warnings as well as errors"),
-    llvm::cl::init(false)};
 
-// Print the diagnostics meeting severity threshold, and return count of errors.
+// Print (and count) the error-level diagnostics (warnings are ignored).
 unsigned showErrors(llvm::ArrayRef<Diag> Diags) {
   unsigned ErrCount = 0;
   for (const auto &D : Diags) {
-    if (D.Severity >= DiagnosticsEngine::Error || CheckWarnings)
+    if (D.Severity >= DiagnosticsEngine::Error) {
       elog("[{0}] Line {1}: {2}", D.Name, D.Range.start.line + 1, D.Message);
-    if (D.Severity >= DiagnosticsEngine::Error)
       ++ErrCount;
+    }
   }
   return ErrCount;
 }
@@ -226,7 +220,7 @@ public:
 
     // FIXME: Check that resource-dir/built-in-headers exist?
 
-    Style = getFormatStyleForFile(File, Inputs.Contents, TFS, false);
+    Style = getFormatStyleForFile(File, Inputs.Contents, TFS);
 
     return true;
   }
@@ -367,13 +361,7 @@ public:
     auto Hints = inlayHints(*AST, LineRange);
 
     for (const auto &Hint : Hints) {
-      vlog("  {0} {1} [{2}]", Hint.kind, Hint.position, [&] {
-        return llvm::join(llvm::map_range(Hint.label,
-                                          [&](auto &L) {
-                                            return llvm::formatv("{{{0}}", L);
-                                          }),
-                          ", ");
-      }());
+      vlog("  {0} {1} {2}", Hint.kind, Hint.position, Hint.label);
     }
   }
 
@@ -488,23 +476,8 @@ bool check(llvm::StringRef File, const ThreadsafeFS &TFS,
   }
   log("Testing on source file {0}", File);
 
-  class OverrideConfigProvider : public config::Provider {
-    std::vector<config::CompiledFragment>
-    getFragments(const config::Params &,
-                 config::DiagnosticCallback Diag) const override {
-      config::Fragment F;
-      // If we're timing clang-tidy checks, implicitly disabling the slow ones
-      // is counterproductive! 
-      if (CheckTidyTime.getNumOccurrences())
-        F.Diagnostics.ClangTidy.FastCheckFilter.emplace("None");
-      return {std::move(F).compile(Diag)};
-    }
-  } OverrideConfig;
-  auto ConfigProvider =
-      config::Provider::combine({Opts.ConfigProvider, &OverrideConfig});
-
   auto ContextProvider = ClangdServer::createConfiguredContextProvider(
-      ConfigProvider.get(), nullptr);
+      Opts.ConfigProvider, nullptr);
   WithContext Ctx(ContextProvider(
       FakeFile.empty()
           ? File

@@ -14,17 +14,18 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/ADT/iterator_range.h"
+#include "llvm/BinaryFormat/COFF.h"
 #include "llvm/Object/Binary.h"
 #include "llvm/Object/COFF.h"
 #include "llvm/Object/Error.h"
 #include "llvm/Object/ObjectFile.h"
-#include "llvm/Object/WindowsMachineFlag.h"
 #include "llvm/Support/BinaryStreamReader.h"
 #include "llvm/Support/Endian.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/MemoryBufferRef.h"
+#include "llvm/TargetParser/Triple.h"
 #include <algorithm>
 #include <cassert>
 #include <cinttypes>
@@ -335,7 +336,7 @@ bool COFFObjectFile::isDebugSection(DataRefImpl Ref) const {
     return false;
   }
   StringRef SectionName = SectionNameOrErr.get();
-  return SectionName.starts_with(".debug");
+  return SectionName.startswith(".debug");
 }
 
 unsigned COFFObjectFile::getSectionID(SectionRef Sec) const {
@@ -1071,7 +1072,20 @@ StringRef COFFObjectFile::getFileFormatName() const {
 }
 
 Triple::ArchType COFFObjectFile::getArch() const {
-  return getMachineArchType(getMachine());
+  switch (getMachine()) {
+  case COFF::IMAGE_FILE_MACHINE_I386:
+    return Triple::x86;
+  case COFF::IMAGE_FILE_MACHINE_AMD64:
+    return Triple::x86_64;
+  case COFF::IMAGE_FILE_MACHINE_ARMNT:
+    return Triple::thumb;
+  case COFF::IMAGE_FILE_MACHINE_ARM64:
+  case COFF::IMAGE_FILE_MACHINE_ARM64EC:
+  case COFF::IMAGE_FILE_MACHINE_ARM64X:
+    return Triple::aarch64;
+  default:
+    return Triple::UnknownArch;
+  }
 }
 
 Expected<uint64_t> COFFObjectFile::getStartAddress() const {
@@ -1189,9 +1203,9 @@ COFFObjectFile::getSectionName(const coff_section *Sec) const {
   StringRef Name = StringRef(Sec->Name, COFF::NameSize).split('\0').first;
 
   // Check for string table entry. First byte is '/'.
-  if (Name.starts_with("/")) {
+  if (Name.startswith("/")) {
     uint32_t Offset;
-    if (Name.starts_with("//")) {
+    if (Name.startswith("//")) {
       if (decodeBase64StringEntry(Name.substr(2), Offset))
         return createStringError(object_error::parse_failed,
                                  "invalid section name");
@@ -1306,8 +1320,8 @@ COFFObjectFile::getRelocations(const coff_section *Sec) const {
     return #reloc_type;
 
 StringRef COFFObjectFile::getRelocationTypeName(uint16_t Type) const {
-  switch (getArch()) {
-  case Triple::x86_64:
+  switch (getMachine()) {
+  case COFF::IMAGE_FILE_MACHINE_AMD64:
     switch (Type) {
     LLVM_COFF_SWITCH_RELOC_TYPE_NAME(IMAGE_REL_AMD64_ABSOLUTE);
     LLVM_COFF_SWITCH_RELOC_TYPE_NAME(IMAGE_REL_AMD64_ADDR64);
@@ -1330,7 +1344,7 @@ StringRef COFFObjectFile::getRelocationTypeName(uint16_t Type) const {
       return "Unknown";
     }
     break;
-  case Triple::thumb:
+  case COFF::IMAGE_FILE_MACHINE_ARMNT:
     switch (Type) {
     LLVM_COFF_SWITCH_RELOC_TYPE_NAME(IMAGE_REL_ARM_ABSOLUTE);
     LLVM_COFF_SWITCH_RELOC_TYPE_NAME(IMAGE_REL_ARM_ADDR32);
@@ -1353,7 +1367,9 @@ StringRef COFFObjectFile::getRelocationTypeName(uint16_t Type) const {
       return "Unknown";
     }
     break;
-  case Triple::aarch64:
+  case COFF::IMAGE_FILE_MACHINE_ARM64:
+  case COFF::IMAGE_FILE_MACHINE_ARM64EC:
+  case COFF::IMAGE_FILE_MACHINE_ARM64X:
     switch (Type) {
     LLVM_COFF_SWITCH_RELOC_TYPE_NAME(IMAGE_REL_ARM64_ABSOLUTE);
     LLVM_COFF_SWITCH_RELOC_TYPE_NAME(IMAGE_REL_ARM64_ADDR32);
@@ -1377,7 +1393,7 @@ StringRef COFFObjectFile::getRelocationTypeName(uint16_t Type) const {
       return "Unknown";
     }
     break;
-  case Triple::x86:
+  case COFF::IMAGE_FILE_MACHINE_I386:
     switch (Type) {
     LLVM_COFF_SWITCH_RELOC_TYPE_NAME(IMAGE_REL_I386_ABSOLUTE);
     LLVM_COFF_SWITCH_RELOC_TYPE_NAME(IMAGE_REL_I386_DIR16);
@@ -1891,7 +1907,7 @@ Error ResourceSectionRef::load(const COFFObjectFile *O, const SectionRef &S) {
   Expected<StringRef> Contents = Section.getContents();
   if (!Contents)
     return Contents.takeError();
-  BBS = BinaryByteStream(*Contents, llvm::endianness::little);
+  BBS = BinaryByteStream(*Contents, support::little);
   const coff_section *COFFSect = Obj->getCOFFSection(Section);
   ArrayRef<coff_relocation> OrigRelocs = Obj->getRelocations(COFFSect);
   Relocs.reserve(OrigRelocs.size());
@@ -1925,17 +1941,19 @@ ResourceSectionRef::getContents(const coff_resource_data_entry &Entry) {
     // the expected type.
     const coff_relocation &R = **RelocsForOffset.first;
     uint16_t RVAReloc;
-    switch (Obj->getArch()) {
-    case Triple::x86:
+    switch (Obj->getMachine()) {
+    case COFF::IMAGE_FILE_MACHINE_I386:
       RVAReloc = COFF::IMAGE_REL_I386_DIR32NB;
       break;
-    case Triple::x86_64:
+    case COFF::IMAGE_FILE_MACHINE_AMD64:
       RVAReloc = COFF::IMAGE_REL_AMD64_ADDR32NB;
       break;
-    case Triple::thumb:
+    case COFF::IMAGE_FILE_MACHINE_ARMNT:
       RVAReloc = COFF::IMAGE_REL_ARM_ADDR32NB;
       break;
-    case Triple::aarch64:
+    case COFF::IMAGE_FILE_MACHINE_ARM64:
+    case COFF::IMAGE_FILE_MACHINE_ARM64EC:
+    case COFF::IMAGE_FILE_MACHINE_ARM64X:
       RVAReloc = COFF::IMAGE_REL_ARM64_ADDR32NB;
       break;
     default:

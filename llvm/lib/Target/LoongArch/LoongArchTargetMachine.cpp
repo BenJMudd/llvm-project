@@ -63,11 +63,11 @@ getEffectiveLoongArchCodeModel(const Triple &TT,
 
   switch (*CM) {
   case CodeModel::Small:
-    return *CM;
   case CodeModel::Medium:
+    return *CM;
   case CodeModel::Large:
     if (!TT.isArch64Bit())
-      report_fatal_error("Medium/Large code model requires LA64");
+      report_fatal_error("Large code model requires LA64");
     return *CM;
   default:
     report_fatal_error(
@@ -78,7 +78,7 @@ getEffectiveLoongArchCodeModel(const Triple &TT,
 LoongArchTargetMachine::LoongArchTargetMachine(
     const Target &T, const Triple &TT, StringRef CPU, StringRef FS,
     const TargetOptions &Options, std::optional<Reloc::Model> RM,
-    std::optional<CodeModel::Model> CM, CodeGenOptLevel OL, bool JIT)
+    std::optional<CodeModel::Model> CM, CodeGenOpt::Level OL, bool JIT)
     : LLVMTargetMachine(T, computeDataLayout(TT), TT, CPU, FS, Options,
                         getEffectiveRelocModel(TT, RM),
                         getEffectiveLoongArchCodeModel(TT, CM), OL),
@@ -159,9 +159,9 @@ void LoongArchPassConfig::addIRPasses() {
   //
   // Run this before LSR to remove the multiplies involved in computing the
   // pointer values N iterations ahead.
-  if (TM->getOptLevel() != CodeGenOptLevel::None && EnableLoopDataPrefetch)
+  if (TM->getOptLevel() != CodeGenOpt::None && EnableLoopDataPrefetch)
     addPass(createLoopDataPrefetchPass());
-  addPass(createAtomicExpandLegacyPass());
+  addPass(createAtomicExpandPass());
 
   TargetPassConfig::addIRPasses();
 }

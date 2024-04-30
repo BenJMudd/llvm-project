@@ -42,9 +42,6 @@ namespace __lsan {
 // also to protect the global list of root regions.
 static Mutex global_mutex;
 
-void LockGlobal() SANITIZER_ACQUIRE(global_mutex) { global_mutex.Lock(); }
-void UnlockGlobal() SANITIZER_RELEASE(global_mutex) { global_mutex.Unlock(); }
-
 Flags lsan_flags;
 
 void DisableCounterUnderflow() {
@@ -155,15 +152,14 @@ Suppression *LeakSuppressionContext::GetSuppressionForAddr(uptr addr) {
     return s;
 
   // Suppress by file or function name.
-  SymbolizedStackHolder symbolized_stack(
-      Symbolizer::GetOrInit()->SymbolizePC(addr));
-  const SymbolizedStack *frames = symbolized_stack.get();
-  for (const SymbolizedStack *cur = frames; cur; cur = cur->next) {
+  SymbolizedStack *frames = Symbolizer::GetOrInit()->SymbolizePC(addr);
+  for (SymbolizedStack *cur = frames; cur; cur = cur->next) {
     if (context.Match(cur->info.function, kSuppressionLeak, &s) ||
         context.Match(cur->info.file, kSuppressionLeak, &s)) {
       break;
     }
   }
+  frames->ClearAll();
   return s;
 }
 
@@ -954,8 +950,8 @@ void LeakReport::PrintSummary() {
     allocations += leaks_[i].hit_count;
   }
   InternalScopedString summary;
-  summary.AppendF("%zu byte(s) leaked in %zu allocation(s).", bytes,
-                  allocations);
+  summary.append("%zu byte(s) leaked in %zu allocation(s).", bytes,
+                 allocations);
   ReportErrorSummary(summary.data());
 }
 

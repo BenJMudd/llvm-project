@@ -7,7 +7,7 @@
 //===----------------------------------------------------------------------===//
 //
 // This file declares the FixRelaxations class, which locates instructions with
-// wrong targets and fixes them. Such problems usually occurs when linker
+// wrong targets and fixes them. Such problems usually occures when linker
 // relaxes (changes) instructions, but doesn't fix relocations types properly
 // for them.
 //
@@ -31,7 +31,7 @@ public:
   const char *getName() const override { return "fix-relaxations"; }
 
   /// Pass entry point
-  Error runOnFunctions(BinaryContext &BC) override;
+  void runOnFunctions(BinaryContext &BC) override;
 };
 
 } // namespace bolt

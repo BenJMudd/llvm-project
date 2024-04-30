@@ -134,7 +134,7 @@ private:
   void onWorkspaceSymbol(const WorkspaceSymbolParams &,
                          Callback<std::vector<SymbolInformation>>);
   void onPrepareRename(const TextDocumentPositionParams &,
-                       Callback<PrepareRenameResult>);
+                       Callback<std::optional<Range>>);
   void onRename(const RenameParams &, Callback<WorkspaceEdit>);
   void onHover(const TextDocumentPositionParams &,
                Callback<std::optional<Hover>>);
@@ -174,7 +174,6 @@ private:
   /// Implement commands.
   void onCommandApplyEdit(const WorkspaceEdit &, Callback<llvm::json::Value>);
   void onCommandApplyTweak(const TweakArgs &, Callback<llvm::json::Value>);
-  void onCommandApplyRename(const RenameParams &, Callback<llvm::json::Value>);
 
   /// Outgoing LSP calls.
   LSPBinder::OutgoingMethod<ApplyWorkspaceEditParams,

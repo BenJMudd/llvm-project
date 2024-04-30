@@ -19,8 +19,6 @@
 #include "llvm/Analysis/BlockFrequencyInfo.h"
 #include "llvm/Analysis/BranchProbabilityInfo.h"
 #include "llvm/Analysis/CFG.h"
-#include "llvm/IR/Instructions.h"
-#include "llvm/IR/IntrinsicInst.h"
 #include "llvm/Support/BranchProbability.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
@@ -30,6 +28,8 @@
 
 #define DEBUG_TYPE "cfgmst"
 
+using namespace llvm;
+
 namespace llvm {
 
 /// An union-find based Minimum Spanning Tree for CFG
@@ -37,6 +37,7 @@ namespace llvm {
 /// Implements a Union-find algorithm to compute Minimum Spanning Tree
 /// for a given CFG.
 template <class Edge, class BBInfo> class CFGMST {
+public:
   Function &F;
 
   // Store all the edges in CFG. It may contain some stale edges
@@ -49,12 +50,6 @@ template <class Edge, class BBInfo> class CFGMST {
   // Whehter the function has an exit block with no successors.
   // (For function with an infinite loop, this block may be absent)
   bool ExitBlockFound = false;
-
-  BranchProbabilityInfo *const BPI;
-  BlockFrequencyInfo *const BFI;
-
-  // If function entry will be always instrumented.
-  const bool InstrumentFuncEntry;
 
   // Find the root group of the G and compress the path from G to the root.
   BBInfo *findAndCompressGroup(BBInfo *G) {
@@ -84,27 +79,19 @@ template <class Edge, class BBInfo> class CFGMST {
     return true;
   }
 
-  void handleCoroSuspendEdge(Edge *E) {
-    // We must not add instrumentation to the BB representing the
-    // "suspend" path, else CoroSplit won't be able to lower
-    // llvm.coro.suspend to a tail call. We do want profiling info for
-    // the other branches (resume/destroy). So we do 2 things:
-    // 1. we prefer instrumenting those other edges by setting the weight
-    //    of the "suspend" edge to max, and
-    // 2. we mark the edge as "Removed" to guarantee it is not considered
-    //    for instrumentation. That could technically happen:
-    //    (from test/Transforms/Coroutines/coro-split-musttail.ll)
-    //
-    // %suspend = call i8 @llvm.coro.suspend(token %save, i1 false)
-    // switch i8 %suspend, label %exit [
-    //   i8 0, label %await.ready
-    //   i8 1, label %exit
-    // ]
-    if (!E->DestBB)
-      return;
-    assert(E->SrcBB);
-    if (llvm::isPresplitCoroSuspendExitEdge(*E->SrcBB, *E->DestBB))
-      E->Removed = true;
+  // Give BB, return the auxiliary information.
+  BBInfo &getBBInfo(const BasicBlock *BB) const {
+    auto It = BBInfos.find(BB);
+    assert(It->second.get() != nullptr);
+    return *It->second.get();
+  }
+
+  // Give BB, return the auxiliary information if it's available.
+  BBInfo *findBBInfo(const BasicBlock *BB) const {
+    auto It = BBInfos.find(BB);
+    if (It == BBInfos.end())
+      return nullptr;
+    return It->second.get();
   }
 
   // Traverse the CFG using a stack. Find all the edges and assign the weight.
@@ -114,8 +101,7 @@ template <class Edge, class BBInfo> class CFGMST {
     LLVM_DEBUG(dbgs() << "Build Edge on " << F.getName() << "\n");
 
     BasicBlock *Entry = &(F.getEntryBlock());
-    uint64_t EntryWeight =
-        (BFI != nullptr ? BFI->getEntryFreq().getFrequency() : 2);
+    uint64_t EntryWeight = (BFI != nullptr ? BFI->getEntryFreq() : 2);
     // If we want to instrument the entry count, lower the weight to 0.
     if (InstrumentFuncEntry)
       EntryWeight = 0;
@@ -158,7 +144,6 @@ template <class Edge, class BBInfo> class CFGMST {
             Weight++;
           auto *E = &addEdge(&BB, TargetBB, Weight);
           E->IsCritical = Critical;
-          handleCoroSuspendEdge(E);
           LLVM_DEBUG(dbgs() << "  Edge: from " << BB.getName() << " to "
                             << TargetBB->getName() << "  w=" << Weight << "\n");
 
@@ -252,7 +237,6 @@ template <class Edge, class BBInfo> class CFGMST {
     }
   }
 
-public:
   // Dump the Debug information about the instrumentation.
   void dumpEdges(raw_ostream &OS, const Twine &Message) const {
     if (!Message.str().empty())
@@ -291,41 +275,24 @@ public:
     return *AllEdges.back();
   }
 
-  CFGMST(Function &Func, bool InstrumentFuncEntry,
-         BranchProbabilityInfo *BPI = nullptr,
-         BlockFrequencyInfo *BFI = nullptr)
-      : F(Func), BPI(BPI), BFI(BFI), InstrumentFuncEntry(InstrumentFuncEntry) {
+  BranchProbabilityInfo *BPI;
+  BlockFrequencyInfo *BFI;
+
+  // If function entry will be always instrumented.
+  bool InstrumentFuncEntry;
+
+public:
+  CFGMST(Function &Func, bool InstrumentFuncEntry_,
+         BranchProbabilityInfo *BPI_ = nullptr,
+         BlockFrequencyInfo *BFI_ = nullptr)
+      : F(Func), BPI(BPI_), BFI(BFI_),
+        InstrumentFuncEntry(InstrumentFuncEntry_) {
     buildEdges();
     sortEdgesByWeight();
     computeMinimumSpanningTree();
     if (AllEdges.size() > 1 && InstrumentFuncEntry)
       std::iter_swap(std::move(AllEdges.begin()),
                      std::move(AllEdges.begin() + AllEdges.size() - 1));
-  }
-
-  const std::vector<std::unique_ptr<Edge>> &allEdges() const {
-    return AllEdges;
-  }
-
-  std::vector<std::unique_ptr<Edge>> &allEdges() { return AllEdges; }
-
-  size_t numEdges() const { return AllEdges.size(); }
-
-  size_t bbInfoSize() const { return BBInfos.size(); }
-
-  // Give BB, return the auxiliary information.
-  BBInfo &getBBInfo(const BasicBlock *BB) const {
-    auto It = BBInfos.find(BB);
-    assert(It->second.get() != nullptr);
-    return *It->second.get();
-  }
-
-  // Give BB, return the auxiliary information if it's available.
-  BBInfo *findBBInfo(const BasicBlock *BB) const {
-    auto It = BBInfos.find(BB);
-    if (It == BBInfos.end())
-      return nullptr;
-    return It->second.get();
   }
 };
 

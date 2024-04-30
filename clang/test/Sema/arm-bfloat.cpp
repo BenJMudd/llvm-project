@@ -19,8 +19,6 @@ void test(bool b) {
   bf16 - bf16;
   bf16 * bf16;
   bf16 / bf16;
-  ++bf16;
-  --bf16;
 
   __fp16 fp16;
 

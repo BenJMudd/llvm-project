@@ -20,7 +20,7 @@
 
 #include <errno.h>
 
-namespace LIBC_NAMESPACE {
+namespace __llvm_libc {
 
 // Exceptional cases for tanf.
 constexpr size_t N_EXCEPTS = 6;
@@ -114,7 +114,7 @@ LLVM_LIBC_FUNCTION(float, tanf, (float x)) {
         fputil::set_errno_if_required(EDOM);
         fputil::raise_except_if_required(FE_INVALID);
       }
-      return x + FPBits::quiet_nan().get_val();
+      return x + FPBits::build_quiet_nan(0);
     }
     // Other large exceptional values
     if (auto r = TANF_EXCEPTS.lookup_odd(x_abs, x_sign);
@@ -139,4 +139,4 @@ LLVM_LIBC_FUNCTION(float, tanf, (float x)) {
       multiply_add(sin_y, -sin_k, multiply_add(cosm1_y, cos_k, cos_k)));
 }
 
-} // namespace LIBC_NAMESPACE
+} // namespace __llvm_libc

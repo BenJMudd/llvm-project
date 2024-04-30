@@ -27,7 +27,7 @@ public:
   Use *PtrUse;
   bool IsWrite;
   Type *OpType;
-  TypeSize TypeStoreSize = TypeSize::getFixed(0);
+  TypeSize TypeStoreSize = TypeSize::Fixed(0);
   MaybeAlign Alignment;
   // The mask Value, if we're looking at a masked load/store.
   Value *MaybeMask;

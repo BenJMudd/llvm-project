@@ -11,7 +11,6 @@ set(LLVM_LINK_COMPONENTS
   )
 
 add_llvm_library(LLVMBOLTCore
-  AddressMap.cpp
   BinaryBasicBlock.cpp
   BinaryContext.cpp
   BinaryData.cpp
@@ -20,7 +19,6 @@ add_llvm_library(LLVMBOLTCore
   BinaryFunctionProfile.cpp
   BinarySection.cpp
   DebugData.cpp
-  DebugNames.cpp
   DIEBuilder.cpp
   DynoStats.cpp
   Exceptions.cpp

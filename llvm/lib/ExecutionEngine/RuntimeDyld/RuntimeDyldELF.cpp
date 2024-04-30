@@ -35,8 +35,7 @@ static void or32AArch64Imm(void *L, uint64_t Imm) {
 }
 
 template <class T> static void write(bool isBE, void *P, T V) {
-  isBE ? write<T, llvm::endianness::big>(P, V)
-       : write<T, llvm::endianness::little>(P, V);
+  isBE ? write<T, support::big>(P, V) : write<T, support::little>(P, V);
 }
 
 static void write32AArch64Addr(void *L, uint64_t Imm) {
@@ -648,7 +647,7 @@ void RuntimeDyldELF::resolveARMRelocation(const SectionEntry &Section,
 
 void RuntimeDyldELF::setMipsABI(const ObjectFile &Obj) {
   if (Arch == Triple::UnknownArch ||
-      Triple::getArchTypePrefix(Arch) != "mips") {
+      !StringRef(Triple::getArchTypePrefix(Arch)).equals("mips")) {
     IsMipsO32ABI = false;
     IsMipsN32ABI = false;
     IsMipsN64ABI = false;

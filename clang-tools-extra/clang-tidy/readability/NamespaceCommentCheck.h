@@ -29,7 +29,7 @@ public:
   void check(const ast_matchers::MatchFinder::MatchResult &Result) override;
 
 private:
-  void storeOptions(ClangTidyOptions::OptionMap &Opts) override;
+  void storeOptions(ClangTidyOptions::OptionMap &Options) override;
 
   llvm::Regex NamespaceCommentPattern;
   const unsigned ShortNamespaceLines;

@@ -32,8 +32,7 @@ class MipsAsmBackend : public MCAsmBackend {
 public:
   MipsAsmBackend(const Target &T, const MCRegisterInfo &MRI, const Triple &TT,
                  StringRef CPU, bool N32)
-      : MCAsmBackend(TT.isLittleEndian() ? llvm::endianness::little
-                                         : llvm::endianness::big),
+      : MCAsmBackend(TT.isLittleEndian() ? support::little : support::big),
         TheTriple(TT), IsN32(N32) {}
 
   std::unique_ptr<MCObjectTargetWriter>
@@ -68,8 +67,7 @@ public:
                     const MCSubtargetInfo *STI) const override;
 
   bool shouldForceRelocation(const MCAssembler &Asm, const MCFixup &Fixup,
-                             const MCValue &Target,
-                             const MCSubtargetInfo *STI) override;
+                             const MCValue &Target) override;
 
   bool isMicroMips(const MCSymbol *Sym) const override;
 }; // class MipsAsmBackend

@@ -34,5 +34,4 @@ add_clang_library(clangSerialization
 
   DEPENDS
   omp_gen
-  ClangDriverOptions
   )

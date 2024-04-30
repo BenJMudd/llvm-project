@@ -2,7 +2,7 @@
 // RUN: split-file %s %t
 // RUN: sed -e "s@INPUT_DIR@%{/t:regex_replacement}@g" \
 // RUN: %t/reference.output.json.in >> %t/reference.output.json
-// RUN: %clang -extract-api --pretty-sgf -target arm64-apple-macosx \
+// RUN: %clang -extract-api -target arm64-apple-macosx \
 // RUN: %t/input.h -o %t/output.json | FileCheck -allow-empty %s
 
 // Generator version is not consistent across test runs, normalize it.
@@ -100,12 +100,12 @@ struct Color {
           {
             "range": {
               "end": {
-                "character": 17,
-                "line": 0
+                "character": 18,
+                "line": 1
               },
               "start": {
-                "character": 4,
-                "line": 0
+                "character": 5,
+                "line": 1
               }
             },
             "text": "Color in RGBA"
@@ -122,8 +122,8 @@ struct Color {
       },
       "location": {
         "position": {
-          "character": 7,
-          "line": 1
+          "character": 8,
+          "line": 2
         },
         "uri": "file://INPUT_DIR/input.h"
       },
@@ -161,10 +161,6 @@ struct Color {
         {
           "kind": "identifier",
           "spelling": "Red"
-        },
-        {
-          "kind": "text",
-          "spelling": ";"
         }
       ],
       "identifier": {
@@ -177,8 +173,8 @@ struct Color {
       },
       "location": {
         "position": {
-          "character": 11,
-          "line": 2
+          "character": 12,
+          "line": 3
         },
         "uri": "file://INPUT_DIR/input.h"
       },
@@ -217,10 +213,6 @@ struct Color {
         {
           "kind": "identifier",
           "spelling": "Green"
-        },
-        {
-          "kind": "text",
-          "spelling": ";"
         }
       ],
       "identifier": {
@@ -233,8 +225,8 @@ struct Color {
       },
       "location": {
         "position": {
-          "character": 11,
-          "line": 3
+          "character": 12,
+          "line": 4
         },
         "uri": "file://INPUT_DIR/input.h"
       },
@@ -273,10 +265,6 @@ struct Color {
         {
           "kind": "identifier",
           "spelling": "Blue"
-        },
-        {
-          "kind": "text",
-          "spelling": ";"
         }
       ],
       "identifier": {
@@ -289,8 +277,8 @@ struct Color {
       },
       "location": {
         "position": {
-          "character": 11,
-          "line": 4
+          "character": 12,
+          "line": 5
         },
         "uri": "file://INPUT_DIR/input.h"
       },
@@ -329,10 +317,6 @@ struct Color {
         {
           "kind": "identifier",
           "spelling": "Alpha"
-        },
-        {
-          "kind": "text",
-          "spelling": ";"
         }
       ],
       "docComment": {
@@ -340,12 +324,12 @@ struct Color {
           {
             "range": {
               "end": {
-                "character": 36,
-                "line": 5
+                "character": 37,
+                "line": 6
               },
               "start": {
-                "character": 6,
-                "line": 5
+                "character": 7,
+                "line": 6
               }
             },
             "text": "Alpha channel for transparency"
@@ -362,8 +346,8 @@ struct Color {
       },
       "location": {
         "position": {
-          "character": 11,
-          "line": 6
+          "character": 12,
+          "line": 7
         },
         "uri": "file://INPUT_DIR/input.h"
       },

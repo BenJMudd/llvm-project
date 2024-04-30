@@ -73,7 +73,7 @@ public:
   bool ParseDebugMacros(CompileUnit &comp_unit) override { return false; }
 
   bool ParseSupportFiles(CompileUnit &comp_unit,
-                         SupportFileList &support_files) override;
+                         FileSpecList &support_files) override;
   size_t ParseTypes(CompileUnit &cu) override { return 0; }
 
   bool ParseImportedModules(
@@ -118,6 +118,15 @@ public:
   void FindFunctions(const RegularExpression &regex, bool include_inlines,
                      SymbolContextList &sc_list) override;
 
+  void FindTypes(ConstString name, const CompilerDeclContext &parent_decl_ctx,
+                 uint32_t max_matches,
+                 llvm::DenseSet<SymbolFile *> &searched_symbol_files,
+                 TypeMap &types) override;
+
+  void FindTypes(llvm::ArrayRef<CompilerContext> pattern, LanguageSet languages,
+                 llvm::DenseSet<SymbolFile *> &searched_symbol_files,
+                 TypeMap &types) override;
+
   llvm::Expected<lldb::TypeSystemSP>
   GetTypeSystemForLanguage(lldb::LanguageType language) override {
     return llvm::make_error<llvm::StringError>(
@@ -141,7 +150,7 @@ public:
 
   llvm::StringRef GetPluginName() override { return GetPluginNameStatic(); }
 
-  uint64_t GetDebugInfoSize(bool load_all_debug_info = false) override;
+  uint64_t GetDebugInfoSize() override;
 
 private:
   // A class representing a position in the breakpad file. Useful for
@@ -195,6 +204,7 @@ private:
     Bookmark bookmark;
     std::optional<FileSpecList> support_files;
     std::unique_ptr<LineTable> line_table_up;
+
   };
 
   uint32_t CalculateNumCompileUnits() override;

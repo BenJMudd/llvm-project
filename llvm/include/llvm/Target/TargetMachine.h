@@ -34,6 +34,8 @@ using ModulePassManager = PassManager<Module>;
 
 class Function;
 class GlobalValue;
+class MachineFunctionPassManager;
+class MachineFunctionAnalysisManager;
 class MachineModuleInfoWrapperPass;
 class Mangler;
 class MCAsmInfo;
@@ -98,8 +100,7 @@ protected: // Can only create subclasses.
 
   Reloc::Model RM = Reloc::Static;
   CodeModel::Model CMModel = CodeModel::Small;
-  uint64_t LargeDataThreshold = 0;
-  CodeGenOptLevel OptLevel = CodeGenOptLevel::Default;
+  CodeGenOpt::Level OptLevel = CodeGenOpt::Default;
 
   /// Contains target specific asm information.
   std::unique_ptr<const MCAsmInfo> AsmInfo;
@@ -114,6 +115,7 @@ protected: // Can only create subclasses.
   std::optional<PGOOptions> PGOOption;
 
 public:
+  const TargetOptions DefaultOptions;
   mutable TargetOptions Options;
 
   TargetMachine(const TargetMachine &) = delete;
@@ -230,33 +232,26 @@ public:
   /// target default.
   CodeModel::Model getCodeModel() const { return CMModel; }
 
-  /// Returns the maximum code size possible under the code model.
-  uint64_t getMaxCodeSize() const;
-
   /// Set the code model.
   void setCodeModel(CodeModel::Model CM) { CMModel = CM; }
 
-  void setLargeDataThreshold(uint64_t LDT) { LargeDataThreshold = LDT; }
-  bool isLargeGlobalValue(const GlobalValue *GV) const;
+  bool isLargeData() const;
 
   bool isPositionIndependent() const;
 
-  bool shouldAssumeDSOLocal(const GlobalValue *GV) const;
+  bool shouldAssumeDSOLocal(const Module &M, const GlobalValue *GV) const;
 
   /// Returns true if this target uses emulated TLS.
   bool useEmulatedTLS() const;
-
-  /// Returns true if this target uses TLS Descriptors.
-  bool useTLSDESC() const;
 
   /// Returns the TLS model which should be used for the given global variable.
   TLSModel::Model getTLSModel(const GlobalValue *GV) const;
 
   /// Returns the optimization level: None, Less, Default, or Aggressive.
-  CodeGenOptLevel getOptLevel() const;
+  CodeGenOpt::Level getOptLevel() const;
 
   /// Overrides the optimization level.
-  void setOptLevel(CodeGenOptLevel Level);
+  void setOptLevel(CodeGenOpt::Level Level);
 
   void setFastISel(bool Enable) { Options.EnableFastISel = Enable; }
   bool getO0WantsFastISel() { return O0WantsFastISel; }
@@ -363,9 +358,7 @@ public:
   virtual TargetTransformInfo getTargetTransformInfo(const Function &F) const;
 
   /// Allow the target to modify the pass pipeline.
-  // TODO: Populate all pass names by using <Target>PassRegistry.def.
-  virtual void registerPassBuilderCallbacks(PassBuilder &,
-                                            bool PopulateClassToPassNames) {}
+  virtual void registerPassBuilderCallbacks(PassBuilder &) {}
 
   /// Allow the target to register alias analyses with the AAManager for use
   /// with the new pass manager. Only affects the "default" AAManager.
@@ -418,18 +411,6 @@ public:
   virtual unsigned getAddressSpaceForPseudoSourceKind(unsigned Kind) const {
     return 0;
   }
-
-  /// Entry point for module splitting. Targets can implement custom module
-  /// splitting logic, mainly used by LTO for --lto-partitions.
-  ///
-  /// \returns `true` if the module was split, `false` otherwise. When  `false`
-  /// is returned, it is assumed that \p ModuleCallback has never been called
-  /// and \p M has not been modified.
-  virtual bool splitModule(
-      Module &M, unsigned NumParts,
-      function_ref<void(std::unique_ptr<Module> MPart)> ModuleCallback) const {
-    return false;
-  }
 };
 
 /// This class describes a target machine that is implemented with the LLVM
@@ -440,7 +421,7 @@ protected: // Can only create subclasses.
   LLVMTargetMachine(const Target &T, StringRef DataLayoutString,
                     const Triple &TT, StringRef CPU, StringRef FS,
                     const TargetOptions &Options, Reloc::Model RM,
-                    CodeModel::Model CM, CodeGenOptLevel OL);
+                    CodeModel::Model CM, CodeGenOpt::Level OL);
 
   void initAsmInfo();
 
@@ -465,12 +446,19 @@ public:
                       bool DisableVerify = true,
                       MachineModuleInfoWrapperPass *MMIWP = nullptr) override;
 
-  virtual Error buildCodeGenPipeline(ModulePassManager &, raw_pwrite_stream &,
-                                     raw_pwrite_stream *, CodeGenFileType,
-                                     const CGPassBuilderOption &,
+  virtual Error buildCodeGenPipeline(ModulePassManager &,
+                                     MachineFunctionPassManager &,
+                                     MachineFunctionAnalysisManager &,
+                                     raw_pwrite_stream &, raw_pwrite_stream *,
+                                     CodeGenFileType, CGPassBuilderOption,
                                      PassInstrumentationCallbacks *) {
     return make_error<StringError>("buildCodeGenPipeline is not overridden",
                                    inconvertibleErrorCode());
+  }
+
+  virtual std::pair<StringRef, bool> getPassNameFromLegacyName(StringRef) {
+    llvm_unreachable(
+        "getPassNameFromLegacyName parseMIRPipeline is not overridden");
   }
 
   /// Add passes to the specified pass manager to get machine code emitted with

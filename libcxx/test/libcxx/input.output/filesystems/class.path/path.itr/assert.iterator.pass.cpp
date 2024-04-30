@@ -8,20 +8,19 @@
 
 // REQUIRES: has-unix-headers
 // UNSUPPORTED: c++03
-// UNSUPPORTED: !libcpp-hardening-mode=debug
-// XFAIL: libcpp-hardening-mode=debug && availability-verbose_abort-missing
+// UNSUPPORTED: !libcpp-has-debug-mode && !libcpp-has-assertions
+// XFAIL: availability-verbose_abort-missing
 
 // <filesystem>
 
 // class path
 
-#include <filesystem>
+#include "filesystem_include.h"
 #include <iterator>
 #include <type_traits>
 #include <cassert>
 
 #include "check_assertion.h"
-namespace fs = std::filesystem;
 
 int main(int, char**) {
   // Test incrementing/decrementing a singular iterator

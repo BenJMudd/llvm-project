@@ -15,8 +15,18 @@
 #ifndef LLVM_CLANG_LIB_FORMAT_UNWRAPPEDLINEPARSER_H
 #define LLVM_CLANG_LIB_FORMAT_UNWRAPPEDLINEPARSER_H
 
+#include "Encoding.h"
+#include "FormatToken.h"
 #include "Macros.h"
+#include "clang/Basic/IdentifierTable.h"
+#include "clang/Format/Format.h"
+#include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/BitVector.h"
+#include "llvm/ADT/DenseSet.h"
+#include "llvm/Support/Regex.h"
+#include <list>
 #include <stack>
+#include <vector>
 
 namespace clang {
 namespace format {
@@ -30,26 +40,26 @@ struct UnwrappedLineNode;
 /// \c UnwrappedLineFormatter. The key property is that changing the formatting
 /// within an unwrapped line does not affect any other unwrapped lines.
 struct UnwrappedLine {
-  UnwrappedLine() = default;
+  UnwrappedLine();
 
   /// The \c Tokens comprising this \c UnwrappedLine.
   std::list<UnwrappedLineNode> Tokens;
 
   /// The indent level of the \c UnwrappedLine.
-  unsigned Level = 0;
+  unsigned Level;
 
   /// The \c PPBranchLevel (adjusted for header guards) if this line is a
   /// \c InMacroBody line, and 0 otherwise.
-  unsigned PPLevel = 0;
+  unsigned PPLevel;
 
   /// Whether this \c UnwrappedLine is part of a preprocessor directive.
-  bool InPPDirective = false;
+  bool InPPDirective;
   /// Whether this \c UnwrappedLine is part of a pramga directive.
-  bool InPragmaDirective = false;
+  bool InPragmaDirective;
   /// Whether it is part of a macro body.
-  bool InMacroBody = false;
+  bool InMacroBody;
 
-  bool MustBeDeclaration = false;
+  bool MustBeDeclaration;
 
   /// Whether the parser has seen \c decltype(auto) in this line.
   bool SeenDecltypeAuto = false;
@@ -118,6 +128,8 @@ private:
   void parseFile();
   bool precededByCommentOrPPDirective() const;
   bool parseLevel(const FormatToken *OpeningBrace = nullptr,
+                  bool CanContainBracedList = true,
+                  TokenType NextLBracesType = TT_Unknown,
                   IfStmtKind *IfKind = nullptr,
                   FormatToken **IfLeftBrace = nullptr);
   bool mightFitOnOneLine(UnwrappedLine &Line,
@@ -125,8 +137,11 @@ private:
   FormatToken *parseBlock(bool MustBeDeclaration = false,
                           unsigned AddLevels = 1u, bool MunchSemi = true,
                           bool KeepBraces = true, IfStmtKind *IfKind = nullptr,
-                          bool UnindentWhitesmithsBraces = false);
-  void parseChildBlock();
+                          bool UnindentWhitesmithsBraces = false,
+                          bool CanContainBracedList = true,
+                          TokenType NextLBracesType = TT_Unknown);
+  void parseChildBlock(bool CanContainBracedList = true,
+                       TokenType NextLBracesType = TT_Unknown);
   void parsePPDirective();
   void parsePPDefine();
   void parsePPIf(bool IfDef);
@@ -135,13 +150,15 @@ private:
   void parsePPPragma();
   void parsePPUnknown();
   void readTokenWithJavaScriptASI();
-  void parseStructuralElement(const FormatToken *OpeningBrace = nullptr,
+  void parseStructuralElement(bool IsTopLevel = false,
+                              TokenType NextLBracesType = TT_Unknown,
                               IfStmtKind *IfKind = nullptr,
                               FormatToken **IfLeftBrace = nullptr,
                               bool *HasDoWhile = nullptr,
                               bool *HasLabel = nullptr);
   bool tryToParseBracedList();
-  bool parseBracedList(bool IsAngleBracket = false, bool IsEnum = false);
+  bool parseBracedList(bool ContinueOnSemicolons = false, bool IsEnum = false,
+                       tok::TokenKind ClosingBraceKind = tok::r_brace);
   bool parseParens(TokenType AmpAmpTokenType = TT_Unknown);
   void parseSquare(bool LambdaIntroducer = false);
   void keepAncestorBraces();
@@ -232,7 +249,6 @@ private:
   void flushComments(bool NewlineBeforeNext);
   void pushToken(FormatToken *Tok);
   void calculateBraceTypes(bool ExpectClassBody = false);
-  void setPreviousRBraceType(TokenType Type);
 
   // Marks a conditional compilation edge (for example, an '#if', '#ifdef',
   // '#else' or merge conflict marker). If 'Unreachable' is true, assumes
@@ -315,7 +331,6 @@ private:
   llvm::BitVector DeclarationScopeStack;
 
   const FormatStyle &Style;
-  bool IsCpp;
   const AdditionalKeywords &Keywords;
 
   llvm::Regex CommentPragmasRegex;
@@ -412,7 +427,10 @@ struct UnwrappedLineNode {
   SmallVector<UnwrappedLine, 0> Children;
 };
 
-std::ostream &operator<<(std::ostream &Stream, const UnwrappedLine &Line);
+inline UnwrappedLine::UnwrappedLine()
+    : Level(0), PPLevel(0), InPPDirective(false), InPragmaDirective(false),
+      InMacroBody(false), MustBeDeclaration(false),
+      MatchingOpeningBlockLineIndex(kInvalidIndex) {}
 
 } // end namespace format
 } // end namespace clang

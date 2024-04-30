@@ -213,7 +213,7 @@ public:
     // FIXME: add signature for profile other than CS.
     // See https://github.com/llvm/llvm-project/issues/57928.
     MDTuple *Signatures = nullptr;
-    return emitDXILEntryPointTuple(
+    return emitDxilEntryPointTuple(
         &F, F.getName().str(), Signatures, Resources,
         Props.emitDXILEntryProps(RawShaderFlag, Ctx, /*IsLib*/ false), Ctx);
   }
@@ -222,7 +222,7 @@ public:
     // FIXME: add signature for profile other than CS.
     // See https://github.com/llvm/llvm-project/issues/57928.
     MDTuple *Signatures = nullptr;
-    return emitDXILEntryPointTuple(
+    return emitDxilEntryPointTuple(
         &F, F.getName().str(), Signatures,
         /*entry in lib doesn't need resources metadata*/ nullptr,
         Props.emitDXILEntryProps(RawShaderFlag, Ctx, /*IsLib*/ true), Ctx);
@@ -233,13 +233,13 @@ public:
   static MDTuple *emitEmptyEntryForLib(MDTuple *Resources,
                                        uint64_t RawShaderFlag,
                                        LLVMContext &Ctx) {
-    return emitDXILEntryPointTuple(
+    return emitDxilEntryPointTuple(
         nullptr, "", nullptr, Resources,
         EntryProps::emitEntryPropsForEmptyEntry(RawShaderFlag, Ctx), Ctx);
   }
 
 private:
-  static MDTuple *emitDXILEntryPointTuple(Function *Fn, const std::string &Name,
+  static MDTuple *emitDxilEntryPointTuple(Function *Fn, const std::string &Name,
                                           MDTuple *Signatures,
                                           MDTuple *Resources,
                                           MDTuple *Properties,

@@ -32,8 +32,9 @@ namespace {
     unsigned getRelocType(MCContext &Ctx, const MCValue &Target,
                           const MCFixup &Fixup, bool IsPCRel) const override;
 
-    bool needsRelocateWithSymbol(const MCValue &Val, const MCSymbol &Sym,
+    bool needsRelocateWithSymbol(const MCSymbol &Sym,
                                  unsigned Type) const override;
+
   };
 }
 
@@ -123,9 +124,8 @@ unsigned SparcELFObjectWriter::getRelocType(MCContext &Ctx,
   return ELF::R_SPARC_NONE;
 }
 
-bool SparcELFObjectWriter::needsRelocateWithSymbol(const MCValue &,
-                                                   const MCSymbol &,
-                                                   unsigned Type) const {
+bool SparcELFObjectWriter::needsRelocateWithSymbol(const MCSymbol &Sym,
+                                                 unsigned Type) const {
   switch (Type) {
     default:
       return false;

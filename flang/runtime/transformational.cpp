@@ -20,7 +20,6 @@
 #include "copy.h"
 #include "terminator.h"
 #include "tools.h"
-#include "flang/Common/float128.h"
 #include "flang/Runtime/descriptor.h"
 
 namespace Fortran::runtime {
@@ -52,11 +51,9 @@ public:
           }
         }
       }
-    } else if (auto count{GetInt64Safe(
-                   shift_.OffsetElement<char>(), shiftElemLen_, terminator_)}) {
-      shiftCount_ = *count;
     } else {
-      terminator_.Crash("%s: SHIFT= value exceeds 64 bits", which);
+      shiftCount_ =
+          GetInt64(shift_.OffsetElement<char>(), shiftElemLen_, terminator_);
     }
   }
   RT_API_ATTRS SubscriptValue GetShift(const SubscriptValue resultAt[]) const {
@@ -69,10 +66,8 @@ public:
           ++k;
         }
       }
-      auto count{GetInt64Safe(
-          shift_.Element<char>(shiftAt), shiftElemLen_, terminator_)};
-      RUNTIME_CHECK(terminator_, count.has_value());
-      return *count;
+      return GetInt64(
+          shift_.Element<char>(shiftAt), shiftElemLen_, terminator_);
     } else {
       return shiftCount_; // invariant count extracted in Init()
     }
@@ -110,8 +105,7 @@ static RT_API_ATTRS void DefaultInitialize(
           static_cast<char32_t>(' '));
       break;
     default:
-      terminator.Crash(
-          "not yet implemented: CHARACTER(KIND=%d) in EOSHIFT intrinsic", kind);
+      terminator.Crash("not yet implemented: EOSHIFT: CHARACTER kind %d", kind);
     }
   } else {
     std::memset(result.raw().base_addr, 0, bytes);
@@ -723,15 +717,12 @@ void RTDEF(Reshape)(Descriptor &result, const Descriptor &source,
   std::size_t resultElements{1};
   SubscriptValue shapeSubscript{shape.GetDimension(0).LowerBound()};
   for (int j{0}; j < resultRank; ++j, ++shapeSubscript) {
-    auto extent{GetInt64Safe(
-        shape.Element<char>(&shapeSubscript), shapeElementBytes, terminator)};
-    if (!extent) {
-      terminator.Crash("RESHAPE: value of SHAPE(%d) exceeds 64 bits", j + 1);
-    } else if (*extent < 0) {
+    resultExtent[j] = GetInt64(
+        shape.Element<char>(&shapeSubscript), shapeElementBytes, terminator);
+    if (resultExtent[j] < 0) {
       terminator.Crash("RESHAPE: bad value for SHAPE(%d)=%jd", j + 1,
-          static_cast<std::intmax_t>(*extent));
+          static_cast<std::intmax_t>(resultExtent[j]));
     }
-    resultExtent[j] = *extent;
     resultElements *= resultExtent[j];
   }
 
@@ -769,16 +760,14 @@ void RTDEF(Reshape)(Descriptor &result, const Descriptor &source,
     SubscriptValue orderSubscript{order->GetDimension(0).LowerBound()};
     std::size_t orderElementBytes{order->ElementBytes()};
     for (SubscriptValue j{0}; j < resultRank; ++j, ++orderSubscript) {
-      auto k{GetInt64Safe(order->Element<char>(&orderSubscript),
-          orderElementBytes, terminator)};
-      if (!k) {
-        terminator.Crash("RESHAPE: ORDER element value exceeds 64 bits");
-      } else if (*k < 1 || *k > resultRank || ((values >> *k) & 1)) {
+      auto k{GetInt64(order->Element<char>(&orderSubscript), orderElementBytes,
+          terminator)};
+      if (k < 1 || k > resultRank || ((values >> k) & 1)) {
         terminator.Crash("RESHAPE: bad value for ORDER element (%jd)",
-            static_cast<std::intmax_t>(*k));
+            static_cast<std::intmax_t>(k));
       }
-      values |= std::uint64_t{1} << *k;
-      dimOrder[j] = *k - 1;
+      values |= std::uint64_t{1} << k;
+      dimOrder[j] = k - 1;
     }
   } else {
     for (int j{0}; j < resultRank; ++j) {

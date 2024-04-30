@@ -9,6 +9,8 @@
 // UNSUPPORTED: no-threads
 // UNSUPPORTED: c++03, c++11, c++14
 
+// UNSUPPORTED: availability-shared_mutex-missing
+
 // <shared_mutex>
 
 // class shared_mutex;
@@ -22,7 +24,6 @@
 int main(int, char**)
 {
     std::shared_mutex m;
-    (void)m;
 
-    return 0;
+  return 0;
 }

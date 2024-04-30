@@ -9,6 +9,7 @@
 #include "DwarfGenerator.h"
 #include "DwarfUtils.h"
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/BinaryFormat/Dwarf.h"
@@ -33,15 +34,10 @@
 #include "gtest/gtest.h"
 #include <string>
 
-// AIX doesn't support debug_str_offsets or debug_addr sections
-#ifdef _AIX
-#define NO_SUPPORT_DEBUG_STR_OFFSETS
-#define NO_SUPPORT_DEBUG_ADDR
-#endif
-
 using namespace llvm;
 using namespace dwarf;
 using namespace utils;
+using ::testing::HasSubstr;
 
 namespace {
 
@@ -441,7 +437,11 @@ TEST(DWARFDebugInfo, TestDWARF32Version2Addr4AllForms) {
   TestAllForms<2, AddrType, RefAddrType>();
 }
 
+#ifdef _AIX
+TEST(DWARFDebugInfo, DISABLED_TestDWARF32Version2Addr8AllForms) {
+#else
 TEST(DWARFDebugInfo, TestDWARF32Version2Addr8AllForms) {
+#endif
   // Test that we can decode all forms for DWARF32, version 2, with 4 byte
   // addresses.
   typedef uint64_t AddrType;
@@ -459,7 +459,11 @@ TEST(DWARFDebugInfo, TestDWARF32Version3Addr4AllForms) {
   TestAllForms<3, AddrType, RefAddrType>();
 }
 
+#ifdef _AIX
+TEST(DWARFDebugInfo, DISABLED_TestDWARF32Version3Addr8AllForms) {
+#else
 TEST(DWARFDebugInfo, TestDWARF32Version3Addr8AllForms) {
+#endif
   // Test that we can decode all forms for DWARF32, version 3, with 8 byte
   // addresses.
   typedef uint64_t AddrType;
@@ -477,7 +481,11 @@ TEST(DWARFDebugInfo, TestDWARF32Version4Addr4AllForms) {
   TestAllForms<4, AddrType, RefAddrType>();
 }
 
+#ifdef _AIX
+TEST(DWARFDebugInfo, DISABLED_TestDWARF32Version4Addr8AllForms) {
+#else
 TEST(DWARFDebugInfo, TestDWARF32Version4Addr8AllForms) {
+#endif
   // Test that we can decode all forms for DWARF32, version 4, with 8 byte
   // addresses.
   typedef uint64_t AddrType;
@@ -486,8 +494,8 @@ TEST(DWARFDebugInfo, TestDWARF32Version4Addr8AllForms) {
   TestAllForms<4, AddrType, RefAddrType>();
 }
 
-#ifdef NO_SUPPORT_DEBUG_STR_OFFSETS
-TEST(DWARFDebugInfo, DISABLED_TestDWARF32Version5Addr4AllForms) {
+#ifdef _AIX
+TEST(DWARFDebigInfo, DISABLED_TestDWARF32Version5Addr4AllForms) {
 #else
 TEST(DWARFDebugInfo, TestDWARF32Version5Addr4AllForms) {
 #endif
@@ -499,8 +507,8 @@ TEST(DWARFDebugInfo, TestDWARF32Version5Addr4AllForms) {
   TestAllForms<5, AddrType, RefAddrType>();
 }
 
-#ifdef NO_SUPPORT_DEBUG_STR_OFFSETS
-TEST(DWARFDebugInfo, DISABLED_TestDWARF32Version5Addr8AllForms) {
+#ifdef _AIX
+TEST(DWARFDebigInfo, DISABLED_TestDWARF32Version5Addr8AllForms) {
 #else
 TEST(DWARFDebugInfo, TestDWARF32Version5Addr8AllForms) {
 #endif
@@ -607,7 +615,11 @@ TEST(DWARFDebugInfo, TestDWARF32Version2Addr4Children) {
   TestChildren<2, AddrType>();
 }
 
+#ifdef _AIX
+TEST(DWARFDebugInfo, DISABLED_TestDWARF32Version2Addr8Children) {
+#else
 TEST(DWARFDebugInfo, TestDWARF32Version2Addr8Children) {
+#endif
   // Test that we can decode all forms for DWARF32, version 2, with 8 byte
   // addresses.
   typedef uint64_t AddrType;
@@ -621,7 +633,11 @@ TEST(DWARFDebugInfo, TestDWARF32Version3Addr4Children) {
   TestChildren<3, AddrType>();
 }
 
+#ifdef _AIX
+TEST(DWARFDebugInfo, DISABLED_TestDWARF32Version3Addr8Children) {
+#else
 TEST(DWARFDebugInfo, TestDWARF32Version3Addr8Children) {
+#endif
   // Test that we can decode all forms for DWARF32, version 3, with 8 byte
   // addresses.
   typedef uint64_t AddrType;
@@ -635,7 +651,11 @@ TEST(DWARFDebugInfo, TestDWARF32Version4Addr4Children) {
   TestChildren<4, AddrType>();
 }
 
+#ifdef _AIX
+TEST(DWARFDebugInfo, DISABLED_TestDWARF32Version4Addr8Children) {
+#else
 TEST(DWARFDebugInfo, TestDWARF32Version4Addr8Children) {
+#endif
   // Test that we can decode all forms for DWARF32, version 4, with 8 byte
   // addresses.
   typedef uint64_t AddrType;
@@ -857,7 +877,11 @@ TEST(DWARFDebugInfo, TestDWARF32Version2Addr4References) {
   TestReferences<2, AddrType>();
 }
 
+#ifdef _AIX
+TEST(DWARFDebugInfo, DISABLED_TestDWARF32Version2Addr8References) {
+#else
 TEST(DWARFDebugInfo, TestDWARF32Version2Addr8References) {
+#endif
   // Test that we can decode all forms for DWARF32, version 2, with 8 byte
   // addresses.
   typedef uint64_t AddrType;
@@ -871,7 +895,11 @@ TEST(DWARFDebugInfo, TestDWARF32Version3Addr4References) {
   TestReferences<3, AddrType>();
 }
 
+#ifdef _AIX
+TEST(DWARFDebugInfo, DISABLED_TestDWARF32Version3Addr8References) {
+#else
 TEST(DWARFDebugInfo, TestDWARF32Version3Addr8References) {
+#endif
   // Test that we can decode all forms for DWARF32, version 3, with 8 byte
   // addresses.
   typedef uint64_t AddrType;
@@ -885,7 +913,11 @@ TEST(DWARFDebugInfo, TestDWARF32Version4Addr4References) {
   TestReferences<4, AddrType>();
 }
 
+#ifdef _AIX
+TEST(DWARFDebugInfo, DISABLED_TestDWARF32Version4Addr8References) {
+#else
 TEST(DWARFDebugInfo, TestDWARF32Version4Addr8References) {
+#endif
   // Test that we can decode all forms for DWARF32, version 4, with 8 byte
   // addresses.
   typedef uint64_t AddrType;
@@ -1029,7 +1061,11 @@ TEST(DWARFDebugInfo, TestDWARF32Version2Addr4Addresses) {
   TestAddresses<2, AddrType>();
 }
 
+#ifdef _AIX
+TEST(DWARFDebugInfo, DISABLED_TestDWARF32Version2Addr8Addresses) {
+#else
 TEST(DWARFDebugInfo, TestDWARF32Version2Addr8Addresses) {
+#endif
   // Test that we can decode address values in DWARF32, version 2, with 8 byte
   // addresses.
   typedef uint64_t AddrType;
@@ -1043,7 +1079,11 @@ TEST(DWARFDebugInfo, TestDWARF32Version3Addr4Addresses) {
   TestAddresses<3, AddrType>();
 }
 
+#ifdef _AIX
+TEST(DWARFDebugInfo, DISABLED_TestDWARF32Version3Addr8Addresses) {
+#else
 TEST(DWARFDebugInfo, TestDWARF32Version3Addr8Addresses) {
+#endif
   // Test that we can decode address values in DWARF32, version 3, with 8 byte
   // addresses.
   typedef uint64_t AddrType;
@@ -1057,14 +1097,18 @@ TEST(DWARFDebugInfo, TestDWARF32Version4Addr4Addresses) {
   TestAddresses<4, AddrType>();
 }
 
+#ifdef _AIX
+TEST(DWARFDebugInfo, DISABLED_TestDWARF32Version4Addr8Addresses) {
+#else
 TEST(DWARFDebugInfo, TestDWARF32Version4Addr8Addresses) {
+#endif
   // Test that we can decode address values in DWARF32, version 4, with 8 byte
   // addresses.
   typedef uint64_t AddrType;
   TestAddresses<4, AddrType>();
 }
 
-#ifdef NO_SUPPORT_DEBUG_STR_OFFSETS
+#ifdef _AIX
 TEST(DWARFDebugInfo, DISABLED_TestStringOffsets) {
 #else
 TEST(DWARFDebugInfo, TestStringOffsets) {
@@ -1133,7 +1177,8 @@ TEST(DWARFDebugInfo, TestStringOffsets) {
   EXPECT_STREQ(String1, *Extracted3);
 }
 
-#ifdef NO_SUPPORT_DEBUG_ADDR
+// AIX does not support string offset section.
+#if defined(_AIX)
 TEST(DWARFDebugInfo, DISABLED_TestEmptyStringOffsets) {
 #else
 TEST(DWARFDebugInfo, TestEmptyStringOffsets) {
@@ -1615,42 +1660,6 @@ TEST(DWARFDebugInfo, TestFindRecurse) {
   EXPECT_EQ(AbsDieName, StringOpt.value_or(nullptr));
 }
 
-TEST(DWARFDebugInfo, TestSelfRecursiveType) {
-  typedef uint32_t AddrType;
-  Triple Triple = getDefaultTargetTripleForAddrSize(sizeof(AddrType));
-  if (!isConfigurationSupported(Triple))
-    GTEST_SKIP();
-
-  auto ExpectedDG = dwarfgen::Generator::create(Triple, 4);
-  ASSERT_THAT_EXPECTED(ExpectedDG, Succeeded());
-  dwarfgen::Generator *DG = ExpectedDG.get().get();
-  dwarfgen::CompileUnit &CU = DG->addCompileUnit();
-  dwarfgen::DIE CUDie = CU.getUnitDIE();
-
-  // Create an invalid self-recursive typedef.
-  dwarfgen::DIE TypedefDie = CUDie.addChild(DW_TAG_typedef);
-  TypedefDie.addAttribute(DW_AT_name, DW_FORM_strp, "illegal");
-  TypedefDie.addAttribute(DW_AT_type, DW_FORM_ref_addr, TypedefDie);
-
-  MemoryBufferRef FileBuffer(DG->generate(), "dwarf");
-  auto Obj = object::ObjectFile::createObjectFile(FileBuffer);
-  EXPECT_TRUE((bool)Obj);
-  std::unique_ptr<DWARFContext> DwarfContext = DWARFContext::create(**Obj);
-
-  // Verify the number of compile units is correct.
-  uint32_t NumCUs = DwarfContext->getNumCompileUnits();
-  EXPECT_EQ(NumCUs, 1u);
-  DWARFCompileUnit *U = cast<DWARFCompileUnit>(DwarfContext->getUnitAtIndex(0));
-  {
-    DWARFDie CUDie = U->getUnitDIE(false);
-    EXPECT_TRUE(CUDie.isValid());
-    DWARFDie TypedefDie = CUDie.getFirstChild();
-
-    // Test that getTypeSize doesn't get into an infinite loop.
-    EXPECT_EQ(TypedefDie.getTypeSize(sizeof(AddrType)), std::nullopt);
-  }
-}
-
 TEST(DWARFDebugInfo, TestDwarfToFunctions) {
   // Test all of the dwarf::toXXX functions that take a
   // std::optional<DWARFFormValue> and extract the values from it.
@@ -1838,7 +1847,8 @@ TEST(DWARFDebugInfo, TestFindAttrs) {
   EXPECT_EQ(DieMangled, toString(NameOpt, ""));
 }
 
-#ifdef NO_SUPPORT_DEBUG_ADDR
+// AIX does not support debug_addr section.
+#if defined(_AIX)
 TEST(DWARFDebugInfo, DISABLED_TestImplicitConstAbbrevs) {
 #else
 TEST(DWARFDebugInfo, TestImplicitConstAbbrevs) {
@@ -2161,11 +2171,7 @@ TEST(DWARFDebugInfo, TestDWARF64UnitLength) {
     DWARFDataExtractor Data(Obj, Sec, /* IsLittleEndian = */ true,
                             /* AddressSize = */ 4);
     uint64_t Offset = 0;
-    ASSERT_THAT_ERROR(
-        Header.extract(*Context, Data, &Offset, DW_SECT_INFO),
-        FailedWithMessage(
-            "DWARF unit from offset 0x00000000 incl. to offset  "
-            "0x1122334455667794 excl. extends past section size 0x00000018"));
+    EXPECT_FALSE(Header.extract(*Context, Data, &Offset, DW_SECT_INFO));
     // Header.extract() returns false because there is not enough space
     // in the section for the declared length. Anyway, we can check that
     // the properties are read correctly.

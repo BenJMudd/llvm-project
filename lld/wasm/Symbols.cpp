@@ -13,7 +13,6 @@
 #include "InputFiles.h"
 #include "OutputSections.h"
 #include "OutputSegment.h"
-#include "SymbolTable.h"
 #include "lld/Common/ErrorHandler.h"
 #include "lld/Common/Memory.h"
 #include "llvm/Demangle/Demangle.h"
@@ -426,15 +425,20 @@ const OutputSectionSymbol *SectionSymbol::getOutputSectionSymbol() const {
   return section->outputSec->sectionSym;
 }
 
-void LazySymbol::extract() {
-  if (file->lazy) {
-    file->lazy = false;
-    symtab->addFile(file, name);
-  }
-}
+void LazySymbol::fetch() { cast<ArchiveFile>(file)->addMember(&archiveSymbol); }
 
 void LazySymbol::setWeak() {
   flags |= (flags & ~WASM_SYMBOL_BINDING_MASK) | WASM_SYMBOL_BINDING_WEAK;
+}
+
+MemoryBufferRef LazySymbol::getMemberBuffer() {
+  Archive::Child c =
+      CHECK(archiveSymbol.getMember(),
+            "could not get the member for symbol " + toString(*this));
+
+  return CHECK(c.getMemoryBufferRef(),
+               "could not get the buffer for the member defining symbol " +
+                   toString(*this));
 }
 
 void printTraceSymbolUndefined(StringRef name, const InputFile* file) {

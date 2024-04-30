@@ -18,11 +18,7 @@ auto InitialImage::Add(ConstantSubscript offset, std::size_t bytes,
   if (offset < 0 || offset + bytes > data_.size()) {
     return OutOfRange;
   } else {
-    auto optElements{TotalElementCount(x.shape())};
-    if (!optElements) {
-      return TooManyElems;
-    }
-    auto elements{*optElements};
+    auto elements{TotalElementCount(x.shape())};
     auto elementBytes{bytes > 0 ? bytes / elements : 0};
     if (elements * elementBytes != bytes) {
       return SizeMismatch;
@@ -39,10 +35,12 @@ auto InitialImage::Add(ConstantSubscript offset, std::size_t bytes,
             AddPointer(offset + component.offset(), indExpr.value());
           } else if (IsAllocatable(component) || IsAutomatic(component)) {
             return NotAConstant;
-          } else if (auto result{Add(offset + component.offset(),
-                         component.size(), indExpr.value(), context)};
-                     result != Ok) {
-            return result;
+          } else {
+            Result added{Add(offset + component.offset(), component.size(),
+                indExpr.value(), context)};
+            if (added != Ok) {
+              return added;
+            }
           }
         }
         offset += elementBytes;
@@ -93,9 +91,7 @@ public:
     }
     using Const = Constant<T>;
     using Scalar = typename Const::Element;
-    std::optional<uint64_t> optElements{TotalElementCount(extents_)};
-    CHECK(optElements);
-    uint64_t elements{*optElements};
+    std::size_t elements{TotalElementCount(extents_)};
     std::vector<Scalar> typedValue(elements);
     auto elemBytes{ToInt64(type_.MeasureSizeInBytes(
         context_, GetRank(extents_) > 0, charLength_))};
@@ -119,16 +115,9 @@ public:
             for (std::size_t j{0}; j < elements; ++j, at += stride) {
               if (Result value{image_.AsConstantPointer(at)}) {
                 typedValue[j].emplace(component, std::move(*value));
-              } else {
-                typedValue[j].emplace(component, Expr<SomeType>{NullPointer{}});
               }
             }
-          } else if (IsAllocatable(component)) {
-            // Lowering needs an explicit NULL() for allocatables
-            for (std::size_t j{0}; j < elements; ++j, at += stride) {
-              typedValue[j].emplace(component, Expr<SomeType>{NullPointer{}});
-            }
-          } else {
+          } else if (!IsAllocatable(component)) {
             auto componentType{DynamicType::From(component)};
             CHECK(componentType.has_value());
             auto componentExtents{GetConstantExtents(context_, component)};

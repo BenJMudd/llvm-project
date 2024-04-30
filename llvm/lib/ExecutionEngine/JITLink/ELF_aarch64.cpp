@@ -11,16 +11,14 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/ExecutionEngine/JITLink/ELF_aarch64.h"
+#include "EHFrameSupportImpl.h"
+#include "ELFLinkGraphBuilder.h"
+#include "JITLinkGeneric.h"
 #include "llvm/BinaryFormat/ELF.h"
 #include "llvm/ExecutionEngine/JITLink/DWARFRecordSectionSplitter.h"
 #include "llvm/ExecutionEngine/JITLink/aarch64.h"
 #include "llvm/Object/ELFObjectFile.h"
 #include "llvm/Support/Endian.h"
-
-#include "DefineExternalSectionStartAndEndSymbols.h"
-#include "EHFrameSupportImpl.h"
-#include "ELFLinkGraphBuilder.h"
-#include "JITLinkGeneric.h"
 
 #define DEBUG_TYPE "jitlink"
 
@@ -600,7 +598,7 @@ void link_ELF_aarch64(std::unique_ptr<LinkGraph> G,
   PassConfiguration Config;
   const Triple &TT = G->getTargetTriple();
   if (Ctx->shouldAddDefaultTargetPasses(TT)) {
-    // Add eh-frame passes.
+    // Add eh-frame passses.
     Config.PrePrunePasses.push_back(DWARFRecordSectionSplitter(".eh_frame"));
     Config.PrePrunePasses.push_back(EHFrameEdgeFixer(
         ".eh_frame", 8, aarch64::Pointer32, aarch64::Pointer64,
@@ -612,11 +610,6 @@ void link_ELF_aarch64(std::unique_ptr<LinkGraph> G,
       Config.PrePrunePasses.push_back(std::move(MarkLive));
     else
       Config.PrePrunePasses.push_back(markAllSymbolsLive);
-
-    // Resolve any external section start / end symbols.
-    Config.PostAllocationPasses.push_back(
-        createDefineExternalSectionStartAndEndSymbolsPass(
-            identifyELFSectionStartAndEndSymbols));
 
     // Add an in-place GOT/TLS/Stubs build pass.
     Config.PostPrunePasses.push_back(buildTables_ELF_aarch64);

@@ -10,7 +10,7 @@
 // VINTERP encoding
 //===----------------------------------------------------------------------===//
 
-class VINTERPe <VOPProfile P> : Enc64 {
+class VINTERPe_gfx11 <bits<7> op, VOPProfile P> : Enc64 {
   bits<8> vdst;
   bits<4> src0_modifiers;
   bits<9> src0;
@@ -31,20 +31,13 @@ class VINTERPe <VOPProfile P> : Enc64 {
   let Inst{13}    = !if(P.HasOpSel, src2_modifiers{2}, 0); // op_sel(2)
   let Inst{14}    = !if(P.HasOpSel, src0_modifiers{3}, 0); // op_sel(3)
   let Inst{15}    = clamp;
+  let Inst{22-16} = op;
   let Inst{40-32} = src0;
   let Inst{49-41} = src1;
   let Inst{58-50} = src2;
   let Inst{61}    = src0_modifiers{0}; // neg(0)
   let Inst{62}    = src1_modifiers{0}; // neg(1)
   let Inst{63}    = src2_modifiers{0}; // neg(2)
-}
-
-class VINTERPe_gfx11 <bits<7> op, VOPProfile P> : VINTERPe<P> {
-  let Inst{22-16} = op;
-}
-
-class VINTERPe_gfx12 <bits<7> op, VOPProfile P> : VINTERPe<P> {
-  let Inst{20-16} = op{4-0};
 }
 
 //===----------------------------------------------------------------------===//
@@ -78,7 +71,7 @@ def VOP3_VINTERP_F32 : VOPProfile<[f32, f32, f32, f32]> {
                    Src1Mod:$src1_modifiers, VRegSrc_32:$src1,
                    Src2Mod:$src2_modifiers, VRegSrc_32:$src2,
                    clampmod:$clamp,
-                   WaitEXP:$waitexp);
+                   wait_exp:$waitexp);
 
   let Asm64 = " $vdst, $src0_modifiers, $src1_modifiers, $src2_modifiers$clamp$waitexp";
 }
@@ -96,7 +89,7 @@ class VOP3_VINTERP_F16 <list<ValueType> ArgVT> : VOPProfile<ArgVT> {
                    Src1Mod:$src1_modifiers, VRegSrc_32:$src1,
                    Src2Mod:$src2_modifiers, VRegSrc_32:$src2,
                    clampmod:$clamp, op_sel0:$op_sel,
-                   WaitEXP:$waitexp);
+                   wait_exp:$waitexp);
 
   let Asm64 = " $vdst, $src0_modifiers, $src1_modifiers, $src2_modifiers$clamp$op_sel$waitexp";
 }
@@ -105,7 +98,7 @@ class VOP3_VINTERP_F16 <list<ValueType> ArgVT> : VOPProfile<ArgVT> {
 // VINTERP Pseudo Instructions
 //===----------------------------------------------------------------------===//
 
-let SubtargetPredicate = HasVINTERPEncoding in {
+let SubtargetPredicate = isGFX11Plus in {
 
 let Uses = [M0, EXEC, MODE] in {
 def V_INTERP_P10_F32_inreg : VINTERP_Pseudo <"v_interp_p10_f32", VOP3_VINTERP_F32>;
@@ -123,7 +116,7 @@ def V_INTERP_P2_RTZ_F16_F32_inreg :
   VINTERP_Pseudo <"v_interp_p2_rtz_f16_f32", VOP3_VINTERP_F16<[f16, f32, f32, f32]>>;
 } // Uses = [M0, EXEC]
 
-} // SubtargetPredicate = HasVINTERPEncoding.
+} // SubtargetPredicate = isGFX11Plus
 
 class VInterpF32Pat <SDPatternOperator op, Instruction inst> : GCNPat <
    (f32 (op
@@ -173,39 +166,22 @@ defm : VInterpF16Pat<int_amdgcn_interp_inreg_p10_f16,
 defm : VInterpF16Pat<int_amdgcn_interp_inreg_p2_f16,
                      V_INTERP_P2_F16_F32_inreg, f16,
                      [VINTERPModsHi, VINTERPMods, VINTERPMods]>;
-defm : VInterpF16Pat<int_amdgcn_interp_p10_rtz_f16,
-                     V_INTERP_P10_RTZ_F16_F32_inreg, f32,
-                     [VINTERPModsHi, VINTERPMods, VINTERPModsHi]>;
-defm : VInterpF16Pat<int_amdgcn_interp_p2_rtz_f16,
-                     V_INTERP_P2_RTZ_F16_F32_inreg, f16,
-                     [VINTERPModsHi, VINTERPMods, VINTERPMods]>;
 
 //===----------------------------------------------------------------------===//
 // VINTERP Real Instructions
 //===----------------------------------------------------------------------===//
 
-multiclass VINTERP_Real_gfx11 <bits<7> op> {
-  let AssemblerPredicate = isGFX11Only, DecoderNamespace = "GFX11" in {
+let AssemblerPredicate = isGFX11Plus, DecoderNamespace = "GFX11" in {
+  multiclass VINTERP_Real_gfx11 <bits<7> op> {
     def _gfx11 :
       VINTERP_Real<!cast<VOP3_Pseudo>(NAME), SIEncodingFamily.GFX11>,
       VINTERPe_gfx11<op, !cast<VOP3_Pseudo>(NAME).Pfl>;
   }
 }
 
-multiclass VINTERP_Real_gfx12 <bits<7> op> {
-  let AssemblerPredicate = isGFX12Only, DecoderNamespace = "GFX12" in {
-    def _gfx12 :
-      VINTERP_Real<!cast<VOP3_Pseudo>(NAME), SIEncodingFamily.GFX12>,
-      VINTERPe_gfx12<op, !cast<VOP3_Pseudo>(NAME).Pfl>;
-  }
-}
-
-multiclass VINTERP_Real_gfx11_gfx12 <bits<7> op> :
-  VINTERP_Real_gfx11<op>, VINTERP_Real_gfx12<op>;
-
-defm V_INTERP_P10_F32_inreg : VINTERP_Real_gfx11_gfx12<0x000>;
-defm V_INTERP_P2_F32_inreg : VINTERP_Real_gfx11_gfx12<0x001>;
-defm V_INTERP_P10_F16_F32_inreg : VINTERP_Real_gfx11_gfx12<0x002>;
-defm V_INTERP_P2_F16_F32_inreg : VINTERP_Real_gfx11_gfx12<0x003>;
-defm V_INTERP_P10_RTZ_F16_F32_inreg : VINTERP_Real_gfx11_gfx12<0x004>;
-defm V_INTERP_P2_RTZ_F16_F32_inreg : VINTERP_Real_gfx11_gfx12<0x005>;
+defm V_INTERP_P10_F32_inreg  : VINTERP_Real_gfx11<0x000>;
+defm V_INTERP_P2_F32_inreg  : VINTERP_Real_gfx11<0x001>;
+defm V_INTERP_P10_F16_F32_inreg  : VINTERP_Real_gfx11<0x002>;
+defm V_INTERP_P2_F16_F32_inreg  : VINTERP_Real_gfx11<0x003>;
+defm V_INTERP_P10_RTZ_F16_F32_inreg  : VINTERP_Real_gfx11<0x004>;
+defm V_INTERP_P2_RTZ_F16_F32_inreg  : VINTERP_Real_gfx11<0x005>;

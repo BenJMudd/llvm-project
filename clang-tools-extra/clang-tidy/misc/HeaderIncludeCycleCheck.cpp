@@ -83,7 +83,7 @@ public:
   void InclusionDirective(SourceLocation, const Token &, StringRef FilePath,
                           bool, CharSourceRange Range,
                           OptionalFileEntryRef File, StringRef, StringRef,
-                          const Module *, bool,
+                          const Module *,
                           SrcMgr::CharacteristicKind FileType) override {
     if (FileType != clang::SrcMgr::C_User)
       return;

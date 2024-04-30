@@ -29,6 +29,7 @@
 #include "clang/AST/Type.h"
 #include "clang/Basic/IdentifierTable.h"
 #include "clang/Basic/LLVM.h"
+#include "clang/Basic/LangOptions.h"
 #include "clang/Basic/Module.h"
 #include "clang/Basic/ObjCRuntime.h"
 #include "clang/Basic/PartialDiagnostic.h"
@@ -71,7 +72,7 @@ void Decl::updateOutOfDate(IdentifierInfo &II) const {
 #include "clang/AST/DeclNodes.inc"
 
 void *Decl::operator new(std::size_t Size, const ASTContext &Context,
-                         GlobalDeclID ID, std::size_t Extra) {
+                         unsigned ID, std::size_t Extra) {
   // Allocate an extra 8 bytes worth of storage, which ensures that the
   // resulting pointer will still be 8-byte aligned.
   static_assert(sizeof(unsigned) * 2 >= alignof(Decl),
@@ -85,7 +86,7 @@ void *Decl::operator new(std::size_t Size, const ASTContext &Context,
   PrefixPtr[0] = 0;
 
   // Store the global declaration ID in the second 4 bytes.
-  PrefixPtr[1] = ID.get();
+  PrefixPtr[1] = ID;
 
   return Result;
 }
@@ -402,85 +403,12 @@ bool Decl::isInAnonymousNamespace() const {
 
 bool Decl::isInStdNamespace() const {
   const DeclContext *DC = getDeclContext();
-  return DC && DC->getNonTransparentContext()->isStdNamespace();
+  return DC && DC->isStdNamespace();
 }
 
 bool Decl::isFileContextDecl() const {
   const auto *DC = dyn_cast<DeclContext>(this);
   return DC && DC->isFileContext();
-}
-
-bool Decl::isFlexibleArrayMemberLike(
-    ASTContext &Ctx, const Decl *D, QualType Ty,
-    LangOptions::StrictFlexArraysLevelKind StrictFlexArraysLevel,
-    bool IgnoreTemplateOrMacroSubstitution) {
-  // For compatibility with existing code, we treat arrays of length 0 or
-  // 1 as flexible array members.
-  const auto *CAT = Ctx.getAsConstantArrayType(Ty);
-  if (CAT) {
-    using FAMKind = LangOptions::StrictFlexArraysLevelKind;
-
-    llvm::APInt Size = CAT->getSize();
-    if (StrictFlexArraysLevel == FAMKind::IncompleteOnly)
-      return false;
-
-    // GCC extension, only allowed to represent a FAM.
-    if (Size.isZero())
-      return true;
-
-    if (StrictFlexArraysLevel == FAMKind::ZeroOrIncomplete && Size.uge(1))
-      return false;
-
-    if (StrictFlexArraysLevel == FAMKind::OneZeroOrIncomplete && Size.uge(2))
-      return false;
-  } else if (!Ctx.getAsIncompleteArrayType(Ty)) {
-    return false;
-  }
-
-  if (const auto *OID = dyn_cast_if_present<ObjCIvarDecl>(D))
-    return OID->getNextIvar() == nullptr;
-
-  const auto *FD = dyn_cast_if_present<FieldDecl>(D);
-  if (!FD)
-    return false;
-
-  if (CAT) {
-    // GCC treats an array memeber of a union as an FAM if the size is one or
-    // zero.
-    llvm::APInt Size = CAT->getSize();
-    if (FD->getParent()->isUnion() && (Size.isZero() || Size.isOne()))
-      return true;
-  }
-
-  // Don't consider sizes resulting from macro expansions or template argument
-  // substitution to form C89 tail-padded arrays.
-  if (IgnoreTemplateOrMacroSubstitution) {
-    TypeSourceInfo *TInfo = FD->getTypeSourceInfo();
-    while (TInfo) {
-      TypeLoc TL = TInfo->getTypeLoc();
-
-      // Look through typedefs.
-      if (TypedefTypeLoc TTL = TL.getAsAdjusted<TypedefTypeLoc>()) {
-        const TypedefNameDecl *TDL = TTL.getTypedefNameDecl();
-        TInfo = TDL->getTypeSourceInfo();
-        continue;
-      }
-
-      if (auto CTL = TL.getAs<ConstantArrayTypeLoc>()) {
-        if (const Expr *SizeExpr =
-                dyn_cast_if_present<IntegerLiteral>(CTL.getSizeExpr());
-            !SizeExpr || SizeExpr->getExprLoc().isMacroID())
-          return false;
-      }
-
-      break;
-    }
-  }
-
-  // Test that the field is the last in the structure.
-  RecordDecl::field_iterator FI(
-      DeclContext::decl_iterator(const_cast<FieldDecl *>(FD)));
-  return ++FI == FD->getParent()->field_end();
 }
 
 TranslationUnitDecl *Decl::getTranslationUnitDecl() {
@@ -934,6 +862,7 @@ unsigned Decl::getIdentifierNamespaceForKind(Kind DeclKind) {
     case BuiltinTemplate:
     case ClassTemplateSpecialization:
     case ClassTemplatePartialSpecialization:
+    case ClassScopeFunctionSpecialization:
     case VarTemplateSpecialization:
     case VarTemplatePartialSpecialization:
     case ObjCImplementation:
@@ -1002,14 +931,20 @@ const AttrVec &Decl::getAttrs() const {
 
 Decl *Decl::castFromDeclContext (const DeclContext *D) {
   Decl::Kind DK = D->getDeclKind();
-  switch (DK) {
+  switch(DK) {
 #define DECL(NAME, BASE)
-#define DECL_CONTEXT(NAME)                                                     \
-  case Decl::NAME:                                                             \
-    return static_cast<NAME##Decl *>(const_cast<DeclContext *>(D));
+#define DECL_CONTEXT(NAME) \
+    case Decl::NAME:       \
+      return static_cast<NAME##Decl *>(const_cast<DeclContext *>(D));
+#define DECL_CONTEXT_BASE(NAME)
 #include "clang/AST/DeclNodes.inc"
-  default:
-    llvm_unreachable("a decl that inherits DeclContext isn't handled");
+    default:
+#define DECL(NAME, BASE)
+#define DECL_CONTEXT_BASE(NAME)                  \
+      if (DK >= first##NAME && DK <= last##NAME) \
+        return static_cast<NAME##Decl *>(const_cast<DeclContext *>(D));
+#include "clang/AST/DeclNodes.inc"
+      llvm_unreachable("a decl that inherits DeclContext isn't handled");
   }
 }
 
@@ -1017,12 +952,18 @@ DeclContext *Decl::castToDeclContext(const Decl *D) {
   Decl::Kind DK = D->getKind();
   switch(DK) {
 #define DECL(NAME, BASE)
-#define DECL_CONTEXT(NAME)                                                     \
-  case Decl::NAME:                                                             \
-    return static_cast<NAME##Decl *>(const_cast<Decl *>(D));
+#define DECL_CONTEXT(NAME) \
+    case Decl::NAME:       \
+      return static_cast<NAME##Decl *>(const_cast<Decl *>(D));
+#define DECL_CONTEXT_BASE(NAME)
 #include "clang/AST/DeclNodes.inc"
-  default:
-    llvm_unreachable("a decl that inherits DeclContext isn't handled");
+    default:
+#define DECL(NAME, BASE)
+#define DECL_CONTEXT_BASE(NAME)                                   \
+      if (DK >= first##NAME && DK <= last##NAME)                  \
+        return static_cast<NAME##Decl *>(const_cast<Decl *>(D));
+#include "clang/AST/DeclNodes.inc"
+      llvm_unreachable("a decl that inherits DeclContext isn't handled");
   }
 }
 
@@ -1062,7 +1003,9 @@ bool Decl::AccessDeclContextCheck() const {
       isa<ParmVarDecl>(this) ||
       // FIXME: a ClassTemplateSpecialization or CXXRecordDecl can have
       // AS_none as access specifier.
-      isa<CXXRecordDecl>(this) || isa<LifetimeExtendedTemporaryDecl>(this))
+      isa<CXXRecordDecl>(this) ||
+      isa<ClassScopeFunctionSpecializationDecl>(this) ||
+      isa<LifetimeExtendedTemporaryDecl>(this))
     return true;
 
   assert(Access != AS_none &&
@@ -1098,12 +1041,8 @@ bool Decl::isInAnotherModuleUnit() const {
   if (M->isGlobalModule())
     return false;
 
-  assert(M->isNamedModule() && "New module kind?");
+  assert(M->isModulePurview() && "New module kind?");
   return M != getASTContext().getCurrentNamedModule();
-}
-
-bool Decl::isFromExplicitGlobalModule() const {
-  return getOwningModule() && getOwningModule()->isExplicitGlobalModule();
 }
 
 static Decl::Kind getKind(const Decl *D) { return D->getKind(); }
@@ -1115,9 +1054,7 @@ int64_t Decl::getID() const {
 
 const FunctionType *Decl::getFunctionType(bool BlocksToo) const {
   QualType Ty;
-  if (isa<BindingDecl>(this))
-    return nullptr;
-  else if (const auto *D = dyn_cast<ValueDecl>(this))
+  if (const auto *D = dyn_cast<ValueDecl>(this))
     Ty = D->getType();
   else if (const auto *D = dyn_cast<TypedefNameDecl>(this))
     Ty = D->getUnderlyingType();
@@ -1195,14 +1132,20 @@ DeclContext::DeclContext(Decl::Kind K) {
 }
 
 bool DeclContext::classof(const Decl *D) {
-  Decl::Kind DK = D->getKind();
-  switch (DK) {
+  switch (D->getKind()) {
 #define DECL(NAME, BASE)
 #define DECL_CONTEXT(NAME) case Decl::NAME:
+#define DECL_CONTEXT_BASE(NAME)
 #include "clang/AST/DeclNodes.inc"
-    return true;
-  default:
-    return false;
+      return true;
+    default:
+#define DECL(NAME, BASE)
+#define DECL_CONTEXT_BASE(NAME)                 \
+      if (D->getKind() >= Decl::first##NAME &&  \
+          D->getKind() <= Decl::last##NAME)     \
+        return true;
+#include "clang/AST/DeclNodes.inc"
+      return false;
   }
 }
 
@@ -1305,7 +1248,7 @@ bool DeclContext::isTransparentContext() const {
 }
 
 static bool isLinkageSpecContext(const DeclContext *DC,
-                                 LinkageSpecLanguageIDs ID) {
+                                 LinkageSpecDecl::LanguageIDs ID) {
   while (DC->getDeclKind() != Decl::TranslationUnit) {
     if (DC->getDeclKind() == Decl::LinkageSpec)
       return cast<LinkageSpecDecl>(DC)->getLanguage() == ID;
@@ -1315,14 +1258,14 @@ static bool isLinkageSpecContext(const DeclContext *DC,
 }
 
 bool DeclContext::isExternCContext() const {
-  return isLinkageSpecContext(this, LinkageSpecLanguageIDs::C);
+  return isLinkageSpecContext(this, LinkageSpecDecl::lang_c);
 }
 
 const LinkageSpecDecl *DeclContext::getExternCContext() const {
   const DeclContext *DC = this;
   while (DC->getDeclKind() != Decl::TranslationUnit) {
     if (DC->getDeclKind() == Decl::LinkageSpec &&
-        cast<LinkageSpecDecl>(DC)->getLanguage() == LinkageSpecLanguageIDs::C)
+        cast<LinkageSpecDecl>(DC)->getLanguage() == LinkageSpecDecl::lang_c)
       return cast<LinkageSpecDecl>(DC);
     DC = DC->getLexicalParent();
   }
@@ -1330,7 +1273,7 @@ const LinkageSpecDecl *DeclContext::getExternCContext() const {
 }
 
 bool DeclContext::isExternCXXContext() const {
-  return isLinkageSpecContext(this, LinkageSpecLanguageIDs::CXX);
+  return isLinkageSpecContext(this, LinkageSpecDecl::lang_cxx);
 }
 
 bool DeclContext::Encloses(const DeclContext *DC) const {
@@ -1358,7 +1301,6 @@ DeclContext *DeclContext::getPrimaryContext() {
   case Decl::ExternCContext:
   case Decl::LinkageSpec:
   case Decl::Export:
-  case Decl::TopLevelStmt:
   case Decl::Block:
   case Decl::Captured:
   case Decl::OMPDeclareReduction:
@@ -1849,9 +1791,9 @@ DeclContext::lookup(DeclarationName Name) const {
 
 DeclContext::lookup_result
 DeclContext::noload_lookup(DeclarationName Name) {
-  // For transparent DeclContext, we should lookup in their enclosing context.
-  if (getDeclKind() == Decl::LinkageSpec || getDeclKind() == Decl::Export)
-    return getParent()->noload_lookup(Name);
+  assert(getDeclKind() != Decl::LinkageSpec &&
+         getDeclKind() != Decl::Export &&
+         "should not perform lookups into transparent contexts");
 
   DeclContext *PrimaryContext = getPrimaryContext();
   if (PrimaryContext != this)

@@ -28,9 +28,6 @@ def FeatureSIMD128 : SubtargetFeature<"simd128", "SIMDLevel", "SIMD128",
 def FeatureRelaxedSIMD : SubtargetFeature<"relaxed-simd", "SIMDLevel", "RelaxedSIMD",
                                       "Enable relaxed-simd instructions">;
 
-def FeatureHalfPrecision : SubtargetFeature<"half-precision", "HasHalfPrecision", "true",
-                                            "Enable half precision instructions">;
-
 def FeatureAtomics : SubtargetFeature<"atomics", "HasAtomics", "true",
                                       "Enable Atomics">;
 
@@ -73,10 +70,6 @@ def FeatureReferenceTypes :
 def FeatureExtendedConst :
       SubtargetFeature<"extended-const", "HasExtendedConst", "true",
                        "Enable extended const expressions">;
-
-def FeatureMultiMemory :
-      SubtargetFeature<"multimemory", "HasMultiMemory", "true",
-                       "Enable multiple memories">;
 
 //===----------------------------------------------------------------------===//
 // Architectures.

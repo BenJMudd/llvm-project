@@ -369,7 +369,7 @@ Value *PHITransAddr::insertTranslatedSubExpr(
     // Otherwise insert a cast at the end of PredBB.
     CastInst *New = CastInst::Create(Cast->getOpcode(), OpVal, InVal->getType(),
                                      InVal->getName() + ".phi.trans.insert",
-                                     PredBB->getTerminator()->getIterator());
+                                     PredBB->getTerminator());
     New->setDebugLoc(Inst->getDebugLoc());
     NewInsts.push_back(New);
     return New;
@@ -387,8 +387,7 @@ Value *PHITransAddr::insertTranslatedSubExpr(
 
     GetElementPtrInst *Result = GetElementPtrInst::Create(
         GEP->getSourceElementType(), GEPOps[0], ArrayRef(GEPOps).slice(1),
-        InVal->getName() + ".phi.trans.insert",
-        PredBB->getTerminator()->getIterator());
+        InVal->getName() + ".phi.trans.insert", PredBB->getTerminator());
     Result->setDebugLoc(Inst->getDebugLoc());
     Result->setIsInBounds(GEP->isInBounds());
     NewInsts.push_back(Result);
@@ -409,9 +408,9 @@ Value *PHITransAddr::insertTranslatedSubExpr(
     if (OpVal == nullptr)
       return nullptr;
 
-    BinaryOperator *Res = BinaryOperator::CreateAdd(
-        OpVal, Inst->getOperand(1), InVal->getName() + ".phi.trans.insert",
-        PredBB->getTerminator()->getIterator());
+    BinaryOperator *Res = BinaryOperator::CreateAdd(OpVal, Inst->getOperand(1),
+                                           InVal->getName()+".phi.trans.insert",
+                                                    PredBB->getTerminator());
     Res->setHasNoSignedWrap(cast<BinaryOperator>(Inst)->hasNoSignedWrap());
     Res->setHasNoUnsignedWrap(cast<BinaryOperator>(Inst)->hasNoUnsignedWrap());
     NewInsts.push_back(Res);

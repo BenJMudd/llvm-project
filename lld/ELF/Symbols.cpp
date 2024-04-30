@@ -40,7 +40,7 @@ LLVM_ATTRIBUTE_UNUSED static inline void assertSymbols() {
   AssertSymbol<CommonSymbol>();
   AssertSymbol<Undefined>();
   AssertSymbol<SharedSymbol>();
-  AssertSymbol<LazySymbol>();
+  AssertSymbol<LazyObject>();
 }
 
 // Returns a symbol for an error message.
@@ -146,7 +146,7 @@ static uint64_t getSymVA(const Symbol &sym, int64_t addend) {
   case Symbol::SharedKind:
   case Symbol::UndefinedKind:
     return 0;
-  case Symbol::LazyKind:
+  case Symbol::LazyObjectKind:
     llvm_unreachable("lazy symbol reached writer");
   case Symbol::CommonKind:
     llvm_unreachable("common symbol reached writer");
@@ -316,13 +316,12 @@ void elf::maybeWarnUnorderableSymbol(const Symbol *sym) {
   if (!config->warnSymbolOrdering)
     return;
 
-  // If UnresolvedPolicy::Ignore is used, no "undefined symbol" error/warning is
-  // emitted. It makes sense to not warn on undefined symbols (excluding those
-  // demoted by demoteSymbols).
+  // If UnresolvedPolicy::Ignore is used, no "undefined symbol" error/warning
+  // is emitted. It makes sense to not warn on undefined symbols.
   //
   // Note, ld.bfd --symbol-ordering-file= does not warn on undefined symbols,
   // but we don't have to be compatible here.
-  if (sym->isUndefined() && !cast<Undefined>(sym)->discardedSecIdx &&
+  if (sym->isUndefined() &&
       config->unresolvedSymbols == UnresolvedPolicy::Ignore)
     return;
 
@@ -331,12 +330,9 @@ void elf::maybeWarnUnorderableSymbol(const Symbol *sym) {
 
   auto report = [&](StringRef s) { warn(toString(file) + s + sym->getName()); };
 
-  if (sym->isUndefined()) {
-    if (cast<Undefined>(sym)->discardedSecIdx)
-      report(": unable to order discarded symbol: ");
-    else
-      report(": unable to order undefined symbol: ");
-  } else if (sym->isShared())
+  if (sym->isUndefined())
+    report(": unable to order undefined symbol: ");
+  else if (sym->isShared())
     report(": unable to order shared symbol: ");
   else if (d && !d->section)
     report(": unable to order absolute symbol: ");
@@ -369,8 +365,6 @@ bool elf::computeIsPreemptible(const Symbol &sym) {
   // in the dynamic list. -Bsymbolic-non-weak-functions is a non-weak subset of
   // -Bsymbolic-functions.
   if (config->symbolic ||
-      (config->bsymbolic == BsymbolicKind::NonWeak &&
-       sym.binding != STB_WEAK) ||
       (config->bsymbolic == BsymbolicKind::Functions && sym.isFunc()) ||
       (config->bsymbolic == BsymbolicKind::NonWeakFunctions && sym.isFunc() &&
        sym.binding != STB_WEAK))
@@ -539,8 +533,8 @@ void elf::reportDuplicate(const Symbol &sym, const InputFile *newFile,
   if (!d->section && !errSec && errOffset && d->value == errOffset)
     return;
   if (!d->section || !errSec) {
-    errorOrWarn("duplicate symbol: " + toString(sym) + "\n>>> defined in " +
-                toString(sym.file) + "\n>>> defined in " + toString(newFile));
+    error("duplicate symbol: " + toString(sym) + "\n>>> defined in " +
+          toString(sym.file) + "\n>>> defined in " + toString(newFile));
     return;
   }
 
@@ -564,7 +558,7 @@ void elf::reportDuplicate(const Symbol &sym, const InputFile *newFile,
   if (!src2.empty())
     msg += src2 + "\n>>>            ";
   msg += obj2;
-  errorOrWarn(msg);
+  error(msg);
 }
 
 void Symbol::checkDuplicate(const Defined &other) const {
@@ -623,7 +617,7 @@ void Symbol::resolve(const Defined &other) {
     other.overwrite(*this);
 }
 
-void Symbol::resolve(const LazySymbol &other) {
+void Symbol::resolve(const LazyObject &other) {
   if (isPlaceholder()) {
     other.overwrite(*this);
     return;
@@ -682,14 +676,4 @@ void Symbol::resolve(const SharedSymbol &other) {
     binding = bind;
   } else if (traced)
     printTraceSymbol(other, getName());
-}
-
-void Defined::overwrite(Symbol &sym) const {
-  if (isa_and_nonnull<SharedFile>(sym.file))
-    sym.versionId = VER_NDX_GLOBAL;
-  Symbol::overwrite(sym, DefinedKind);
-  auto &s = static_cast<Defined &>(sym);
-  s.value = value;
-  s.size = size;
-  s.section = section;
 }

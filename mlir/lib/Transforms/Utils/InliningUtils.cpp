@@ -97,7 +97,7 @@ void InlinerInterface::handleTerminator(Operation *op, Block *newDest) const {
 /// Handle the given inlined terminator by replacing it with a new operation
 /// as necessary.
 void InlinerInterface::handleTerminator(Operation *op,
-                                        ValueRange valuesToRepl) const {
+                                        ArrayRef<Value> valuesToRepl) const {
   auto *handler = getInterfaceFor(op);
   assert(handler && "expected valid dialect handler");
   handler->handleTerminator(op, valuesToRepl);
@@ -166,7 +166,7 @@ static void handleArgumentImpl(InlinerInterface &interface, OpBuilder &builder,
   SmallVector<DictionaryAttr> argAttrs(
       callable.getCallableRegion()->getNumArguments(),
       builder.getDictionaryAttr({}));
-  if (ArrayAttr arrayAttr = callable.getArgAttrsAttr()) {
+  if (ArrayAttr arrayAttr = callable.getCallableArgAttrs()) {
     assert(arrayAttr.size() == argAttrs.size());
     for (auto [idx, attr] : llvm::enumerate(arrayAttr))
       argAttrs[idx] = cast<DictionaryAttr>(attr);
@@ -191,7 +191,7 @@ static void handleResultImpl(InlinerInterface &interface, OpBuilder &builder,
   // Unpack the result attributes if there are any.
   SmallVector<DictionaryAttr> resAttrs(results.size(),
                                        builder.getDictionaryAttr({}));
-  if (ArrayAttr arrayAttr = callable.getResAttrsAttr()) {
+  if (ArrayAttr arrayAttr = callable.getCallableResAttrs()) {
     assert(arrayAttr.size() == resAttrs.size());
     for (auto [idx, attr] : llvm::enumerate(arrayAttr))
       resAttrs[idx] = cast<DictionaryAttr>(attr);
@@ -289,7 +289,8 @@ inlineRegionImpl(InlinerInterface &interface, Region *src, Block *inlineBlock,
                        firstBlockTerminator->getOperands());
 
     // Have the interface handle the terminator of this block.
-    interface.handleTerminator(firstBlockTerminator, resultsToReplace);
+    interface.handleTerminator(firstBlockTerminator,
+                               llvm::to_vector<6>(resultsToReplace));
     firstBlockTerminator->erase();
 
     // Merge the post insert block into the cloned entry block.
@@ -433,7 +434,7 @@ LogicalResult mlir::inlineCall(InlinerInterface &interface,
   if (src->empty())
     return failure();
   auto *entryBlock = &src->front();
-  ArrayRef<Type> callableResultTypes = callable.getResultTypes();
+  ArrayRef<Type> callableResultTypes = callable.getCallableResults();
 
   // Make sure that the number of arguments and results matchup between the call
   // and the region.

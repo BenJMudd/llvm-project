@@ -13,7 +13,7 @@
 
 extern "C" int main(int argc, char **argv, char **envp);
 
-namespace LIBC_NAMESPACE {
+namespace __llvm_libc {
 
 extern "C" {
 // Nvidia's 'nvlink' linker does not provide these symbols. We instead need
@@ -24,33 +24,36 @@ uintptr_t *__fini_array_start [[gnu::visibility("protected")]];
 uintptr_t *__fini_array_end [[gnu::visibility("protected")]];
 }
 
-// Nvidia requires that the signature of the function pointers match. This means
-// we cannot support the extended constructor arguments.
-using InitCallback = void(void);
+using InitCallback = void(int, char **, char **);
 using FiniCallback = void(void);
 
-static void call_init_array_callbacks(int, char **, char **) {
+static void call_init_array_callbacks(int argc, char **argv, char **env) {
   size_t init_array_size = __init_array_end - __init_array_start;
   for (size_t i = 0; i < init_array_size; ++i)
-    reinterpret_cast<InitCallback *>(__init_array_start[i])();
+    reinterpret_cast<InitCallback *>(__init_array_start[i])(argc, argv, env);
 }
 
 static void call_fini_array_callbacks() {
   size_t fini_array_size = __fini_array_end - __fini_array_start;
-  for (size_t i = fini_array_size; i > 0; --i)
-    reinterpret_cast<FiniCallback *>(__fini_array_start[i - 1])();
+  for (size_t i = 0; i < fini_array_size; ++i)
+    reinterpret_cast<FiniCallback *>(__fini_array_start[i])();
 }
 
-} // namespace LIBC_NAMESPACE
+} // namespace __llvm_libc
 
 extern "C" [[gnu::visibility("protected"), clang::nvptx_kernel]] void
-_begin(int argc, char **argv, char **env) {
+_begin(int argc, char **argv, char **env, void *rpc_shared_buffer) {
+  // We need to set up the RPC client first in case any of the constructors
+  // require it.
+  __llvm_libc::rpc::client.reset(__llvm_libc::rpc::MAX_PORT_COUNT,
+                                 rpc_shared_buffer);
+
   // We want the fini array callbacks to be run after other atexit
   // callbacks are run. So, we register them before running the init
   // array callbacks as they can potentially register their own atexit
   // callbacks.
-  LIBC_NAMESPACE::atexit(&LIBC_NAMESPACE::call_fini_array_callbacks);
-  LIBC_NAMESPACE::call_init_array_callbacks(argc, argv, env);
+  __llvm_libc::atexit(&__llvm_libc::call_fini_array_callbacks);
+  __llvm_libc::call_init_array_callbacks(argc, argv, env);
 }
 
 extern "C" [[gnu::visibility("protected"), clang::nvptx_kernel]] void
@@ -64,5 +67,5 @@ extern "C" [[gnu::visibility("protected"), clang::nvptx_kernel]] void
 _end(int retval) {
   // To finis the execution we invoke all the callbacks registered via 'atexit'
   // and then exit with the appropriate return value.
-  LIBC_NAMESPACE::exit(retval);
+  __llvm_libc::exit(retval);
 }

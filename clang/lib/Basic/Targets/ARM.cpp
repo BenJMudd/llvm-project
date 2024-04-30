@@ -17,7 +17,6 @@
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/StringSwitch.h"
-#include "llvm/TargetParser/ARMTargetParser.h"
 
 using namespace clang;
 using namespace clang::targets;
@@ -227,8 +226,6 @@ StringRef ARMTargetInfo::getCPUAttr() const {
     return "9_3A";
   case llvm::ARM::ArchKind::ARMV9_4A:
     return "9_4A";
-  case llvm::ARM::ArchKind::ARMV9_5A:
-    return "9_5A";
   case llvm::ARM::ArchKind::ARMV8MBaseline:
     return "8M_BASE";
   case llvm::ARM::ArchKind::ARMV8MMainline:
@@ -260,8 +257,6 @@ ARMTargetInfo::ARMTargetInfo(const llvm::Triple &Triple,
   bool IsFreeBSD = Triple.isOSFreeBSD();
   bool IsOpenBSD = Triple.isOSOpenBSD();
   bool IsNetBSD = Triple.isOSNetBSD();
-  bool IsHaiku = Triple.isOSHaiku();
-  bool IsOHOS = Triple.isOHOSFamily();
 
   // FIXME: the isOSBinFormatMachO is a workaround for identifying a Darwin-like
   // environment where size_t is `unsigned long` rather than `unsigned int`
@@ -328,7 +323,7 @@ ARMTargetInfo::ARMTargetInfo(const llvm::Triple &Triple,
     default:
       if (IsNetBSD)
         setABI("apcs-gnu");
-      else if (IsFreeBSD || IsOpenBSD || IsHaiku || IsOHOS)
+      else if (IsFreeBSD || IsOpenBSD)
         setABI("aapcs-linux");
       else
         setABI("aapcs");
@@ -422,7 +417,6 @@ bool ARMTargetInfo::validateBranchProtection(StringRef Spec, StringRef Arch,
   BPI.SignKey = LangOptions::SignReturnAddressKeyKind::AKey;
 
   BPI.BranchTargetEnforcement = PBP.BranchTargetEnforcement;
-  BPI.BranchProtectionPAuthLR = PBP.BranchProtectionPAuthLR;
   return true;
 }
 
@@ -509,7 +503,7 @@ bool ARMTargetInfo::handleTargetFeatures(std::vector<std::string> &Features,
   SHA2 = 0;
   AES = 0;
   DSP = 0;
-  HasUnalignedAccess = true;
+  Unaligned = 1;
   SoftFloat = false;
   // Note that SoftFloatABI is initialized in our constructor.
   HWDiv = 0;
@@ -576,7 +570,7 @@ bool ARMTargetInfo::handleTargetFeatures(std::vector<std::string> &Features,
         return false;
       }
     } else if (Feature == "+strict-align") {
-      HasUnalignedAccess = false;
+      Unaligned = 0;
     } else if (Feature == "+fp16") {
       HW_FP |= HW_FP_HP;
     } else if (Feature == "+fullfp16") {
@@ -785,7 +779,7 @@ void ARMTargetInfo::getTargetDefines(const LangOptions &Opts,
     Builder.defineMacro("__ARM_ARCH_PROFILE", "'" + CPUProfile + "'");
 
   // ACLE 6.4.3 Unaligned access supported in hardware
-  if (HasUnalignedAccess)
+  if (Unaligned)
     Builder.defineMacro("__ARM_FEATURE_UNALIGNED", "1");
 
   // ACLE 6.4.4 LDREX/STREX
@@ -839,70 +833,6 @@ void ARMTargetInfo::getTargetDefines(const LangOptions &Opts,
     Builder.defineMacro("__ARM_ROPI", "1");
   if (Opts.RWPI)
     Builder.defineMacro("__ARM_RWPI", "1");
-
-  // Macros for enabling co-proc intrinsics
-  uint64_t FeatureCoprocBF = 0;
-  switch (ArchKind) {
-  default:
-    break;
-  case llvm::ARM::ArchKind::ARMV4:
-  case llvm::ARM::ArchKind::ARMV4T:
-    // Filter __arm_ldcl and __arm_stcl in acle.h
-    FeatureCoprocBF = isThumb() ? 0 : FEATURE_COPROC_B1;
-    break;
-  case llvm::ARM::ArchKind::ARMV5T:
-    FeatureCoprocBF = isThumb() ? 0 : FEATURE_COPROC_B1 | FEATURE_COPROC_B2;
-    break;
-  case llvm::ARM::ArchKind::ARMV5TE:
-  case llvm::ARM::ArchKind::ARMV5TEJ:
-    if (!isThumb())
-      FeatureCoprocBF =
-          FEATURE_COPROC_B1 | FEATURE_COPROC_B2 | FEATURE_COPROC_B3;
-    break;
-  case llvm::ARM::ArchKind::ARMV6:
-  case llvm::ARM::ArchKind::ARMV6K:
-  case llvm::ARM::ArchKind::ARMV6KZ:
-  case llvm::ARM::ArchKind::ARMV6T2:
-    if (!isThumb() || ArchKind == llvm::ARM::ArchKind::ARMV6T2)
-      FeatureCoprocBF = FEATURE_COPROC_B1 | FEATURE_COPROC_B2 |
-                        FEATURE_COPROC_B3 | FEATURE_COPROC_B4;
-    break;
-  case llvm::ARM::ArchKind::ARMV7A:
-  case llvm::ARM::ArchKind::ARMV7R:
-  case llvm::ARM::ArchKind::ARMV7M:
-  case llvm::ARM::ArchKind::ARMV7S:
-  case llvm::ARM::ArchKind::ARMV7EM:
-    FeatureCoprocBF = FEATURE_COPROC_B1 | FEATURE_COPROC_B2 |
-                      FEATURE_COPROC_B3 | FEATURE_COPROC_B4;
-    break;
-  case llvm::ARM::ArchKind::ARMV8A:
-  case llvm::ARM::ArchKind::ARMV8R:
-  case llvm::ARM::ArchKind::ARMV8_1A:
-  case llvm::ARM::ArchKind::ARMV8_2A:
-  case llvm::ARM::ArchKind::ARMV8_3A:
-  case llvm::ARM::ArchKind::ARMV8_4A:
-  case llvm::ARM::ArchKind::ARMV8_5A:
-  case llvm::ARM::ArchKind::ARMV8_6A:
-  case llvm::ARM::ArchKind::ARMV8_7A:
-  case llvm::ARM::ArchKind::ARMV8_8A:
-  case llvm::ARM::ArchKind::ARMV8_9A:
-  case llvm::ARM::ArchKind::ARMV9A:
-  case llvm::ARM::ArchKind::ARMV9_1A:
-  case llvm::ARM::ArchKind::ARMV9_2A:
-  case llvm::ARM::ArchKind::ARMV9_3A:
-  case llvm::ARM::ArchKind::ARMV9_4A:
-  case llvm::ARM::ArchKind::ARMV9_5A:
-    // Filter __arm_cdp, __arm_ldcl, __arm_stcl in arm_acle.h
-    FeatureCoprocBF = FEATURE_COPROC_B1 | FEATURE_COPROC_B3;
-    break;
-  case llvm::ARM::ArchKind::ARMV8MMainline:
-  case llvm::ARM::ArchKind::ARMV8_1MMainline:
-    FeatureCoprocBF = FEATURE_COPROC_B1 | FEATURE_COPROC_B2 |
-                      FEATURE_COPROC_B3 | FEATURE_COPROC_B4;
-    break;
-  }
-  Builder.defineMacro("__ARM_FEATURE_COPROC",
-                      "0x" + Twine::utohexstr(FeatureCoprocBF));
 
   if (ArchKind == llvm::ARM::ArchKind::XSCALE)
     Builder.defineMacro("__XSCALE__");
@@ -1060,7 +990,6 @@ void ARMTargetInfo::getTargetDefines(const LangOptions &Opts,
   case llvm::ARM::ArchKind::ARMV9_2A:
   case llvm::ARM::ArchKind::ARMV9_3A:
   case llvm::ARM::ArchKind::ARMV9_4A:
-  case llvm::ARM::ArchKind::ARMV9_5A:
     getTargetDefinesARMV83A(Opts, Builder);
     break;
   }
@@ -1298,7 +1227,8 @@ bool ARMTargetInfo::validateConstraintModifier(
   bool isInOut = (Constraint[0] == '+');
 
   // Strip off constraint modifiers.
-  Constraint = Constraint.ltrim("=+&");
+  while (Constraint[0] == '=' || Constraint[0] == '+' || Constraint[0] == '&')
+    Constraint = Constraint.substr(1);
 
   switch (Constraint[0]) {
   default:

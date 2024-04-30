@@ -11,6 +11,12 @@ add_header_library(
 )
 
 add_header_library(
+  named_pair
+  HDRS
+    named_pair.h
+)
+
+add_header_library(
   common
   HDRS
     common.h
@@ -21,32 +27,14 @@ add_header_library(
 )
 
 add_header_library(
-  bit
+  builtin_wrappers
   HDRS
-    bit.h
+    builtin_wrappers.h
   DEPENDS
-    libc.src.__support.macros.attributes
-    libc.src.__support.CPP.type_traits
-)
-
-add_header_library(
-  math_extras
-  HDRS
-    math_extras.h
-  DEPENDS
-    libc.src.__support.CPP.bit
-    libc.src.__support.CPP.limits
+    .named_pair
     libc.src.__support.CPP.type_traits
     libc.src.__support.macros.attributes
-    libc.src.__support.macros.config
-)
-
-add_header_library(
-  sign
-  HDRS
-    sign.h
-  DEPENDS
-    libc.src.__support.macros.attributes
+    libc.src.__support.macros.properties.compiler
 )
 
 add_header_library(
@@ -82,8 +70,6 @@ add_header_library(
   str_to_num_result
   HDRS
     str_to_num_result.h
-  DEPENDS
-    libc.src.__support.macros.attributes
 )
 
 add_header_library(
@@ -104,14 +90,12 @@ add_header_library(
   HDRS
     integer_to_string.h
   DEPENDS
-    .big_int
-    libc.src.__support.common
-    libc.src.__support.CPP.algorithm
-    libc.src.__support.CPP.limits
     libc.src.__support.CPP.span
     libc.src.__support.CPP.string_view
     libc.src.__support.CPP.type_traits
+    libc.src.__support.common
 )
+
 
 add_header_library(
   float_to_string
@@ -145,25 +129,17 @@ add_header_library(
     .str_to_integer
     .str_to_num_result
     .uint128
-    libc.src.__support.common
-    libc.src.__support.CPP.bit
-    libc.src.__support.CPP.limits
     libc.src.__support.CPP.optional
-    libc.src.__support.FPUtil.dyadic_float
+    libc.src.__support.CPP.limits
     libc.src.__support.FPUtil.fenv_impl
     libc.src.__support.FPUtil.fp_bits
     libc.src.__support.FPUtil.rounding_mode
+    libc.src.__support.FPUtil.dyadic_float
+    libc.src.__support.builtin_wrappers
+    libc.src.__support.common
     libc.src.errno.errno
 )
 
-add_header_library(
-  integer_literals
-  HDRS
-    integer_literals.h
-  DEPENDS
-    .uint128
-    libc.src.__support.CPP.limits
-)
 
 add_header_library(
   integer_operations
@@ -200,30 +176,40 @@ add_header_library(
   HDRS
     number_pair.h
   DEPENDS
+    .named_pair
     libc.src.__support.CPP.type_traits
 )
 
 add_header_library(
-  big_int
+  integer_utils
   HDRS
-    big_int.h
+    integer_utils.h
   DEPENDS
-    .math_extras
+    .builtin_wrappers
     .number_pair
+    libc.src.__support.CPP.type_traits
+    libc.src.__support.common
+)
+
+add_header_library(
+  uint
+  HDRS
+    UInt.h
+  DEPENDS
+    .builtin_wrappers
+    .number_pair
+    .integer_utils
     libc.src.__support.CPP.array
-    libc.src.__support.CPP.bit
     libc.src.__support.CPP.type_traits
     libc.src.__support.macros.optimization
-    libc.src.__support.macros.properties.types
 )
 
 add_header_library(
   uint128
   HDRS
-    uint128.h
+    UInt128.h
   DEPENDS
-    .big_int
-    libc.src.__support.macros.properties.types
+    .uint
 )
 
 add_header_library(
@@ -233,37 +219,6 @@ add_header_library(
   DEPENDS
     .integer_to_string
     libc.src.__support.OSUtil.osutil
-)
-
-add_header_library(
-  hash
-  HDRS
-    hash.h
-  DEPENDS
-    .uint128
-    libc.src.__support.CPP.bit
-    libc.src.__support.CPP.limits
-    libc.src.__support.macros.attributes
-)
-
-add_header_library(
-  memory_size
-  HDRS
-    memory_size.h
-  DEPENDS
-    libc.src.__support.CPP.type_traits
-    libc.src.__support.CPP.limits
-    libc.src.__support.macros.optimization
-    libc.src.__support.macros.attributes
-    libc.src.__support.macros.config
-)
-
-add_header_library(
-  intrusive_list
-  HDRS
-    intrusive_list.h
-  DEPENDS
-    libc.src.__support.macros.attributes
 )
 
 add_subdirectory(FPUtil)
@@ -277,7 +232,3 @@ add_subdirectory(RPC)
 add_subdirectory(threads)
 
 add_subdirectory(File)
-
-add_subdirectory(HashTable)
-
-add_subdirectory(fixed_point)

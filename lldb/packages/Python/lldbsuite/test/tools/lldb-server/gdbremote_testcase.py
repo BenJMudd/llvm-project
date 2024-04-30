@@ -2,6 +2,9 @@
 Base class for gdb-remote test cases.
 """
 
+from __future__ import division, print_function
+
+
 import errno
 import os
 import os.path
@@ -921,8 +924,6 @@ class GdbRemoteTestCaseBase(Base, metaclass=GdbRemoteTestCaseFactory):
         "qSaveCore",
         "native-signals",
         "QNonStop",
-        "SupportedWatchpointTypes",
-        "SupportedCompressions",
     ]
 
     def parse_qSupported_response(self, context):

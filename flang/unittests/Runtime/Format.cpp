@@ -107,11 +107,6 @@ TEST(FormatTests, FormatStringTraversal) {
           ResultsTy{"'PI='", "F9.7", "'PI='", "F9.7"}, 1},
       {2, "(*('PI=',F9.7,:))", ResultsTy{"'PI='", "F9.7", "'PI='", "F9.7"}, 1},
       {1, "(3F9.7)", ResultsTy{"2*F9.7"}, 2},
-      {9, "((I4,2(E10.1)))",
-          ResultsTy{"I4", "E10.1", "E10.1", "/", "I4", "E10.1", "E10.1", "/",
-              "I4", "E10.1", "E10.1"},
-          1},
-      {1, "(F)", ResultsTy{"F"}, 1}, // missing 'w'
   };
 
   for (const auto &[n, format, expect, repeat] : params) {
@@ -171,7 +166,7 @@ TEST(InvalidFormatFailure, MissingPrecision) {
       R"(Invalid FORMAT: integer expected at '\)')");
 }
 
-TEST(InvalidFormatFailure, MissingFormatWidthWithDigits) {
+TEST(InvalidFormatFailure, MissingFormatWidth) {
   static constexpr const char *format{"(F.9)"};
   static constexpr int repeat{1};
 

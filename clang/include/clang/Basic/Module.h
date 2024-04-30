@@ -35,7 +35,6 @@
 #include <optional>
 #include <string>
 #include <utility>
-#include <variant>
 #include <vector>
 
 namespace llvm {
@@ -82,12 +81,6 @@ struct ASTFileSignature : std::array<uint8_t, 20> {
     return Sentinel;
   }
 
-  static ASTFileSignature createDummy() {
-    ASTFileSignature Dummy;
-    Dummy.fill(0x00);
-    return Dummy;
-  }
-
   template <typename InputIt>
   static ASTFileSignature create(InputIt First, InputIt Last) {
     assert(std::distance(First, Last) == size &&
@@ -118,7 +111,7 @@ public:
     /// of header files.
     ModuleMapModule,
 
-    /// This is a C++20 header unit.
+    /// This is a C++ 20 header unit.
     ModuleHeaderUnit,
 
     /// This is a C++20 module interface unit.
@@ -127,10 +120,10 @@ public:
     /// This is a C++20 module implementation unit.
     ModuleImplementationUnit,
 
-    /// This is a C++20 module partition interface.
+    /// This is a C++ 20 module partition interface.
     ModulePartitionInterface,
 
-    /// This is a C++20 module partition implementation.
+    /// This is a C++ 20 module partition implementation.
     ModulePartitionImplementation,
 
     /// This is the explicit Global Module Fragment of a modular TU.
@@ -156,14 +149,14 @@ public:
   /// The build directory of this module. This is the directory in
   /// which the module is notionally built, and relative to which its headers
   /// are found.
-  OptionalDirectoryEntryRef Directory;
+  OptionalDirectoryEntryRefDegradesToDirectoryEntryPtr Directory;
 
   /// The presumed file name for the module map defining this module.
   /// Only non-empty when building from preprocessed source.
   std::string PresumedModuleMapFile;
 
   /// The umbrella header or directory.
-  std::variant<std::monostate, FileEntryRef, DirectoryEntryRef> Umbrella;
+  llvm::PointerUnion<FileEntryRef, DirectoryEntryRef> Umbrella;
 
   /// The module signature.
   ASTFileSignature Signature;
@@ -178,11 +171,9 @@ public:
   /// eventually be exposed, for use in "private" modules.
   std::string ExportAsModule;
 
-  /// For the debug info, the path to this module's .apinotes file, if any.
-  std::string APINotesFile;
-
-  /// Does this Module is a named module of a standard named module?
-  bool isNamedModule() const {
+  /// Does this Module scope describe part of the purview of a standard named
+  /// C++ module?
+  bool isModulePurview() const {
     switch (Kind) {
     case ModuleInterfaceUnit:
     case ModuleImplementationUnit:
@@ -300,62 +291,50 @@ public:
   /// Whether this module has declared itself unimportable, either because
   /// it's missing a requirement from \p Requirements or because it's been
   /// shadowed by another module.
-  LLVM_PREFERRED_TYPE(bool)
   unsigned IsUnimportable : 1;
 
   /// Whether we tried and failed to load a module file for this module.
-  LLVM_PREFERRED_TYPE(bool)
   unsigned HasIncompatibleModuleFile : 1;
 
   /// Whether this module is available in the current translation unit.
   ///
   /// If the module is missing headers or does not meet all requirements then
   /// this bit will be 0.
-  LLVM_PREFERRED_TYPE(bool)
   unsigned IsAvailable : 1;
 
   /// Whether this module was loaded from a module file.
-  LLVM_PREFERRED_TYPE(bool)
   unsigned IsFromModuleFile : 1;
 
   /// Whether this is a framework module.
-  LLVM_PREFERRED_TYPE(bool)
   unsigned IsFramework : 1;
 
   /// Whether this is an explicit submodule.
-  LLVM_PREFERRED_TYPE(bool)
   unsigned IsExplicit : 1;
 
   /// Whether this is a "system" module (which assumes that all
   /// headers in it are system headers).
-  LLVM_PREFERRED_TYPE(bool)
   unsigned IsSystem : 1;
 
   /// Whether this is an 'extern "C"' module (which implicitly puts all
   /// headers in it within an 'extern "C"' block, and allows the module to be
   /// imported within such a block).
-  LLVM_PREFERRED_TYPE(bool)
   unsigned IsExternC : 1;
 
   /// Whether this is an inferred submodule (module * { ... }).
-  LLVM_PREFERRED_TYPE(bool)
   unsigned IsInferred : 1;
 
   /// Whether we should infer submodules for this module based on
   /// the headers.
   ///
   /// Submodules can only be inferred for modules with an umbrella header.
-  LLVM_PREFERRED_TYPE(bool)
   unsigned InferSubmodules : 1;
 
   /// Whether, when inferring submodules, the inferred submodules
   /// should be explicit.
-  LLVM_PREFERRED_TYPE(bool)
   unsigned InferExplicitSubmodules : 1;
 
   /// Whether, when inferring submodules, the inferr submodules should
   /// export all modules they import (e.g., the equivalent of "export *").
-  LLVM_PREFERRED_TYPE(bool)
   unsigned InferExportWildcard : 1;
 
   /// Whether the set of configuration macros is exhaustive.
@@ -363,23 +342,15 @@ public:
   /// When the set of configuration macros is exhaustive, meaning
   /// that no identifier not in this list should affect how the module is
   /// built.
-  LLVM_PREFERRED_TYPE(bool)
   unsigned ConfigMacrosExhaustive : 1;
 
   /// Whether files in this module can only include non-modular headers
   /// and headers from used modules.
-  LLVM_PREFERRED_TYPE(bool)
   unsigned NoUndeclaredIncludes : 1;
 
   /// Whether this module came from a "private" module map, found next
   /// to a regular (public) module map.
-  LLVM_PREFERRED_TYPE(bool)
   unsigned ModuleMapIsPrivate : 1;
-
-  /// Whether this C++20 named modules doesn't need an initializer.
-  /// This is only meaningful for C++20 modules.
-  LLVM_PREFERRED_TYPE(bool)
-  unsigned NamedModuleHasInit : 1;
 
   /// Describes the visibility of the various names within a
   /// particular module.
@@ -598,11 +569,6 @@ public:
            Kind == ModulePartitionImplementation;
   }
 
-  /// Is this a module partition implementation unit.
-  bool isModulePartitionImplementation() const {
-    return Kind == ModulePartitionImplementation;
-  }
-
   /// Is this a module implementation.
   bool isModuleImplementation() const {
     return Kind == ModuleImplementationUnit;
@@ -615,16 +581,9 @@ public:
     return Kind == ModuleInterfaceUnit || isModulePartition();
   }
 
-  /// Is this a C++20 named module unit.
-  bool isNamedModuleUnit() const {
-    return isInterfaceOrPartition() || isModuleImplementation();
-  }
-
   bool isModuleInterfaceUnit() const {
     return Kind == ModuleInterfaceUnit || Kind == ModulePartitionInterface;
   }
-
-  bool isNamedModuleInterfaceHasInit() const { return NamedModuleHasInit; }
 
   /// Get the primary module interface name from a partition.
   StringRef getPrimaryModuleInterfaceName() const {
@@ -677,7 +636,7 @@ public:
   }
 
   /// The serialized AST file for this module, if one was created.
-  OptionalFileEntryRef getASTFile() const {
+  OptionalFileEntryRefDegradesToFileEntryPtr getASTFile() const {
     return getTopLevelModule()->ASTFile;
   }
 
@@ -689,17 +648,18 @@ public:
 
   /// Retrieve the umbrella directory as written.
   std::optional<DirectoryName> getUmbrellaDirAsWritten() const {
-    if (const auto *Dir = std::get_if<DirectoryEntryRef>(&Umbrella))
+    if (Umbrella && Umbrella.is<DirectoryEntryRef>())
       return DirectoryName{UmbrellaAsWritten,
-                           UmbrellaRelativeToRootModuleDirectory, *Dir};
+                           UmbrellaRelativeToRootModuleDirectory,
+                           Umbrella.get<DirectoryEntryRef>()};
     return std::nullopt;
   }
 
   /// Retrieve the umbrella header as written.
   std::optional<Header> getUmbrellaHeaderAsWritten() const {
-    if (const auto *Hdr = std::get_if<FileEntryRef>(&Umbrella))
+    if (Umbrella && Umbrella.is<FileEntryRef>())
       return Header{UmbrellaAsWritten, UmbrellaRelativeToRootModuleDirectory,
-                    *Hdr};
+                    Umbrella.get<FileEntryRef>()};
     return std::nullopt;
   }
 
@@ -754,13 +714,13 @@ public:
   /// one.
   ///
   /// \returns The GMF sub-module if found, or NULL otherwise.
-  Module *getGlobalModuleFragment() const;
+  Module *getGlobalModuleFragment() { return findSubmodule("<global>"); }
 
   /// Get the Private Module Fragment (sub-module) for this module, it there is
   /// one.
   ///
   /// \returns The PMF sub-module if found, or NULL otherwise.
-  Module *getPrivateModuleFragment() const;
+  Module *getPrivateModuleFragment() { return findSubmodule("<private>"); }
 
   /// Determine whether the specified module would be visible to
   /// a lookup at the end of this module.
@@ -858,6 +818,12 @@ public:
                   VisibleCallback Vis = [](Module *) {},
                   ConflictCallback Cb = [](ArrayRef<Module *>, Module *,
                                            StringRef) {});
+
+  /// Make transitive imports visible for [module.import]/7.
+  void makeTransitiveImportsVisible(
+      Module *M, SourceLocation Loc, VisibleCallback Vis = [](Module *) {},
+      ConflictCallback Cb = [](ArrayRef<Module *>, Module *, StringRef) {});
+
 private:
   /// Import locations for each visible module. Indexed by the module's
   /// VisibilityID.

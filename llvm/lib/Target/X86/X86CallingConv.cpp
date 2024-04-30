@@ -16,7 +16,6 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/CodeGen/CallingConvLower.h"
 #include "llvm/IR/CallingConv.h"
-#include "llvm/IR/Module.h"
 
 using namespace llvm;
 

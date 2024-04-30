@@ -881,10 +881,6 @@ private:
     B->appendAutomaticObjDtor(VD, S, cfg->getBumpVectorContext());
   }
 
-  void appendCleanupFunction(CFGBlock *B, VarDecl *VD) {
-    B->appendCleanupFunction(VD, cfg->getBumpVectorContext());
-  }
-
   void appendLifetimeEnds(CFGBlock *B, VarDecl *VD, Stmt *S) {
     B->appendLifetimeEnds(VD, S, cfg->getBumpVectorContext());
   }
@@ -1074,41 +1070,16 @@ private:
     }
   }
 
-  /// There are two checks handled by this function:
-  /// 1. Find a law-of-excluded-middle or law-of-noncontradiction expression
-  /// e.g. if (x || !x), if (x && !x)
-  /// 2. Find a pair of comparison expressions with or without parentheses
+  /// Find a pair of comparison expressions with or without parentheses
   /// with a shared variable and constants and a logical operator between them
   /// that always evaluates to either true or false.
   /// e.g. if (x != 3 || x != 4)
   TryResult checkIncorrectLogicOperator(const BinaryOperator *B) {
     assert(B->isLogicalOp());
-    const Expr *LHSExpr = B->getLHS()->IgnoreParens();
-    const Expr *RHSExpr = B->getRHS()->IgnoreParens();
-
-    auto CheckLogicalOpWithNegatedVariable = [this, B](const Expr *E1,
-                                                       const Expr *E2) {
-      if (const auto *Negate = dyn_cast<UnaryOperator>(E1)) {
-        if (Negate->getOpcode() == UO_LNot &&
-            Expr::isSameComparisonOperand(Negate->getSubExpr(), E2)) {
-          bool AlwaysTrue = B->getOpcode() == BO_LOr;
-          if (BuildOpts.Observer)
-            BuildOpts.Observer->logicAlwaysTrue(B, AlwaysTrue);
-          return TryResult(AlwaysTrue);
-        }
-      }
-      return TryResult();
-    };
-
-    TryResult Result = CheckLogicalOpWithNegatedVariable(LHSExpr, RHSExpr);
-    if (Result.isKnown())
-        return Result;
-    Result = CheckLogicalOpWithNegatedVariable(RHSExpr, LHSExpr);
-    if (Result.isKnown())
-        return Result;
-
-    const auto *LHS = dyn_cast<BinaryOperator>(LHSExpr);
-    const auto *RHS = dyn_cast<BinaryOperator>(RHSExpr);
+    const BinaryOperator *LHS =
+        dyn_cast<BinaryOperator>(B->getLHS()->IgnoreParens());
+    const BinaryOperator *RHS =
+        dyn_cast<BinaryOperator>(B->getRHS()->IgnoreParens());
     if (!LHS || !RHS)
       return {};
 
@@ -1350,8 +1321,7 @@ private:
     return {};
   }
 
-  bool hasTrivialDestructor(const VarDecl *VD) const;
-  bool needsAutomaticDestruction(const VarDecl *VD) const;
+  bool hasTrivialDestructor(VarDecl *VD);
 };
 
 } // namespace
@@ -1788,7 +1758,10 @@ static QualType getReferenceInitTemporaryType(const Expr *Init,
     }
 
     // Skip sub-object accesses into rvalues.
-    const Expr *SkippedInit = Init->skipRValueSubobjectAdjustments();
+    SmallVector<const Expr *, 2> CommaLHSs;
+    SmallVector<SubobjectAdjustment, 2> Adjustments;
+    const Expr *SkippedInit =
+        Init->skipRValueSubobjectAdjustments(CommaLHSs, Adjustments);
     if (SkippedInit != Init) {
       Init = SkippedInit;
       continue;
@@ -1863,14 +1836,14 @@ void CFGBuilder::addAutomaticObjDestruction(LocalScope::const_iterator B,
   if (B == E)
     return;
 
-  SmallVector<VarDecl *, 10> DeclsNeedDestruction;
-  DeclsNeedDestruction.reserve(B.distance(E));
+  SmallVector<VarDecl *, 10> DeclsNonTrivial;
+  DeclsNonTrivial.reserve(B.distance(E));
 
   for (VarDecl* D : llvm::make_range(B, E))
-    if (needsAutomaticDestruction(D))
-      DeclsNeedDestruction.push_back(D);
+    if (!hasTrivialDestructor(D))
+      DeclsNonTrivial.push_back(D);
 
-  for (VarDecl *VD : llvm::reverse(DeclsNeedDestruction)) {
+  for (VarDecl *VD : llvm::reverse(DeclsNonTrivial)) {
     if (BuildOpts.AddImplicitDtors) {
       // If this destructor is marked as a no-return destructor, we need to
       // create a new block for the destructor which does not have as a
@@ -1881,8 +1854,7 @@ void CFGBuilder::addAutomaticObjDestruction(LocalScope::const_iterator B,
         Ty = getReferenceInitTemporaryType(VD->getInit());
       Ty = Context->getBaseElementType(Ty);
 
-      const CXXRecordDecl *CRD = Ty->getAsCXXRecordDecl();
-      if (CRD && CRD->isAnyDestructorNoReturn())
+      if (Ty->getAsCXXRecordDecl()->isAnyDestructorNoReturn())
         Block = createNoReturnBlock();
     }
 
@@ -1893,10 +1865,8 @@ void CFGBuilder::addAutomaticObjDestruction(LocalScope::const_iterator B,
     // objects, we end lifetime with scope end.
     if (BuildOpts.AddLifetime)
       appendLifetimeEnds(Block, VD, S);
-    if (BuildOpts.AddImplicitDtors && !hasTrivialDestructor(VD))
+    if (BuildOpts.AddImplicitDtors)
       appendAutomaticObjDtor(Block, VD, S);
-    if (VD->hasAttr<CleanupAttr>())
-      appendCleanupFunction(Block, VD);
   }
 }
 
@@ -1927,7 +1897,7 @@ void CFGBuilder::addScopeExitHandling(LocalScope::const_iterator B,
   // is destroyed, for automatic variables, this happens when the end of the
   // scope is added.
   for (VarDecl* D : llvm::make_range(B, E))
-    if (!needsAutomaticDestruction(D))
+    if (hasTrivialDestructor(D))
       DeclsTrivial.push_back(D);
 
   if (DeclsTrivial.empty())
@@ -2039,7 +2009,7 @@ void CFGBuilder::addImplicitDtorsForDestructor(const CXXDestructorDecl *DD) {
     QualType QT = FI->getType();
     // It may be a multidimensional array.
     while (const ConstantArrayType *AT = Context->getAsConstantArrayType(QT)) {
-      if (AT->isZeroSize())
+      if (AT->getSize() == 0)
         break;
       QT = AT->getElementType();
     }
@@ -2100,11 +2070,7 @@ LocalScope* CFGBuilder::addLocalScopeForDeclStmt(DeclStmt *DS,
   return Scope;
 }
 
-bool CFGBuilder::needsAutomaticDestruction(const VarDecl *VD) const {
-  return !hasTrivialDestructor(VD) || VD->hasAttr<CleanupAttr>();
-}
-
-bool CFGBuilder::hasTrivialDestructor(const VarDecl *VD) const {
+bool CFGBuilder::hasTrivialDestructor(VarDecl *VD) {
   // Check for const references bound to temporary. Set type to pointee.
   QualType QT = VD->getType();
   if (QT->isReferenceType()) {
@@ -2133,7 +2099,7 @@ bool CFGBuilder::hasTrivialDestructor(const VarDecl *VD) const {
 
   // Check for constant size array. Set type to array element type.
   while (const ConstantArrayType *AT = Context->getAsConstantArrayType(QT)) {
-    if (AT->isZeroSize())
+    if (AT->getSize() == 0)
       return true;
     QT = AT->getElementType();
   }
@@ -2158,7 +2124,7 @@ LocalScope* CFGBuilder::addLocalScopeForVarDecl(VarDecl *VD,
     return Scope;
 
   if (!BuildOpts.AddLifetime && !BuildOpts.AddScopes &&
-      !needsAutomaticDestruction(VD)) {
+      hasTrivialDestructor(VD)) {
     assert(BuildOpts.AddImplicitDtors);
     return Scope;
   }
@@ -2258,7 +2224,8 @@ CFGBlock *CFGBuilder::Visit(Stmt * S, AddStmtChoice asc,
       // FIXME: The expression inside a CXXDefaultArgExpr is owned by the
       // called function's declaration, not by the caller. If we simply add
       // this expression to the CFG, we could end up with the same Expr
-      // appearing multiple times (PR13385).
+      // appearing multiple times.
+      // PR13385 / <rdar://problem/12156507>
       //
       // It's likewise possible for multiple CXXDefaultInitExprs for the same
       // expression to be used in the same function (through aggregate
@@ -5296,7 +5263,6 @@ CFGImplicitDtor::getDestructorDecl(ASTContext &astContext) const {
     case CFGElement::CXXRecordTypedCall:
     case CFGElement::ScopeBegin:
     case CFGElement::ScopeEnd:
-    case CFGElement::CleanupFunction:
       llvm_unreachable("getDestructorDecl should only be used with "
                        "ImplicitDtors");
     case CFGElement::AutomaticObjectDtor: {
@@ -5839,11 +5805,6 @@ static void print_elem(raw_ostream &OS, StmtPrinterHelper &Helper,
     OS << "() (Implicit destructor)\n";
     break;
   }
-
-  case CFGElement::Kind::CleanupFunction:
-    OS << "CleanupFunction ("
-       << E.castAs<CFGCleanupFunction>().getFunctionDecl()->getName() << ")\n";
-    break;
 
   case CFGElement::Kind::LifetimeEnds:
     Helper.handleDecl(E.castAs<CFGLifetimeEnds>().getVarDecl(), OS);

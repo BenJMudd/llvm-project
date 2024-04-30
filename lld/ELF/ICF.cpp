@@ -239,17 +239,16 @@ bool ICF<ELFT>::constantEq(const InputSection *secA, ArrayRef<RelTy> ra,
                            const InputSection *secB, ArrayRef<RelTy> rb) {
   if (ra.size() != rb.size())
     return false;
-  auto rai = ra.begin(), rae = ra.end(), rbi = rb.begin();
-  for (; rai != rae; ++rai, ++rbi) {
-    if (rai->r_offset != rbi->r_offset ||
-        rai->getType(config->isMips64EL) != rbi->getType(config->isMips64EL))
+  for (size_t i = 0; i < ra.size(); ++i) {
+    if (ra[i].r_offset != rb[i].r_offset ||
+        ra[i].getType(config->isMips64EL) != rb[i].getType(config->isMips64EL))
       return false;
 
-    uint64_t addA = getAddend<ELFT>(*rai);
-    uint64_t addB = getAddend<ELFT>(*rbi);
+    uint64_t addA = getAddend<ELFT>(ra[i]);
+    uint64_t addB = getAddend<ELFT>(rb[i]);
 
-    Symbol &sa = secA->file->getRelocTargetSym(*rai);
-    Symbol &sb = secB->file->getRelocTargetSym(*rbi);
+    Symbol &sa = secA->template getFile<ELFT>()->getRelocTargetSym(ra[i]);
+    Symbol &sb = secB->template getFile<ELFT>()->getRelocTargetSym(rb[i]);
     if (&sa == &sb) {
       if (addA == addB)
         continue;
@@ -337,11 +336,10 @@ bool ICF<ELFT>::variableEq(const InputSection *secA, ArrayRef<RelTy> ra,
                            const InputSection *secB, ArrayRef<RelTy> rb) {
   assert(ra.size() == rb.size());
 
-  auto rai = ra.begin(), rae = ra.end(), rbi = rb.begin();
-  for (; rai != rae; ++rai, ++rbi) {
+  for (size_t i = 0; i < ra.size(); ++i) {
     // The two sections must be identical.
-    Symbol &sa = secA->file->getRelocTargetSym(*rai);
-    Symbol &sb = secB->file->getRelocTargetSym(*rbi);
+    Symbol &sa = secA->template getFile<ELFT>()->getRelocTargetSym(ra[i]);
+    Symbol &sb = secB->template getFile<ELFT>()->getRelocTargetSym(rb[i]);
     if (&sa == &sb)
       continue;
 
@@ -439,12 +437,12 @@ void ICF<ELFT>::forEachClass(llvm::function_ref<void(size_t, size_t)> fn) {
 
 // Combine the hashes of the sections referenced by the given section into its
 // hash.
-template <class RelTy>
+template <class ELFT, class RelTy>
 static void combineRelocHashes(unsigned cnt, InputSection *isec,
                                ArrayRef<RelTy> rels) {
   uint32_t hash = isec->eqClass[cnt % 2];
   for (RelTy rel : rels) {
-    Symbol &s = isec->file->getRelocTargetSym(rel);
+    Symbol &s = isec->template getFile<ELFT>()->getRelocTargetSym(rel);
     if (auto *d = dyn_cast<Defined>(&s))
       if (auto *relSec = dyn_cast_or_null<InputSection>(d->section))
         hash += relSec->eqClass[cnt % 2];
@@ -506,9 +504,9 @@ template <class ELFT> void ICF<ELFT>::run() {
     parallelForEach(sections, [&](InputSection *s) {
       const RelsOrRelas<ELFT> rels = s->template relsOrRelas<ELFT>();
       if (rels.areRelocsRel())
-        combineRelocHashes(cnt, s, rels.rels);
+        combineRelocHashes<ELFT>(cnt, s, rels.rels);
       else
-        combineRelocHashes(cnt, s, rels.relas);
+        combineRelocHashes<ELFT>(cnt, s, rels.relas);
     });
   }
 

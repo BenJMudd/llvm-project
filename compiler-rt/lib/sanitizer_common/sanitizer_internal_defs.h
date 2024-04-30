@@ -15,11 +15,6 @@
 #include "sanitizer_platform.h"
 #include "sanitizer_redefine_builtins.h"
 
-// GCC does not understand __has_feature.
-#if !defined(__has_feature)
-#define __has_feature(x) 0
-#endif
-
 #ifndef SANITIZER_DEBUG
 # define SANITIZER_DEBUG 0
 #endif
@@ -35,20 +30,13 @@
 # define SANITIZER_INTERFACE_ATTRIBUTE __declspec(dllexport)
 #endif
 # define SANITIZER_WEAK_ATTRIBUTE
-#  define SANITIZER_WEAK_IMPORT
 #elif SANITIZER_GO
 # define SANITIZER_INTERFACE_ATTRIBUTE
 # define SANITIZER_WEAK_ATTRIBUTE
-#  define SANITIZER_WEAK_IMPORT
 #else
 # define SANITIZER_INTERFACE_ATTRIBUTE __attribute__((visibility("default")))
 # define SANITIZER_WEAK_ATTRIBUTE  __attribute__((weak))
-#  if SANITIZER_APPLE
-#    define SANITIZER_WEAK_IMPORT extern "C" __attribute((weak_import))
-#  else
-#    define SANITIZER_WEAK_IMPORT extern "C" SANITIZER_WEAK_ATTRIBUTE
-#  endif  // SANITIZER_APPLE
-#endif    // SANITIZER_WINDOWS
+#endif
 
 //--------------------------- WEAK FUNCTIONS ---------------------------------//
 // When working with weak functions, to simplify the code and make it more
@@ -191,10 +179,15 @@ typedef uptr OFF_T;
 #endif
 typedef u64  OFF64_T;
 
-#ifdef __SIZE_TYPE__
-typedef __SIZE_TYPE__ usize;
+#if (SANITIZER_WORDSIZE == 64) || SANITIZER_APPLE
+typedef uptr operator_new_size_type;
 #else
-typedef uptr usize;
+# if defined(__s390__) && !defined(__s390x__)
+// Special case: 31-bit s390 has unsigned long as size_t.
+typedef unsigned long operator_new_size_type;
+# else
+typedef u32 operator_new_size_type;
+# endif
 #endif
 
 typedef u64 tid_t;

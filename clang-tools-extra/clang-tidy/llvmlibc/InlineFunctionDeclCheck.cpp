@@ -45,9 +45,7 @@ InlineFunctionDeclCheck::InlineFunctionDeclCheck(StringRef Name,
       HeaderFileExtensions(Context->getHeaderFileExtensions()) {}
 
 void InlineFunctionDeclCheck::registerMatchers(MatchFinder *Finder) {
-  // Ignore functions that have been deleted.
-  Finder->addMatcher(decl(functionDecl(unless(isDeleted()))).bind("func_decl"),
-                     this);
+  Finder->addMatcher(decl(functionDecl()).bind("func_decl"), this);
 }
 
 void InlineFunctionDeclCheck::check(const MatchFinder::MatchResult &Result) {
@@ -90,7 +88,7 @@ void InlineFunctionDeclCheck::check(const MatchFinder::MatchResult &Result) {
 
   diag(SrcBegin, "%0 must be tagged with the LIBC_INLINE macro; the macro "
                  "should be placed at the beginning of the declaration")
-      << FuncDecl << FixItHint::CreateInsertion(Loc, "LIBC_INLINE ");
+      << FuncDecl;
 }
 
 } // namespace clang::tidy::llvm_libc

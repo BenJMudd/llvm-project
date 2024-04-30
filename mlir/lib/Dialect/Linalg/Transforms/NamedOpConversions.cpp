@@ -21,7 +21,7 @@
 #include "llvm/ADT/TypeSwitch.h"
 
 namespace mlir {
-#define GEN_PASS_DEF_LINALGNAMEDOPCONVERSIONPASS
+#define GEN_PASS_DEF_LINALGNAMEDOPCONVERSION
 #include "mlir/Dialect/Linalg/Passes.h.inc"
 } // namespace mlir
 
@@ -39,7 +39,7 @@ matchAndReplaceDepthwiseConv(Operation *operation, Value input, Value kernel,
   Location loc = operation->getLoc();
   auto linalgOp = dyn_cast<LinalgOp>(operation);
   // Exit out on the memref version of this operation.
-  if (!linalgOp || !linalgOp.hasPureTensorSemantics())
+  if (!linalgOp || !linalgOp.hasTensorSemantics())
     return failure();
 
   auto result = operation->getResult(0);
@@ -143,10 +143,9 @@ struct SimplifyDepthwiseConvQOp
 };
 
 struct LinalgNamedOpConversionPass
-    : public impl::LinalgNamedOpConversionPassBase<
-          LinalgNamedOpConversionPass> {
-  using impl::LinalgNamedOpConversionPassBase<
-      LinalgNamedOpConversionPass>::LinalgNamedOpConversionPassBase;
+    : public impl::LinalgNamedOpConversionBase<LinalgNamedOpConversionPass> {
+  LinalgNamedOpConversionPass() = default;
+  LinalgNamedOpConversionPass(const LinalgNamedOpConversionPass &) = default;
 
   void runOnOperation() override {
     Operation *op = getOperation();
@@ -162,4 +161,8 @@ void mlir::linalg::populateLinalgNamedOpConversionPatterns(
     RewritePatternSet &patterns) {
   patterns.add<SimplifyDepthwiseConvOp, SimplifyDepthwiseConvQOp>(
       patterns.getContext());
+}
+
+std::unique_ptr<Pass> mlir::createLinalgNamedOpConversionPass() {
+  return std::make_unique<LinalgNamedOpConversionPass>();
 }

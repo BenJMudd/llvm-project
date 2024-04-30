@@ -516,12 +516,10 @@ class DataFlowSanitizer {
   const MemoryMapParams *MapParams;
 
   Value *getShadowOffset(Value *Addr, IRBuilder<> &IRB);
-  Value *getShadowAddress(Value *Addr, BasicBlock::iterator Pos);
-  Value *getShadowAddress(Value *Addr, BasicBlock::iterator Pos,
-                          Value *ShadowOffset);
-  std::pair<Value *, Value *> getShadowOriginAddress(Value *Addr,
-                                                     Align InstAlignment,
-                                                     BasicBlock::iterator Pos);
+  Value *getShadowAddress(Value *Addr, Instruction *Pos);
+  Value *getShadowAddress(Value *Addr, Instruction *Pos, Value *ShadowOffset);
+  std::pair<Value *, Value *>
+  getShadowOriginAddress(Value *Addr, Align InstAlignment, Instruction *Pos);
   bool isInstrumented(const Function *F);
   bool isInstrumented(const GlobalAlias *GA);
   bool isForceZeroLabels(const Function *F);
@@ -538,7 +536,7 @@ class DataFlowSanitizer {
 
   /// Advances \p OriginAddr to point to the next 32-bit origin and then loads
   /// from it. Returns the origin's loaded value.
-  Value *loadNextOrigin(BasicBlock::iterator Pos, Align OriginAlign,
+  Value *loadNextOrigin(Instruction *Pos, Align OriginAlign,
                         Value **OriginAddr);
 
   /// Returns whether the given load byte size is amenable to inlined
@@ -566,7 +564,7 @@ class DataFlowSanitizer {
   /// getShadowTy([n x T]) = [n x getShadowTy(T)]
   /// getShadowTy(other type) = i16
   Type *getShadowTy(Type *OrigTy);
-  /// Returns the shadow type of V's type.
+  /// Returns the shadow type of of V's type.
   Type *getShadowTy(Value *V);
 
   const uint64_t NumOfElementsInArgOrgTLS = ArgTLSSize / OriginWidthBytes;
@@ -649,18 +647,18 @@ struct DFSanFunction {
   /// When Zero is nullptr, it uses ZeroPrimitiveShadow. Otherwise it can be
   /// zeros with other bitwidths.
   Value *combineOrigins(const std::vector<Value *> &Shadows,
-                        const std::vector<Value *> &Origins,
-                        BasicBlock::iterator Pos, ConstantInt *Zero = nullptr);
+                        const std::vector<Value *> &Origins, Instruction *Pos,
+                        ConstantInt *Zero = nullptr);
 
   Value *getShadow(Value *V);
   void setShadow(Instruction *I, Value *Shadow);
   /// Generates IR to compute the union of the two given shadows, inserting it
   /// before Pos. The combined value is with primitive type.
-  Value *combineShadows(Value *V1, Value *V2, BasicBlock::iterator Pos);
+  Value *combineShadows(Value *V1, Value *V2, Instruction *Pos);
   /// Combines the shadow values of V1 and V2, then converts the combined value
   /// with primitive type into a shadow value with the original type T.
   Value *combineShadowsThenConvert(Type *T, Value *V1, Value *V2,
-                                   BasicBlock::iterator Pos);
+                                   Instruction *Pos);
   Value *combineOperandShadows(Instruction *Inst);
 
   /// Generates IR to load shadow and origin corresponding to bytes [\p
@@ -672,11 +670,11 @@ struct DFSanFunction {
   /// current stack if the returned shadow is tainted.
   std::pair<Value *, Value *> loadShadowOrigin(Value *Addr, uint64_t Size,
                                                Align InstAlignment,
-                                               BasicBlock::iterator Pos);
+                                               Instruction *Pos);
 
   void storePrimitiveShadowOrigin(Value *Addr, uint64_t Size,
                                   Align InstAlignment, Value *PrimitiveShadow,
-                                  Value *Origin, BasicBlock::iterator Pos);
+                                  Value *Origin, Instruction *Pos);
   /// Applies PrimitiveShadow to all primitive subtypes of T, returning
   /// the expanded shadow value.
   ///
@@ -684,7 +682,7 @@ struct DFSanFunction {
   /// EFP([n x T], PS) = [n x EFP(T,PS)]
   /// EFP(other types, PS) = PS
   Value *expandFromPrimitiveShadow(Type *T, Value *PrimitiveShadow,
-                                   BasicBlock::iterator Pos);
+                                   Instruction *Pos);
   /// Collapses Shadow into a single primitive shadow value, unioning all
   /// primitive shadow values in the process. Returns the final primitive
   /// shadow value.
@@ -692,10 +690,10 @@ struct DFSanFunction {
   /// CTP({V1,V2, ...}) = UNION(CFP(V1,PS),CFP(V2,PS),...)
   /// CTP([V1,V2,...]) = UNION(CFP(V1,PS),CFP(V2,PS),...)
   /// CTP(other types, PS) = PS
-  Value *collapseToPrimitiveShadow(Value *Shadow, BasicBlock::iterator Pos);
+  Value *collapseToPrimitiveShadow(Value *Shadow, Instruction *Pos);
 
   void storeZeroPrimitiveShadow(Value *Addr, uint64_t Size, Align ShadowAlign,
-                                BasicBlock::iterator Pos);
+                                Instruction *Pos);
 
   Align getShadowAlign(Align InstAlignment);
 
@@ -726,7 +724,7 @@ private:
   std::pair<Value *, Value *>
   loadShadowFast(Value *ShadowAddr, Value *OriginAddr, uint64_t Size,
                  Align ShadowAlign, Align OriginAlign, Value *FirstOrigin,
-                 BasicBlock::iterator Pos);
+                 Instruction *Pos);
 
   Align getOriginAlign(Align InstAlignment);
 
@@ -762,9 +760,8 @@ private:
   ///   for untainted sinks.
   /// * Use __dfsan_maybe_store_origin if there are too many origin store
   ///   instrumentations.
-  void storeOrigin(BasicBlock::iterator Pos, Value *Addr, uint64_t Size,
-                   Value *Shadow, Value *Origin, Value *StoreOriginAddr,
-                   Align InstAlignment);
+  void storeOrigin(Instruction *Pos, Value *Addr, uint64_t Size, Value *Shadow,
+                   Value *Origin, Value *StoreOriginAddr, Align InstAlignment);
 
   /// Convert a scalar value to an i1 by comparing with 0.
   Value *convertToBool(Value *V, IRBuilder<> &IRB, const Twine &Name = "");
@@ -777,8 +774,7 @@ private:
   /// shadow always has primitive type.
   std::pair<Value *, Value *>
   loadShadowOriginSansLoadTracking(Value *Addr, uint64_t Size,
-                                   Align InstAlignment,
-                                   BasicBlock::iterator Pos);
+                                   Align InstAlignment, Instruction *Pos);
   int NumOriginStores = 0;
 };
 
@@ -979,7 +975,7 @@ bool DFSanFunction::shouldInstrumentWithCall() {
 }
 
 Value *DFSanFunction::expandFromPrimitiveShadow(Type *T, Value *PrimitiveShadow,
-                                                BasicBlock::iterator Pos) {
+                                                Instruction *Pos) {
   Type *ShadowTy = DFS.getShadowTy(T);
 
   if (!isa<ArrayType>(ShadowTy) && !isa<StructType>(ShadowTy))
@@ -988,7 +984,7 @@ Value *DFSanFunction::expandFromPrimitiveShadow(Type *T, Value *PrimitiveShadow,
   if (DFS.isZeroShadow(PrimitiveShadow))
     return DFS.getZeroShadow(ShadowTy);
 
-  IRBuilder<> IRB(Pos->getParent(), Pos);
+  IRBuilder<> IRB(Pos);
   SmallVector<unsigned, 4> Indices;
   Value *Shadow = UndefValue::get(ShadowTy);
   Shadow = expandFromPrimitiveShadowRecursive(Shadow, Indices, ShadowTy,
@@ -1029,7 +1025,7 @@ Value *DFSanFunction::collapseToPrimitiveShadow(Value *Shadow,
 }
 
 Value *DFSanFunction::collapseToPrimitiveShadow(Value *Shadow,
-                                                BasicBlock::iterator Pos) {
+                                                Instruction *Pos) {
   Type *ShadowTy = Shadow->getType();
   if (!isa<ArrayType>(ShadowTy) && !isa<StructType>(ShadowTy))
     return Shadow;
@@ -1039,7 +1035,7 @@ Value *DFSanFunction::collapseToPrimitiveShadow(Value *Shadow,
   if (CS && DT.dominates(CS, Pos))
     return CS;
 
-  IRBuilder<> IRB(Pos->getParent(), Pos);
+  IRBuilder<> IRB(Pos);
   Value *PrimitiveShadow = collapseToPrimitiveShadow(Shadow, IRB);
   // Caches the converted primitive shadow value.
   CS = PrimitiveShadow;
@@ -1149,7 +1145,7 @@ bool DataFlowSanitizer::initializeModule(Module &M) {
 
   Mod = &M;
   Ctx = &M.getContext();
-  Int8Ptr = PointerType::getUnqual(*Ctx);
+  Int8Ptr = Type::getInt8PtrTy(*Ctx);
   OriginTy = IntegerType::get(*Ctx, OriginWidthBits);
   OriginPtrTy = PointerType::getUnqual(OriginTy);
   PrimitiveShadowTy = IntegerType::get(*Ctx, ShadowWidthBits);
@@ -1166,19 +1162,19 @@ bool DataFlowSanitizer::initializeModule(Module &M) {
       FunctionType::get(IntegerType::get(*Ctx, 64), DFSanLoadLabelAndOriginArgs,
                         /*isVarArg=*/false);
   DFSanUnimplementedFnTy = FunctionType::get(
-      Type::getVoidTy(*Ctx), PointerType::getUnqual(*Ctx), /*isVarArg=*/false);
+      Type::getVoidTy(*Ctx), Type::getInt8PtrTy(*Ctx), /*isVarArg=*/false);
   Type *DFSanWrapperExternWeakNullArgs[2] = {Int8Ptr, Int8Ptr};
   DFSanWrapperExternWeakNullFnTy =
       FunctionType::get(Type::getVoidTy(*Ctx), DFSanWrapperExternWeakNullArgs,
                         /*isVarArg=*/false);
   Type *DFSanSetLabelArgs[4] = {PrimitiveShadowTy, OriginTy,
-                                PointerType::getUnqual(*Ctx), IntptrTy};
+                                Type::getInt8PtrTy(*Ctx), IntptrTy};
   DFSanSetLabelFnTy = FunctionType::get(Type::getVoidTy(*Ctx),
                                         DFSanSetLabelArgs, /*isVarArg=*/false);
   DFSanNonzeroLabelFnTy = FunctionType::get(Type::getVoidTy(*Ctx), std::nullopt,
                                             /*isVarArg=*/false);
   DFSanVarargWrapperFnTy = FunctionType::get(
-      Type::getVoidTy(*Ctx), PointerType::getUnqual(*Ctx), /*isVarArg=*/false);
+      Type::getVoidTy(*Ctx), Type::getInt8PtrTy(*Ctx), /*isVarArg=*/false);
   DFSanConditionalCallbackFnTy =
       FunctionType::get(Type::getVoidTy(*Ctx), PrimitiveShadowTy,
                         /*isVarArg=*/false);
@@ -1229,8 +1225,8 @@ bool DataFlowSanitizer::initializeModule(Module &M) {
       FunctionType::get(Type::getVoidTy(*Ctx), DFSanMemTransferCallbackArgs,
                         /*isVarArg=*/false);
 
-  ColdCallWeights = MDBuilder(*Ctx).createUnlikelyBranchWeights();
-  OriginStoreWeights = MDBuilder(*Ctx).createUnlikelyBranchWeights();
+  ColdCallWeights = MDBuilder(*Ctx).createBranchWeights(1, 1000);
+  OriginStoreWeights = MDBuilder(*Ctx).createBranchWeights(1, 1000);
   return true;
 }
 
@@ -1292,7 +1288,7 @@ void DataFlowSanitizer::buildExternWeakCheckIfNeeded(IRBuilder<> &IRB,
   // for a extern weak function, add a check here to help identify the issue.
   if (GlobalValue::isExternalWeakLinkage(F->getLinkage())) {
     std::vector<Value *> Args;
-    Args.push_back(F);
+    Args.push_back(IRB.CreatePointerCast(F, IRB.getInt8PtrTy()));
     Args.push_back(IRB.CreateGlobalStringPtr(F->getName()));
     IRB.CreateCall(DFSanWrapperExternWeakNullFn, Args);
   }
@@ -1557,7 +1553,7 @@ bool DataFlowSanitizer::runImpl(
       assert(isa<Function>(C) && "Personality routine is not a function!");
       Function *F = cast<Function>(C);
       if (!isInstrumented(F))
-        llvm::erase(FnsToInstrument, F);
+        llvm::erase_value(FnsToInstrument, F);
     }
   }
 
@@ -1579,7 +1575,7 @@ bool DataFlowSanitizer::runImpl(
       // below will take care of instrumenting it.
       Function *NewF =
           buildWrapperFunction(F, "", GA.getLinkage(), F->getFunctionType());
-      GA.replaceAllUsesWith(NewF);
+      GA.replaceAllUsesWith(ConstantExpr::getBitCast(NewF, GA.getType()));
       NewF->takeName(&GA);
       GA.eraseFromParent();
       FnsToInstrument.push_back(NewF);
@@ -1626,6 +1622,9 @@ bool DataFlowSanitizer::runImpl(
           WrapperLinkage, FT);
       NewF->removeFnAttrs(ReadOnlyNoneAttrs);
 
+      Value *WrappedFnCst =
+          ConstantExpr::getBitCast(NewF, PointerType::getUnqual(FT));
+
       // Extern weak functions can sometimes be null at execution time.
       // Code will sometimes check if an extern weak function is null.
       // This could look something like:
@@ -1658,9 +1657,9 @@ bool DataFlowSanitizer::runImpl(
         }
         return true;
       };
-      F.replaceUsesWithIf(NewF, IsNotCmpUse);
+      F.replaceUsesWithIf(WrappedFnCst, IsNotCmpUse);
 
-      UnwrappedFnMap[NewF] = &F;
+      UnwrappedFnMap[WrappedFnCst] = &F;
       *FI = NewF;
 
       if (!F.isDeclaration()) {
@@ -1764,14 +1763,14 @@ bool DataFlowSanitizer::runImpl(
     // instrumentation.
     if (ClDebugNonzeroLabels) {
       for (Value *V : DFSF.NonZeroChecks) {
-        BasicBlock::iterator Pos;
+        Instruction *Pos;
         if (Instruction *I = dyn_cast<Instruction>(V))
-          Pos = std::next(I->getIterator());
+          Pos = I->getNextNode();
         else
-          Pos = DFSF.F->getEntryBlock().begin();
+          Pos = &DFSF.F->getEntryBlock().front();
         while (isa<PHINode>(Pos) || isa<AllocaInst>(Pos))
-          Pos = std::next(Pos->getIterator());
-        IRBuilder<> IRB(Pos->getParent(), Pos);
+          Pos = Pos->getNextNode();
+        IRBuilder<> IRB(Pos);
         Value *PrimitiveShadow = DFSF.collapseToPrimitiveShadow(V, Pos);
         Value *Ne =
             IRB.CreateICmpNE(PrimitiveShadow, DFSF.DFS.ZeroPrimitiveShadow);
@@ -1916,9 +1915,9 @@ Value *DataFlowSanitizer::getShadowOffset(Value *Addr, IRBuilder<> &IRB) {
 
 std::pair<Value *, Value *>
 DataFlowSanitizer::getShadowOriginAddress(Value *Addr, Align InstAlignment,
-                                          BasicBlock::iterator Pos) {
+                                          Instruction *Pos) {
   // Returns ((Addr & shadow_mask) + origin_base - shadow_base) & ~4UL
-  IRBuilder<> IRB(Pos->getParent(), Pos);
+  IRBuilder<> IRB(Pos);
   Value *ShadowOffset = getShadowOffset(Addr, IRB);
   Value *ShadowLong = ShadowOffset;
   uint64_t ShadowBase = MapParams->ShadowBase;
@@ -1948,30 +1947,27 @@ DataFlowSanitizer::getShadowOriginAddress(Value *Addr, Align InstAlignment,
   return std::make_pair(ShadowPtr, OriginPtr);
 }
 
-Value *DataFlowSanitizer::getShadowAddress(Value *Addr,
-                                           BasicBlock::iterator Pos,
+Value *DataFlowSanitizer::getShadowAddress(Value *Addr, Instruction *Pos,
                                            Value *ShadowOffset) {
-  IRBuilder<> IRB(Pos->getParent(), Pos);
+  IRBuilder<> IRB(Pos);
   return IRB.CreateIntToPtr(ShadowOffset, PrimitiveShadowPtrTy);
 }
 
-Value *DataFlowSanitizer::getShadowAddress(Value *Addr,
-                                           BasicBlock::iterator Pos) {
-  IRBuilder<> IRB(Pos->getParent(), Pos);
+Value *DataFlowSanitizer::getShadowAddress(Value *Addr, Instruction *Pos) {
+  IRBuilder<> IRB(Pos);
   Value *ShadowOffset = getShadowOffset(Addr, IRB);
   return getShadowAddress(Addr, Pos, ShadowOffset);
 }
 
 Value *DFSanFunction::combineShadowsThenConvert(Type *T, Value *V1, Value *V2,
-                                                BasicBlock::iterator Pos) {
+                                                Instruction *Pos) {
   Value *PrimitiveValue = combineShadows(V1, V2, Pos);
   return expandFromPrimitiveShadow(T, PrimitiveValue, Pos);
 }
 
 // Generates IR to compute the union of the two given shadows, inserting it
 // before Pos. The combined value is with primitive type.
-Value *DFSanFunction::combineShadows(Value *V1, Value *V2,
-                                     BasicBlock::iterator Pos) {
+Value *DFSanFunction::combineShadows(Value *V1, Value *V2, Instruction *Pos) {
   if (DFS.isZeroShadow(V1))
     return collapseToPrimitiveShadow(V2, Pos);
   if (DFS.isZeroShadow(V2))
@@ -2009,7 +2005,7 @@ Value *DFSanFunction::combineShadows(Value *V1, Value *V2,
   Value *PV1 = collapseToPrimitiveShadow(V1, Pos);
   Value *PV2 = collapseToPrimitiveShadow(V2, Pos);
 
-  IRBuilder<> IRB(Pos->getParent(), Pos);
+  IRBuilder<> IRB(Pos);
   CCS.Block = Pos->getParent();
   CCS.Shadow = IRB.CreateOr(PV1, PV2);
 
@@ -2038,11 +2034,9 @@ Value *DFSanFunction::combineOperandShadows(Instruction *Inst) {
 
   Value *Shadow = getShadow(Inst->getOperand(0));
   for (unsigned I = 1, N = Inst->getNumOperands(); I < N; ++I)
-    Shadow = combineShadows(Shadow, getShadow(Inst->getOperand(I)),
-                            Inst->getIterator());
+    Shadow = combineShadows(Shadow, getShadow(Inst->getOperand(I)), Inst);
 
-  return expandFromPrimitiveShadow(Inst->getType(), Shadow,
-                                   Inst->getIterator());
+  return expandFromPrimitiveShadow(Inst->getType(), Shadow, Inst);
 }
 
 void DFSanVisitor::visitInstOperands(Instruction &I) {
@@ -2053,8 +2047,7 @@ void DFSanVisitor::visitInstOperands(Instruction &I) {
 
 Value *DFSanFunction::combineOrigins(const std::vector<Value *> &Shadows,
                                      const std::vector<Value *> &Origins,
-                                     BasicBlock::iterator Pos,
-                                     ConstantInt *Zero) {
+                                     Instruction *Pos, ConstantInt *Zero) {
   assert(Shadows.size() == Origins.size());
   size_t Size = Origins.size();
   if (Size == 0)
@@ -2073,7 +2066,7 @@ Value *DFSanFunction::combineOrigins(const std::vector<Value *> &Shadows,
     }
     Value *OpShadow = Shadows[I];
     Value *PrimitiveShadow = collapseToPrimitiveShadow(OpShadow, Pos);
-    IRBuilder<> IRB(Pos->getParent(), Pos);
+    IRBuilder<> IRB(Pos);
     Value *Cond = IRB.CreateICmpNE(PrimitiveShadow, Zero);
     Origin = IRB.CreateSelect(Cond, OpOrigin, Origin);
   }
@@ -2088,7 +2081,7 @@ Value *DFSanFunction::combineOperandOrigins(Instruction *Inst) {
     Shadows[I] = getShadow(Inst->getOperand(I));
     Origins[I] = getOrigin(Inst->getOperand(I));
   }
-  return combineOrigins(Shadows, Origins, Inst->getIterator());
+  return combineOrigins(Shadows, Origins, Inst);
 }
 
 void DFSanVisitor::visitInstOperandOrigins(Instruction &I) {
@@ -2139,10 +2132,9 @@ bool DFSanFunction::useCallbackLoadLabelAndOrigin(uint64_t Size,
   return Alignment < MinOriginAlignment || !DFS.hasLoadSizeForFastPath(Size);
 }
 
-Value *DataFlowSanitizer::loadNextOrigin(BasicBlock::iterator Pos,
-                                         Align OriginAlign,
+Value *DataFlowSanitizer::loadNextOrigin(Instruction *Pos, Align OriginAlign,
                                          Value **OriginAddr) {
-  IRBuilder<> IRB(Pos->getParent(), Pos);
+  IRBuilder<> IRB(Pos);
   *OriginAddr =
       IRB.CreateGEP(OriginTy, *OriginAddr, ConstantInt::get(IntptrTy, 1));
   return IRB.CreateAlignedLoad(OriginTy, *OriginAddr, OriginAlign);
@@ -2150,7 +2142,7 @@ Value *DataFlowSanitizer::loadNextOrigin(BasicBlock::iterator Pos,
 
 std::pair<Value *, Value *> DFSanFunction::loadShadowFast(
     Value *ShadowAddr, Value *OriginAddr, uint64_t Size, Align ShadowAlign,
-    Align OriginAlign, Value *FirstOrigin, BasicBlock::iterator Pos) {
+    Align OriginAlign, Value *FirstOrigin, Instruction *Pos) {
   const bool ShouldTrackOrigins = DFS.shouldTrackOrigins();
   const uint64_t ShadowSize = Size * DFS.ShadowWidthBytes;
 
@@ -2174,7 +2166,7 @@ std::pair<Value *, Value *> DFSanFunction::loadShadowFast(
   Type *WideShadowTy =
       ShadowSize == 4 ? Type::getInt32Ty(*DFS.Ctx) : Type::getInt64Ty(*DFS.Ctx);
 
-  IRBuilder<> IRB(Pos->getParent(), Pos);
+  IRBuilder<> IRB(Pos);
   Value *CombinedWideShadow =
       IRB.CreateAlignedLoad(WideShadowTy, ShadowAddr, ShadowAlign);
 
@@ -2236,14 +2228,14 @@ std::pair<Value *, Value *> DFSanFunction::loadShadowFast(
 }
 
 std::pair<Value *, Value *> DFSanFunction::loadShadowOriginSansLoadTracking(
-    Value *Addr, uint64_t Size, Align InstAlignment, BasicBlock::iterator Pos) {
+    Value *Addr, uint64_t Size, Align InstAlignment, Instruction *Pos) {
   const bool ShouldTrackOrigins = DFS.shouldTrackOrigins();
 
   // Non-escaped loads.
   if (AllocaInst *AI = dyn_cast<AllocaInst>(Addr)) {
     const auto SI = AllocaShadowMap.find(AI);
     if (SI != AllocaShadowMap.end()) {
-      IRBuilder<> IRB(Pos->getParent(), Pos);
+      IRBuilder<> IRB(Pos);
       Value *ShadowLI = IRB.CreateLoad(DFS.PrimitiveShadowTy, SI->second);
       const auto OI = AllocaOriginMap.find(AI);
       assert(!ShouldTrackOrigins || OI != AllocaOriginMap.end());
@@ -2278,10 +2270,11 @@ std::pair<Value *, Value *> DFSanFunction::loadShadowOriginSansLoadTracking(
   // tracking.
   if (ShouldTrackOrigins &&
       useCallbackLoadLabelAndOrigin(Size, InstAlignment)) {
-    IRBuilder<> IRB(Pos->getParent(), Pos);
+    IRBuilder<> IRB(Pos);
     CallInst *Call =
         IRB.CreateCall(DFS.DFSanLoadLabelAndOriginFn,
-                       {Addr, ConstantInt::get(DFS.IntptrTy, Size)});
+                       {IRB.CreatePointerCast(Addr, IRB.getInt8PtrTy()),
+                        ConstantInt::get(DFS.IntptrTy, Size)});
     Call->addRetAttr(Attribute::ZExt);
     return {IRB.CreateTrunc(IRB.CreateLShr(Call, DFS.OriginWidthBits),
                             DFS.PrimitiveShadowTy),
@@ -2297,7 +2290,7 @@ std::pair<Value *, Value *> DFSanFunction::loadShadowOriginSansLoadTracking(
   const Align OriginAlign = getOriginAlign(InstAlignment);
   Value *Origin = nullptr;
   if (ShouldTrackOrigins) {
-    IRBuilder<> IRB(Pos->getParent(), Pos);
+    IRBuilder<> IRB(Pos);
     Origin = IRB.CreateAlignedLoad(DFS.OriginTy, OriginAddr, OriginAlign);
   }
 
@@ -2310,7 +2303,7 @@ std::pair<Value *, Value *> DFSanFunction::loadShadowOriginSansLoadTracking(
     return {LI, Origin};
   }
   case 2: {
-    IRBuilder<> IRB(Pos->getParent(), Pos);
+    IRBuilder<> IRB(Pos);
     Value *ShadowAddr1 = IRB.CreateGEP(DFS.PrimitiveShadowTy, ShadowAddr,
                                        ConstantInt::get(DFS.IntptrTy, 1));
     Value *Load =
@@ -2326,22 +2319,23 @@ std::pair<Value *, Value *> DFSanFunction::loadShadowOriginSansLoadTracking(
     return loadShadowFast(ShadowAddr, OriginAddr, Size, ShadowAlign,
                           OriginAlign, Origin, Pos);
 
-  IRBuilder<> IRB(Pos->getParent(), Pos);
+  IRBuilder<> IRB(Pos);
   CallInst *FallbackCall = IRB.CreateCall(
       DFS.DFSanUnionLoadFn, {ShadowAddr, ConstantInt::get(DFS.IntptrTy, Size)});
   FallbackCall->addRetAttr(Attribute::ZExt);
   return {FallbackCall, Origin};
 }
 
-std::pair<Value *, Value *>
-DFSanFunction::loadShadowOrigin(Value *Addr, uint64_t Size, Align InstAlignment,
-                                BasicBlock::iterator Pos) {
+std::pair<Value *, Value *> DFSanFunction::loadShadowOrigin(Value *Addr,
+                                                            uint64_t Size,
+                                                            Align InstAlignment,
+                                                            Instruction *Pos) {
   Value *PrimitiveShadow, *Origin;
   std::tie(PrimitiveShadow, Origin) =
       loadShadowOriginSansLoadTracking(Addr, Size, InstAlignment, Pos);
   if (DFS.shouldTrackOrigins()) {
     if (ClTrackOrigins == 2) {
-      IRBuilder<> IRB(Pos->getParent(), Pos);
+      IRBuilder<> IRB(Pos);
       auto *ConstantShadow = dyn_cast<Constant>(PrimitiveShadow);
       if (!ConstantShadow || !ConstantShadow->isZeroValue())
         Origin = updateOriginIfTainted(PrimitiveShadow, Origin, IRB);
@@ -2407,11 +2401,8 @@ void DFSanVisitor::visitLoadInst(LoadInst &LI) {
   if (LI.isAtomic())
     LI.setOrdering(addAcquireOrdering(LI.getOrdering()));
 
-  BasicBlock::iterator AfterLi = std::next(LI.getIterator());
-  BasicBlock::iterator Pos = LI.getIterator();
-  if (LI.isAtomic())
-    Pos = std::next(Pos);
-
+  Instruction *AfterLi = LI.getNextNode();
+  Instruction *Pos = LI.isAtomic() ? LI.getNextNode() : &LI;
   std::vector<Value *> Shadows;
   std::vector<Value *> Origins;
   Value *PrimitiveShadow, *Origin;
@@ -2444,14 +2435,14 @@ void DFSanVisitor::visitLoadInst(LoadInst &LI) {
   }
 
   if (ClEventCallbacks) {
-    IRBuilder<> IRB(Pos->getParent(), Pos);
-    Value *Addr = LI.getPointerOperand();
+    IRBuilder<> IRB(Pos);
+    Value *Addr8 = IRB.CreateBitCast(LI.getPointerOperand(), DFSF.DFS.Int8Ptr);
     CallInst *CI =
-        IRB.CreateCall(DFSF.DFS.DFSanLoadCallbackFn, {PrimitiveShadow, Addr});
+        IRB.CreateCall(DFSF.DFS.DFSanLoadCallbackFn, {PrimitiveShadow, Addr8});
     CI->addParamAttr(0, Attribute::ZExt);
   }
 
-  IRBuilder<> IRB(AfterLi->getParent(), AfterLi);
+  IRBuilder<> IRB(AfterLi);
   DFSF.addReachesFunctionCallbacksIfEnabled(IRB, LI, &LI);
 }
 
@@ -2523,14 +2514,14 @@ Value *DFSanFunction::convertToBool(Value *V, IRBuilder<> &IRB,
   return IRB.CreateICmpNE(V, ConstantInt::get(VTy, 0), Name);
 }
 
-void DFSanFunction::storeOrigin(BasicBlock::iterator Pos, Value *Addr,
-                                uint64_t Size, Value *Shadow, Value *Origin,
+void DFSanFunction::storeOrigin(Instruction *Pos, Value *Addr, uint64_t Size,
+                                Value *Shadow, Value *Origin,
                                 Value *StoreOriginAddr, Align InstAlignment) {
   // Do not write origins for zero shadows because we do not trace origins for
   // untainted sinks.
   const Align OriginAlignment = getOriginAlign(InstAlignment);
   Value *CollapsedShadow = collapseToPrimitiveShadow(Shadow, Pos);
-  IRBuilder<> IRB(Pos->getParent(), Pos);
+  IRBuilder<> IRB(Pos);
   if (auto *ConstantShadow = dyn_cast<Constant>(CollapsedShadow)) {
     if (!ConstantShadow->isZeroValue())
       paintOrigin(IRB, updateOrigin(Origin, IRB), StoreOriginAddr, Size,
@@ -2539,9 +2530,10 @@ void DFSanFunction::storeOrigin(BasicBlock::iterator Pos, Value *Addr,
   }
 
   if (shouldInstrumentWithCall()) {
-    IRB.CreateCall(
-        DFS.DFSanMaybeStoreOriginFn,
-        {CollapsedShadow, Addr, ConstantInt::get(DFS.IntptrTy, Size), Origin});
+    IRB.CreateCall(DFS.DFSanMaybeStoreOriginFn,
+                   {CollapsedShadow,
+                    IRB.CreatePointerCast(Addr, IRB.getInt8PtrTy()),
+                    ConstantInt::get(DFS.IntptrTy, Size), Origin});
   } else {
     Value *Cmp = convertToBool(CollapsedShadow, IRB, "_dfscmp");
     DomTreeUpdater DTU(DT, DomTreeUpdater::UpdateStrategy::Lazy);
@@ -2556,13 +2548,15 @@ void DFSanFunction::storeOrigin(BasicBlock::iterator Pos, Value *Addr,
 
 void DFSanFunction::storeZeroPrimitiveShadow(Value *Addr, uint64_t Size,
                                              Align ShadowAlign,
-                                             BasicBlock::iterator Pos) {
-  IRBuilder<> IRB(Pos->getParent(), Pos);
+                                             Instruction *Pos) {
+  IRBuilder<> IRB(Pos);
   IntegerType *ShadowTy =
       IntegerType::get(*DFS.Ctx, Size * DFS.ShadowWidthBits);
   Value *ExtZeroShadow = ConstantInt::get(ShadowTy, 0);
   Value *ShadowAddr = DFS.getShadowAddress(Addr, Pos);
-  IRB.CreateAlignedStore(ExtZeroShadow, ShadowAddr, ShadowAlign);
+  Value *ExtShadowAddr =
+      IRB.CreateBitCast(ShadowAddr, PointerType::getUnqual(ShadowTy));
+  IRB.CreateAlignedStore(ExtZeroShadow, ExtShadowAddr, ShadowAlign);
   // Do not write origins for 0 shadows because we do not trace origins for
   // untainted sinks.
 }
@@ -2571,13 +2565,13 @@ void DFSanFunction::storePrimitiveShadowOrigin(Value *Addr, uint64_t Size,
                                                Align InstAlignment,
                                                Value *PrimitiveShadow,
                                                Value *Origin,
-                                               BasicBlock::iterator Pos) {
+                                               Instruction *Pos) {
   const bool ShouldTrackOrigins = DFS.shouldTrackOrigins() && Origin;
 
   if (AllocaInst *AI = dyn_cast<AllocaInst>(Addr)) {
     const auto SI = AllocaShadowMap.find(AI);
     if (SI != AllocaShadowMap.end()) {
-      IRBuilder<> IRB(Pos->getParent(), Pos);
+      IRBuilder<> IRB(Pos);
       IRB.CreateStore(PrimitiveShadow, SI->second);
 
       // Do not write origins for 0 shadows because we do not trace origins for
@@ -2597,7 +2591,7 @@ void DFSanFunction::storePrimitiveShadowOrigin(Value *Addr, uint64_t Size,
     return;
   }
 
-  IRBuilder<> IRB(Pos->getParent(), Pos);
+  IRBuilder<> IRB(Pos);
   Value *ShadowAddr, *OriginAddr;
   std::tie(ShadowAddr, OriginAddr) =
       DFS.getShadowOriginAddress(Addr, InstAlignment, Pos);
@@ -2617,9 +2611,11 @@ void DFSanFunction::storePrimitiveShadowOrigin(Value *Addr, uint64_t Size,
           ShadowVec, PrimitiveShadow,
           ConstantInt::get(Type::getInt32Ty(*DFS.Ctx), I));
     }
+    Value *ShadowVecAddr =
+        IRB.CreateBitCast(ShadowAddr, PointerType::getUnqual(ShadowVecTy));
     do {
       Value *CurShadowVecAddr =
-          IRB.CreateConstGEP1_32(ShadowVecTy, ShadowAddr, Offset);
+          IRB.CreateConstGEP1_32(ShadowVecTy, ShadowVecAddr, Offset);
       IRB.CreateAlignedStore(ShadowVec, CurShadowVecAddr, ShadowAlign);
       LeftSize -= ShadowVecSize;
       ++Offset;
@@ -2692,20 +2688,20 @@ void DFSanVisitor::visitStoreInst(StoreInst &SI) {
       Shadows.push_back(PtrShadow);
       Origins.push_back(DFSF.getOrigin(SI.getPointerOperand()));
     }
-    PrimitiveShadow = DFSF.combineShadows(Shadow, PtrShadow, SI.getIterator());
+    PrimitiveShadow = DFSF.combineShadows(Shadow, PtrShadow, &SI);
   } else {
-    PrimitiveShadow = DFSF.collapseToPrimitiveShadow(Shadow, SI.getIterator());
+    PrimitiveShadow = DFSF.collapseToPrimitiveShadow(Shadow, &SI);
   }
   Value *Origin = nullptr;
   if (ShouldTrackOrigins)
-    Origin = DFSF.combineOrigins(Shadows, Origins, SI.getIterator());
+    Origin = DFSF.combineOrigins(Shadows, Origins, &SI);
   DFSF.storePrimitiveShadowOrigin(SI.getPointerOperand(), Size, SI.getAlign(),
-                                  PrimitiveShadow, Origin, SI.getIterator());
+                                  PrimitiveShadow, Origin, &SI);
   if (ClEventCallbacks) {
     IRBuilder<> IRB(&SI);
-    Value *Addr = SI.getPointerOperand();
+    Value *Addr8 = IRB.CreateBitCast(SI.getPointerOperand(), DFSF.DFS.Int8Ptr);
     CallInst *CI =
-        IRB.CreateCall(DFSF.DFS.DFSanStoreCallbackFn, {PrimitiveShadow, Addr});
+        IRB.CreateCall(DFSF.DFS.DFSanStoreCallbackFn, {PrimitiveShadow, Addr8});
     CI->addParamAttr(0, Attribute::ZExt);
   }
 }
@@ -2724,7 +2720,7 @@ void DFSanVisitor::visitCASOrRMW(Align InstAlignment, Instruction &I) {
   IRBuilder<> IRB(&I);
   Value *Addr = I.getOperand(0);
   const Align ShadowAlign = DFSF.getShadowAlign(InstAlignment);
-  DFSF.storeZeroPrimitiveShadow(Addr, Size, ShadowAlign, I.getIterator());
+  DFSF.storeZeroPrimitiveShadow(Addr, Size, ShadowAlign, &I);
   DFSF.setShadow(&I, DFSF.DFS.getZeroShadow(&I));
   DFSF.setOrigin(&I, DFSF.DFS.ZeroOrigin);
 }
@@ -2879,7 +2875,7 @@ void DFSanVisitor::visitSelectInst(SelectInst &I) {
 
   if (isa<VectorType>(I.getCondition()->getType())) {
     ShadowSel = DFSF.combineShadowsThenConvert(I.getType(), TrueShadow,
-                                               FalseShadow, I.getIterator());
+                                               FalseShadow, &I);
     if (ShouldTrackOrigins) {
       Shadows.push_back(TrueShadow);
       Shadows.push_back(FalseShadow);
@@ -2894,25 +2890,25 @@ void DFSanVisitor::visitSelectInst(SelectInst &I) {
         Origins.push_back(TrueOrigin);
       }
     } else {
-      ShadowSel = SelectInst::Create(I.getCondition(), TrueShadow, FalseShadow,
-                                     "", I.getIterator());
+      ShadowSel =
+          SelectInst::Create(I.getCondition(), TrueShadow, FalseShadow, "", &I);
       if (ShouldTrackOrigins) {
         Shadows.push_back(ShadowSel);
         Origins.push_back(SelectInst::Create(I.getCondition(), TrueOrigin,
-                                             FalseOrigin, "", I.getIterator()));
+                                             FalseOrigin, "", &I));
       }
     }
   }
-  DFSF.setShadow(&I, ClTrackSelectControlFlow ? DFSF.combineShadowsThenConvert(
-                                                    I.getType(), CondShadow,
-                                                    ShadowSel, I.getIterator())
-                                              : ShadowSel);
+  DFSF.setShadow(&I, ClTrackSelectControlFlow
+                         ? DFSF.combineShadowsThenConvert(
+                               I.getType(), CondShadow, ShadowSel, &I)
+                         : ShadowSel);
   if (ShouldTrackOrigins) {
     if (ClTrackSelectControlFlow) {
       Shadows.push_back(CondShadow);
       Origins.push_back(DFSF.getOrigin(I.getCondition()));
     }
-    DFSF.setOrigin(&I, DFSF.combineOrigins(Shadows, Origins, I.getIterator()));
+    DFSF.setOrigin(&I, DFSF.combineOrigins(Shadows, Origins, &I));
   }
 }
 
@@ -2922,9 +2918,11 @@ void DFSanVisitor::visitMemSetInst(MemSetInst &I) {
   Value *ValOrigin = DFSF.DFS.shouldTrackOrigins()
                          ? DFSF.getOrigin(I.getValue())
                          : DFSF.DFS.ZeroOrigin;
-  IRB.CreateCall(DFSF.DFS.DFSanSetLabelFn,
-                 {ValShadow, ValOrigin, I.getDest(),
-                  IRB.CreateZExtOrTrunc(I.getLength(), DFSF.DFS.IntptrTy)});
+  IRB.CreateCall(
+      DFSF.DFS.DFSanSetLabelFn,
+      {ValShadow, ValOrigin,
+       IRB.CreateBitCast(I.getDest(), Type::getInt8PtrTy(*DFSF.DFS.Ctx)),
+       IRB.CreateZExtOrTrunc(I.getLength(), DFSF.DFS.IntptrTy)});
 }
 
 void DFSanVisitor::visitMemTransferInst(MemTransferInst &I) {
@@ -2935,24 +2933,28 @@ void DFSanVisitor::visitMemTransferInst(MemTransferInst &I) {
   if (DFSF.DFS.shouldTrackOrigins()) {
     IRB.CreateCall(
         DFSF.DFS.DFSanMemOriginTransferFn,
-        {I.getArgOperand(0), I.getArgOperand(1),
+        {IRB.CreatePointerCast(I.getArgOperand(0), IRB.getInt8PtrTy()),
+         IRB.CreatePointerCast(I.getArgOperand(1), IRB.getInt8PtrTy()),
          IRB.CreateIntCast(I.getArgOperand(2), DFSF.DFS.IntptrTy, false)});
   }
 
-  Value *DestShadow = DFSF.DFS.getShadowAddress(I.getDest(), I.getIterator());
-  Value *SrcShadow = DFSF.DFS.getShadowAddress(I.getSource(), I.getIterator());
+  Value *RawDestShadow = DFSF.DFS.getShadowAddress(I.getDest(), &I);
+  Value *SrcShadow = DFSF.DFS.getShadowAddress(I.getSource(), &I);
   Value *LenShadow =
       IRB.CreateMul(I.getLength(), ConstantInt::get(I.getLength()->getType(),
                                                     DFSF.DFS.ShadowWidthBytes));
+  Type *Int8Ptr = Type::getInt8PtrTy(*DFSF.DFS.Ctx);
+  Value *DestShadow = IRB.CreateBitCast(RawDestShadow, Int8Ptr);
+  SrcShadow = IRB.CreateBitCast(SrcShadow, Int8Ptr);
   auto *MTI = cast<MemTransferInst>(
       IRB.CreateCall(I.getFunctionType(), I.getCalledOperand(),
                      {DestShadow, SrcShadow, LenShadow, I.getVolatileCst()}));
   MTI->setDestAlignment(DFSF.getShadowAlign(I.getDestAlign().valueOrOne()));
   MTI->setSourceAlignment(DFSF.getShadowAlign(I.getSourceAlign().valueOrOne()));
   if (ClEventCallbacks) {
-    IRB.CreateCall(
-        DFSF.DFS.DFSanMemTransferCallbackFn,
-        {DestShadow, IRB.CreateZExtOrTrunc(I.getLength(), DFSF.DFS.IntptrTy)});
+    IRB.CreateCall(DFSF.DFS.DFSanMemTransferCallbackFn,
+                   {RawDestShadow,
+                    IRB.CreateZExtOrTrunc(I.getLength(), DFSF.DFS.IntptrTy)});
   }
 }
 
@@ -3009,8 +3011,7 @@ void DFSanVisitor::addShadowArguments(Function &F, CallBase &CB,
 
   // Adds non-variable argument shadows.
   for (unsigned N = FT->getNumParams(); N != 0; ++I, --N)
-    Args.push_back(
-        DFSF.collapseToPrimitiveShadow(DFSF.getShadow(*I), CB.getIterator()));
+    Args.push_back(DFSF.collapseToPrimitiveShadow(DFSF.getShadow(*I), &CB));
 
   // Adds variable argument shadows.
   if (FT->isVarArg()) {
@@ -3018,13 +3019,12 @@ void DFSanVisitor::addShadowArguments(Function &F, CallBase &CB,
                                      CB.arg_size() - FT->getNumParams());
     auto *LabelVAAlloca =
         new AllocaInst(LabelVATy, getDataLayout().getAllocaAddrSpace(),
-                       "labelva", DFSF.F->getEntryBlock().begin());
+                       "labelva", &DFSF.F->getEntryBlock().front());
 
     for (unsigned N = 0; I != CB.arg_end(); ++I, ++N) {
       auto *LabelVAPtr = IRB.CreateStructGEP(LabelVATy, LabelVAAlloca, N);
-      IRB.CreateStore(
-          DFSF.collapseToPrimitiveShadow(DFSF.getShadow(*I), CB.getIterator()),
-          LabelVAPtr);
+      IRB.CreateStore(DFSF.collapseToPrimitiveShadow(DFSF.getShadow(*I), &CB),
+                      LabelVAPtr);
     }
 
     Args.push_back(IRB.CreateStructGEP(LabelVATy, LabelVAAlloca, 0));
@@ -3035,7 +3035,7 @@ void DFSanVisitor::addShadowArguments(Function &F, CallBase &CB,
     if (!DFSF.LabelReturnAlloca) {
       DFSF.LabelReturnAlloca = new AllocaInst(
           DFSF.DFS.PrimitiveShadowTy, getDataLayout().getAllocaAddrSpace(),
-          "labelreturn", DFSF.F->getEntryBlock().begin());
+          "labelreturn", &DFSF.F->getEntryBlock().front());
     }
     Args.push_back(DFSF.LabelReturnAlloca);
   }
@@ -3058,7 +3058,7 @@ void DFSanVisitor::addOriginArguments(Function &F, CallBase &CB,
         ArrayType::get(DFSF.DFS.OriginTy, CB.arg_size() - FT->getNumParams());
     auto *OriginVAAlloca =
         new AllocaInst(OriginVATy, getDataLayout().getAllocaAddrSpace(),
-                       "originva", DFSF.F->getEntryBlock().begin());
+                       "originva", &DFSF.F->getEntryBlock().front());
 
     for (unsigned N = 0; I != CB.arg_end(); ++I, ++N) {
       auto *OriginVAPtr = IRB.CreateStructGEP(OriginVATy, OriginVAAlloca, N);
@@ -3073,7 +3073,7 @@ void DFSanVisitor::addOriginArguments(Function &F, CallBase &CB,
     if (!DFSF.OriginReturnAlloca) {
       DFSF.OriginReturnAlloca = new AllocaInst(
           DFSF.DFS.OriginTy, getDataLayout().getAllocaAddrSpace(),
-          "originreturn", DFSF.F->getEntryBlock().begin());
+          "originreturn", &DFSF.F->getEntryBlock().front());
     }
     Args.push_back(DFSF.OriginReturnAlloca);
   }
@@ -3170,9 +3170,8 @@ bool DFSanVisitor::visitWrappedCallBase(Function &F, CallBase &CB) {
     if (!FT->getReturnType()->isVoidTy()) {
       LoadInst *LabelLoad =
           IRB.CreateLoad(DFSF.DFS.PrimitiveShadowTy, DFSF.LabelReturnAlloca);
-      DFSF.setShadow(CustomCI,
-                     DFSF.expandFromPrimitiveShadow(
-                         FT->getReturnType(), LabelLoad, CB.getIterator()));
+      DFSF.setShadow(CustomCI, DFSF.expandFromPrimitiveShadow(
+                                   FT->getReturnType(), LabelLoad, &CB));
       if (ShouldTrackOrigins) {
         LoadInst *OriginLoad =
             IRB.CreateLoad(DFSF.DFS.OriginTy, DFSF.OriginReturnAlloca);
@@ -3201,7 +3200,8 @@ Value *DFSanVisitor::makeAddAcquireOrderingTable(IRBuilder<> &IRB) {
   OrderingTable[(int)AtomicOrderingCABI::seq_cst] =
       (int)AtomicOrderingCABI::seq_cst;
 
-  return ConstantDataVector::get(IRB.getContext(), OrderingTable);
+  return ConstantDataVector::get(IRB.getContext(),
+                                 ArrayRef(OrderingTable, NumOrderings));
 }
 
 void DFSanVisitor::visitLibAtomicLoad(CallBase &CB) {
@@ -3225,9 +3225,10 @@ void DFSanVisitor::visitLibAtomicLoad(CallBase &CB) {
   // TODO: Support ClCombinePointerLabelsOnLoad
   // TODO: Support ClEventCallbacks
 
-  NextIRB.CreateCall(
-      DFSF.DFS.DFSanMemShadowOriginTransferFn,
-      {DstPtr, SrcPtr, NextIRB.CreateIntCast(Size, DFSF.DFS.IntptrTy, false)});
+  NextIRB.CreateCall(DFSF.DFS.DFSanMemShadowOriginTransferFn,
+                     {NextIRB.CreatePointerCast(DstPtr, NextIRB.getInt8PtrTy()),
+                      NextIRB.CreatePointerCast(SrcPtr, NextIRB.getInt8PtrTy()),
+                      NextIRB.CreateIntCast(Size, DFSF.DFS.IntptrTy, false)});
 }
 
 Value *DFSanVisitor::makeAddReleaseOrderingTable(IRBuilder<> &IRB) {
@@ -3244,7 +3245,8 @@ Value *DFSanVisitor::makeAddReleaseOrderingTable(IRBuilder<> &IRB) {
   OrderingTable[(int)AtomicOrderingCABI::seq_cst] =
       (int)AtomicOrderingCABI::seq_cst;
 
-  return ConstantDataVector::get(IRB.getContext(), OrderingTable);
+  return ConstantDataVector::get(IRB.getContext(),
+                                 ArrayRef(OrderingTable, NumOrderings));
 }
 
 void DFSanVisitor::visitLibAtomicStore(CallBase &CB) {
@@ -3262,9 +3264,10 @@ void DFSanVisitor::visitLibAtomicStore(CallBase &CB) {
   // TODO: Support ClCombinePointerLabelsOnStore
   // TODO: Support ClEventCallbacks
 
-  IRB.CreateCall(
-      DFSF.DFS.DFSanMemShadowOriginTransferFn,
-      {DstPtr, SrcPtr, IRB.CreateIntCast(Size, DFSF.DFS.IntptrTy, false)});
+  IRB.CreateCall(DFSF.DFS.DFSanMemShadowOriginTransferFn,
+                 {IRB.CreatePointerCast(DstPtr, IRB.getInt8PtrTy()),
+                  IRB.CreatePointerCast(SrcPtr, IRB.getInt8PtrTy()),
+                  IRB.CreateIntCast(Size, DFSF.DFS.IntptrTy, false)});
 }
 
 void DFSanVisitor::visitLibAtomicExchange(CallBase &CB) {
@@ -3282,14 +3285,16 @@ void DFSanVisitor::visitLibAtomicExchange(CallBase &CB) {
   // the additional complexity to address this is not warrented.
 
   // Current Target to Dest
-  IRB.CreateCall(
-      DFSF.DFS.DFSanMemShadowOriginTransferFn,
-      {DstPtr, TargetPtr, IRB.CreateIntCast(Size, DFSF.DFS.IntptrTy, false)});
+  IRB.CreateCall(DFSF.DFS.DFSanMemShadowOriginTransferFn,
+                 {IRB.CreatePointerCast(DstPtr, IRB.getInt8PtrTy()),
+                  IRB.CreatePointerCast(TargetPtr, IRB.getInt8PtrTy()),
+                  IRB.CreateIntCast(Size, DFSF.DFS.IntptrTy, false)});
 
   // Current Src to Target (overriding)
-  IRB.CreateCall(
-      DFSF.DFS.DFSanMemShadowOriginTransferFn,
-      {TargetPtr, SrcPtr, IRB.CreateIntCast(Size, DFSF.DFS.IntptrTy, false)});
+  IRB.CreateCall(DFSF.DFS.DFSanMemShadowOriginTransferFn,
+                 {IRB.CreatePointerCast(TargetPtr, IRB.getInt8PtrTy()),
+                  IRB.CreatePointerCast(SrcPtr, IRB.getInt8PtrTy()),
+                  IRB.CreateIntCast(Size, DFSF.DFS.IntptrTy, false)});
 }
 
 void DFSanVisitor::visitLibAtomicCompareExchange(CallBase &CB) {
@@ -3312,10 +3317,13 @@ void DFSanVisitor::visitLibAtomicCompareExchange(CallBase &CB) {
 
   // If original call returned true, copy Desired to Target.
   // If original call returned false, copy Target to Expected.
-  NextIRB.CreateCall(DFSF.DFS.DFSanMemShadowOriginConditionalExchangeFn,
-                     {NextIRB.CreateIntCast(&CB, NextIRB.getInt8Ty(), false),
-                      TargetPtr, ExpectedPtr, DesiredPtr,
-                      NextIRB.CreateIntCast(Size, DFSF.DFS.IntptrTy, false)});
+  NextIRB.CreateCall(
+      DFSF.DFS.DFSanMemShadowOriginConditionalExchangeFn,
+      {NextIRB.CreateIntCast(&CB, NextIRB.getInt8Ty(), false),
+       NextIRB.CreatePointerCast(TargetPtr, NextIRB.getInt8PtrTy()),
+       NextIRB.CreatePointerCast(ExpectedPtr, NextIRB.getInt8PtrTy()),
+       NextIRB.CreatePointerCast(DesiredPtr, NextIRB.getInt8PtrTy()),
+       NextIRB.CreateIntCast(Size, DFSF.DFS.IntptrTy, false)});
 }
 
 void DFSanVisitor::visitCallBase(CallBase &CB) {
@@ -3447,8 +3455,8 @@ void DFSanVisitor::visitCallBase(CallBase &CB) {
 
 void DFSanVisitor::visitPHINode(PHINode &PN) {
   Type *ShadowTy = DFSF.DFS.getShadowTy(&PN);
-  PHINode *ShadowPN = PHINode::Create(ShadowTy, PN.getNumIncomingValues(), "",
-                                      PN.getIterator());
+  PHINode *ShadowPN =
+      PHINode::Create(ShadowTy, PN.getNumIncomingValues(), "", &PN);
 
   // Give the shadow phi node valid predecessors to fool SplitEdge into working.
   Value *UndefShadow = UndefValue::get(ShadowTy);
@@ -3459,8 +3467,8 @@ void DFSanVisitor::visitPHINode(PHINode &PN) {
 
   PHINode *OriginPN = nullptr;
   if (DFSF.DFS.shouldTrackOrigins()) {
-    OriginPN = PHINode::Create(DFSF.DFS.OriginTy, PN.getNumIncomingValues(), "",
-                               PN.getIterator());
+    OriginPN =
+        PHINode::Create(DFSF.DFS.OriginTy, PN.getNumIncomingValues(), "", &PN);
     Value *UndefOrigin = UndefValue::get(DFSF.DFS.OriginTy);
     for (BasicBlock *BB : PN.blocks())
       OriginPN->addIncoming(UndefOrigin, BB);

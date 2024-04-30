@@ -16,20 +16,13 @@ enum { [[]] Six }; // expected-error {{expected identifier}}
 // FIXME: this diagnostic can be improved.
 enum E3 [[]] { Seven }; // expected-error {{expected identifier or '('}}
 
-[[deprecated([""])]] int WrongArgs; // expected-error {{expected string literal as argument of 'deprecated' attribute}}
+[[deprecated([""])]] int WrongArgs; // expected-error {{expected expression}}
 [[,,,,,]] int Commas1; // ok
 [[,, maybe_unused]] int Commas2; // ok
 [[maybe_unused,,,]] int Commas3; // ok
 [[,,maybe_unused,]] int Commas4; // ok
 [[foo bar]] int NoComma; // expected-error {{expected ','}} \
                          // expected-warning {{unknown attribute 'foo' ignored}}
-
-
-[[deprecated(L"abc")]] void unevaluated_string(void);
-// expected-warning@-1 {{encoding prefix 'L' on an unevaluated string literal has no effect}}
-
-[[nodiscard("\123")]] int unevaluated_string2(void);
-// expected-error@-1 {{invalid escape sequence '\123' in an unevaluated string literal}}
 
 struct [[]] S1 {
   int i [[]];

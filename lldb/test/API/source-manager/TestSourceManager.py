@@ -39,6 +39,7 @@ class SourceManagerTestCase(TestBase):
         self.line = line_number("main.c", "// Set break point at this line.")
 
     def modify_content(self):
+
         # Read the main.c file content.
         with io.open(self.file, "r", newline="\n") as f:
             original_content = f.read()
@@ -259,7 +260,7 @@ class SourceManagerTestCase(TestBase):
         m = re.search("^\[(\d+)\].*// Set break point at this line.", output)
         if not m:
             self.fail("Fail to display source level breakpoints")
-        self.assertGreater(int(m.group(1)), 0)
+        self.assertTrue(int(m.group(1)) > 0)
 
         # Modify content
         self.modify_content()
@@ -323,12 +324,13 @@ class SourceManagerTestCase(TestBase):
         )
 
         self.expect(
-            "process status",
+            "run",
+            RUN_SUCCEEDED,
             substrs=[
                 "stop reason = breakpoint",
-                f"{src_file}:0",
-                "Note: this address is compiler-generated code in function",
-                "that has no source code associated with it.",
+                "%s:%d" % (src_file, 0),
+                "Note: this address is compiler-generated code in " "function",
+                "that has no source code associated " "with it.",
             ],
         )
 
@@ -359,12 +361,16 @@ class SourceManagerTestCase(TestBase):
 
         # Create a first target.
         self.runCmd("file " + exe, CURRENT_EXECUTABLE_SET)
-        lldbutil.run_break_set_by_symbol(self, "main", num_expected_locations=1)
+        lldbutil.run_break_set_by_symbol(
+            self, "main", num_expected_locations=1
+        )
         self.expect("run", RUN_SUCCEEDED, substrs=["Hello world"])
 
         # Create a second target.
         self.runCmd("file " + exe, CURRENT_EXECUTABLE_SET)
-        lldbutil.run_break_set_by_symbol(self, "main", num_expected_locations=1)
+        lldbutil.run_break_set_by_symbol(
+            self, "main", num_expected_locations=1
+        )
         self.expect("run", RUN_SUCCEEDED, substrs=["Hello world"])
 
         # Modify the source file content.
@@ -375,8 +381,7 @@ class SourceManagerTestCase(TestBase):
         self.runCmd("source cache clear")
 
         # Make sure we're seeing the new content from the clean process cache.
-        self.expect(
-            "next",
+        self.expect("next",
             SOURCE_DISPLAYED_CORRECTLY,
             substrs=["Hello lldb"],
         )
@@ -386,8 +391,8 @@ class SourceManagerTestCase(TestBase):
 
         # Make sure we're seeing the old content from the first target's
         # process cache.
-        self.expect(
-            "next",
+        self.expect("next",
             SOURCE_DISPLAYED_CORRECTLY,
             substrs=["Hello world"],
         )
+

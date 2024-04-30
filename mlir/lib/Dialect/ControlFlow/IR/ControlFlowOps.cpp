@@ -8,10 +8,8 @@
 
 #include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
 
-#include "mlir/Conversion/ConvertToLLVM/ToLLVMInterface.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
-#include "mlir/Dialect/Bufferization/IR/BufferDeallocationOpInterface.h"
-#include "mlir/Dialect/Bufferization/IR/BufferizableOpInterface.h"
+#include "mlir/Dialect/CommonFolders.h"
 #include "mlir/IR/AffineExpr.h"
 #include "mlir/IR/AffineMap.h"
 #include "mlir/IR/Builders.h"
@@ -70,11 +68,6 @@ void ControlFlowDialect::initialize() {
 #include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.cpp.inc"
       >();
   addInterfaces<ControlFlowInlinerInterface>();
-  declarePromisedInterface<ConvertToLLVMPatternInterface, ControlFlowDialect>();
-  declarePromisedInterfaces<bufferization::BufferizableOpInterface, BranchOp,
-                            CondBranchOp>();
-  declarePromisedInterface<bufferization::BufferDeallocationOpInterface,
-                           CondBranchOp>();
 }
 
 //===----------------------------------------------------------------------===//
@@ -409,8 +402,8 @@ struct CondBranchTruthPropagation : public OpRewritePattern<CondBranchOp> {
             constantTrue = rewriter.create<arith::ConstantOp>(
                 condbr.getLoc(), ty, rewriter.getBoolAttr(true));
 
-          rewriter.modifyOpInPlace(use.getOwner(),
-                                   [&] { use.set(constantTrue); });
+          rewriter.updateRootInPlace(use.getOwner(),
+                                     [&] { use.set(constantTrue); });
         }
       }
     }
@@ -424,8 +417,8 @@ struct CondBranchTruthPropagation : public OpRewritePattern<CondBranchOp> {
             constantFalse = rewriter.create<arith::ConstantOp>(
                 condbr.getLoc(), ty, rewriter.getBoolAttr(false));
 
-          rewriter.modifyOpInPlace(use.getOwner(),
-                                   [&] { use.set(constantFalse); });
+          rewriter.updateRootInPlace(use.getOwner(),
+                                     [&] { use.set(constantFalse); });
         }
       }
     }
@@ -531,8 +524,8 @@ static ParseResult parseSwitchOpCases(
         failed(parser.parseSuccessor(destination)))
       return failure();
     if (succeeded(parser.parseOptionalLParen())) {
-      if (failed(parser.parseOperandList(operands,
-                                         OpAsmParser::Delimiter::None)) ||
+      if (failed(parser.parseOperandList(operands, OpAsmParser::Delimiter::None,
+                                         /*allowResultNumber=*/false)) ||
           failed(parser.parseColonTypeList(operandTypes)) ||
           failed(parser.parseRParen()))
         return failure();

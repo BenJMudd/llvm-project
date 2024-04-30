@@ -1049,6 +1049,7 @@ void ClangExpressionDeclMap::LookupInModulesDeclVendor(
     context.AddNamedDecl(copied_function);
 
     context.m_found_function_with_type_info = true;
+    context.m_found_function = true;
   } else if (auto copied_var = dyn_cast<clang::VarDecl>(copied_decl)) {
     context.AddNamedDecl(copied_var);
     context.m_found_variable = true;
@@ -1298,6 +1299,7 @@ void ClangExpressionDeclMap::LookupFunction(
 
         AddOneFunction(context, sym_ctx.function, nullptr);
         context.m_found_function_with_type_info = true;
+        context.m_found_function = true;
       } else if (sym_ctx.symbol) {
         Symbol *symbol = sym_ctx.symbol;
         if (target && symbol->GetType() == eSymbolTypeReExported) {
@@ -1329,8 +1331,10 @@ void ClangExpressionDeclMap::LookupFunction(
     if (!context.m_found_function_with_type_info) {
       if (extern_symbol) {
         AddOneFunction(context, nullptr, extern_symbol);
+        context.m_found_function = true;
       } else if (non_extern_symbol) {
         AddOneFunction(context, nullptr, non_extern_symbol);
+        context.m_found_function = true;
       }
     }
   }
@@ -1365,7 +1369,7 @@ void ClangExpressionDeclMap::FindExternalVisibleDecls(
   if (!namespace_decl)
     SearchPersistenDecls(context, name);
 
-  if (name.GetStringRef().starts_with("$") && !namespace_decl) {
+  if (name.GetStringRef().startswith("$") && !namespace_decl) {
     if (name == "$__lldb_class") {
       LookUpLldbClass(context);
       return;
@@ -1381,7 +1385,7 @@ void ClangExpressionDeclMap::FindExternalVisibleDecls(
     }
 
     // any other $__lldb names should be weeded out now
-    if (name.GetStringRef().starts_with("$__lldb"))
+    if (name.GetStringRef().startswith("$__lldb"))
       return;
 
     // No ParserVars means we can't do register or variable lookup.
@@ -1396,7 +1400,7 @@ void ClangExpressionDeclMap::FindExternalVisibleDecls(
       return;
     }
 
-    assert(name.GetStringRef().starts_with("$"));
+    assert(name.GetStringRef().startswith("$"));
     llvm::StringRef reg_name = name.GetStringRef().substr(1);
 
     if (m_parser_vars->m_exe_ctx.GetRegisterContext()) {

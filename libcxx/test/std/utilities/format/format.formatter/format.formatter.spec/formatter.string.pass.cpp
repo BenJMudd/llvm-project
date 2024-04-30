@@ -23,7 +23,6 @@
 #include <cassert>
 #include <concepts>
 #include <iterator>
-#include <memory>
 #include <type_traits>
 
 #include "make_string.h"
@@ -46,16 +45,16 @@ void test(StringT expected, StringViewT fmt, StringT a, std::size_t offset) {
   std::formatter<T, CharT> formatter;
   static_assert(std::semiregular<decltype(formatter)>);
 
-  std::same_as<typename StringViewT::iterator> auto it = formatter.parse(parse_ctx);
-  // std::to_address works around LWG3989 and MSVC STL's iterator debugging mechanism.
-  assert(std::to_address(it) == std::to_address(fmt.end()) - offset);
+  auto it = formatter.parse(parse_ctx);
+  assert(it == fmt.end() - offset);
 
   StringT result;
   auto out = std::back_inserter(result);
   using FormatCtxT = std::basic_format_context<decltype(out), CharT>;
 
   ArgumentT arg = a;
-  FormatCtxT format_ctx = test_format_context_create<decltype(out), CharT>(out, std::make_format_args<FormatCtxT>(arg));
+  FormatCtxT format_ctx = test_format_context_create<decltype(out), CharT>(
+      out, std::make_format_args<FormatCtxT>(std::forward<ArgumentT>(arg)));
   formatter.format(arg, format_ctx);
   assert(result == expected);
 }

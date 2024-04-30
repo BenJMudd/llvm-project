@@ -3,7 +3,6 @@ LLDB Formatters for LLVM data types.
 
 Load into LLDB with 'command script import /path/to/lldbDataFormatters.py'
 """
-from __future__ import annotations
 
 import collections
 import lldb
@@ -14,7 +13,7 @@ def __lldb_init_module(debugger, internal_dict):
     debugger.HandleCommand("type category define -e llvm -l c++")
     debugger.HandleCommand(
         "type synthetic add -w llvm "
-        f"-l {__name__}.SmallVectorSynthProvider "
+        "-l lldbDataFormatters.SmallVectorSynthProvider "
         '-x "^llvm::SmallVectorImpl<.+>$"'
     )
     debugger.HandleCommand(
@@ -24,7 +23,7 @@ def __lldb_init_module(debugger, internal_dict):
     )
     debugger.HandleCommand(
         "type synthetic add -w llvm "
-        f"-l {__name__}.SmallVectorSynthProvider "
+        "-l lldbDataFormatters.SmallVectorSynthProvider "
         '-x "^llvm::SmallVector<.+,.+>$"'
     )
     debugger.HandleCommand(
@@ -34,7 +33,7 @@ def __lldb_init_module(debugger, internal_dict):
     )
     debugger.HandleCommand(
         "type synthetic add -w llvm "
-        f"-l {__name__}.ArrayRefSynthProvider "
+        "-l lldbDataFormatters.ArrayRefSynthProvider "
         '-x "^llvm::ArrayRef<.+>$"'
     )
     debugger.HandleCommand(
@@ -44,27 +43,27 @@ def __lldb_init_module(debugger, internal_dict):
     )
     debugger.HandleCommand(
         "type synthetic add -w llvm "
-        f"-l {__name__}.OptionalSynthProvider "
+        "-l lldbDataFormatters.OptionalSynthProvider "
         '-x "^llvm::Optional<.+>$"'
     )
     debugger.HandleCommand(
         "type summary add -w llvm "
-        f"-e -F {__name__}.OptionalSummaryProvider "
+        "-e -F lldbDataFormatters.OptionalSummaryProvider "
         '-x "^llvm::Optional<.+>$"'
     )
     debugger.HandleCommand(
         "type summary add -w llvm "
-        f"-F {__name__}.SmallStringSummaryProvider "
+        "-F lldbDataFormatters.SmallStringSummaryProvider "
         '-x "^llvm::SmallString<.+>$"'
     )
     debugger.HandleCommand(
         "type summary add -w llvm "
-        f"-F {__name__}.StringRefSummaryProvider "
+        "-F lldbDataFormatters.StringRefSummaryProvider "
         "llvm::StringRef"
     )
     debugger.HandleCommand(
         "type summary add -w llvm "
-        f"-F {__name__}.ConstStringSummaryProvider "
+        "-F lldbDataFormatters.ConstStringSummaryProvider "
         "lldb_private::ConstString"
     )
 
@@ -73,23 +72,23 @@ def __lldb_init_module(debugger, internal_dict):
     # non-pointer types that instead specialize PointerLikeTypeTraits.
     # debugger.HandleCommand(
     #     "type synthetic add -w llvm "
-    #     f"-l {__name__}.PointerIntPairSynthProvider "
+    #     "-l lldbDataFormatters.PointerIntPairSynthProvider "
     #     '-x "^llvm::PointerIntPair<.+>$"'
     # )
     # debugger.HandleCommand(
     #     "type synthetic add -w llvm "
-    #     f"-l {__name__}.PointerUnionSynthProvider "
+    #     "-l lldbDataFormatters.PointerUnionSynthProvider "
     #     '-x "^llvm::PointerUnion<.+>$"'
     # )
 
     debugger.HandleCommand(
         "type summary add -w llvm "
-        f"-e -F {__name__}.DenseMapSummary "
+        "-e -F lldbDataFormatters.DenseMapSummary "
         '-x "^llvm::DenseMap<.+>$"'
     )
     debugger.HandleCommand(
         "type synthetic add -w llvm "
-        f"-l {__name__}.DenseMapSynthetic "
+        "-l lldbDataFormatters.DenseMapSynthetic "
         '-x "^llvm::DenseMap<.+>$"'
     )
 
@@ -129,9 +128,6 @@ class SmallVectorSynthProvider:
         # template parameter.
         if the_type.IsReferenceType():
             the_type = the_type.GetDereferencedType()
-
-        if the_type.IsPointerType():
-            the_type = the_type.GetPointeeType()
 
         self.data_type = the_type.GetTemplateArgumentType(0)
         self.type_size = self.data_type.GetByteSize()
@@ -219,14 +215,12 @@ class OptionalSynthProvider:
 
 
 def SmallStringSummaryProvider(valobj, internal_dict):
-    # The underlying SmallVector base class is the first child.
-    vector = valobj.GetChildAtIndex(0)
-    num_elements = vector.GetNumChildren()
+    num_elements = valobj.GetNumChildren()
     res = '"'
-    for i in range(num_elements):
-        c = vector.GetChildAtIndex(i)
+    for i in range(0, num_elements):
+        c = valobj.GetChildAtIndex(i).GetValue()
         if c:
-            res += chr(c.GetValueAsUnsigned())
+            res += c.strip("'")
     res += '"'
     return res
 

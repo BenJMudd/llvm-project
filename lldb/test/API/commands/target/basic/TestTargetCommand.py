@@ -447,7 +447,7 @@ class targetCommandTestCase(TestBase):
         self.expect(
             "target create -c '" + invalid_core_path + "'",
             error=True,
-            substrs=["Unknown core file format '"],
+            substrs=["Unable to find process plug-in for core file '"],
         )
 
     # Write only files don't seem to be supported on Windows.

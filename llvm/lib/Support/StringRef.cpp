@@ -388,14 +388,20 @@ static unsigned GetAutoSenseRadix(StringRef &Str) {
   if (Str.empty())
     return 10;
 
-  if (Str.consume_front_insensitive("0x"))
+  if (Str.startswith("0x") || Str.startswith("0X")) {
+    Str = Str.substr(2);
     return 16;
+  }
 
-  if (Str.consume_front_insensitive("0b"))
+  if (Str.startswith("0b") || Str.startswith("0B")) {
+    Str = Str.substr(2);
     return 2;
+  }
 
-  if (Str.consume_front("0o"))
+  if (Str.startswith("0o")) {
+    Str = Str.substr(2);
     return 8;
+  }
 
   if (Str[0] == '0' && Str.size() > 1 && isDigit(Str[1])) {
     Str = Str.substr(1);
@@ -458,7 +464,7 @@ bool llvm::consumeSignedInteger(StringRef &Str, unsigned Radix,
   unsigned long long ULLVal;
 
   // Handle positive strings first.
-  if (!Str.starts_with("-")) {
+  if (Str.empty() || Str.front() != '-') {
     if (consumeUnsignedInteger(Str, Radix, ULLVal) ||
         // Check for value so large it overflows a signed value.
         (long long)ULLVal < 0)
@@ -517,7 +523,8 @@ bool StringRef::consumeInteger(unsigned Radix, APInt &Result) {
 
   // Skip leading zeroes.  This can be a significant improvement if
   // it means we don't need > 64 bits.
-  Str = Str.ltrim('0');
+  while (!Str.empty() && Str.front() == '0')
+    Str = Str.substr(1);
 
   // If it was nothing but zeroes....
   if (Str.empty()) {

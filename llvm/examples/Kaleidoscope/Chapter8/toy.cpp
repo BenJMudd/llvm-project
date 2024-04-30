@@ -1242,8 +1242,9 @@ int main() {
   auto Features = "";
 
   TargetOptions opt;
-  auto TheTargetMachine = Target->createTargetMachine(
-      TargetTriple, CPU, Features, opt, Reloc::PIC_);
+  auto RM = std::optional<Reloc::Model>();
+  auto TheTargetMachine =
+      Target->createTargetMachine(TargetTriple, CPU, Features, opt, RM);
 
   TheModule->setDataLayout(TheTargetMachine->createDataLayout());
 
@@ -1257,7 +1258,7 @@ int main() {
   }
 
   legacy::PassManager pass;
-  auto FileType = CodeGenFileType::ObjectFile;
+  auto FileType = CGFT_ObjectFile;
 
   if (TheTargetMachine->addPassesToEmitFile(pass, dest, nullptr, FileType)) {
     errs() << "TheTargetMachine can't emit a file of this type";

@@ -1,4 +1,4 @@
-//===-- SymbolFileOnDemand.cpp ---------------------------------------===//
+//===-- SymbolFileDWARFDebugMap.cpp ---------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -115,7 +115,7 @@ bool SymbolFileOnDemand::ForEachExternalModule(
 }
 
 bool SymbolFileOnDemand::ParseSupportFiles(CompileUnit &comp_unit,
-                                           SupportFileList &support_files) {
+                                           FileSpecList &support_files) {
   LLDB_LOG(GetLog(),
            "[{0}] {1} is not skipped: explicitly allowed to support breakpoint",
            GetSymbolFileName(), __FUNCTION__);
@@ -431,14 +431,31 @@ void SymbolFileOnDemand::GetMangledNamesForFunction(
                                                      mangled_names);
 }
 
-void SymbolFileOnDemand::FindTypes(const TypeQuery &match,
-                                   TypeResults &results) {
+void SymbolFileOnDemand::FindTypes(
+    ConstString name, const CompilerDeclContext &parent_decl_ctx,
+    uint32_t max_matches,
+    llvm::DenseSet<lldb_private::SymbolFile *> &searched_symbol_files,
+    TypeMap &types) {
+  if (!m_debug_info_enabled) {
+    Log *log = GetLog();
+    LLDB_LOG(log, "[{0}] {1}({2}) is skipped", GetSymbolFileName(),
+             __FUNCTION__, name);
+    return;
+  }
+  return m_sym_file_impl->FindTypes(name, parent_decl_ctx, max_matches,
+                                    searched_symbol_files, types);
+}
+
+void SymbolFileOnDemand::FindTypes(
+    llvm::ArrayRef<CompilerContext> pattern, LanguageSet languages,
+    llvm::DenseSet<SymbolFile *> &searched_symbol_files, TypeMap &types) {
   if (!m_debug_info_enabled) {
     LLDB_LOG(GetLog(), "[{0}] {1} is skipped", GetSymbolFileName(),
              __FUNCTION__);
     return;
   }
-  return m_sym_file_impl->FindTypes(match, results);
+  return m_sym_file_impl->FindTypes(pattern, languages, searched_symbol_files,
+                                    types);
 }
 
 void SymbolFileOnDemand::GetTypes(SymbolContextScope *sc_scope,
@@ -535,11 +552,11 @@ void SymbolFileOnDemand::PreloadSymbols() {
   return m_sym_file_impl->PreloadSymbols();
 }
 
-uint64_t SymbolFileOnDemand::GetDebugInfoSize(bool load_all_debug_info) {
+uint64_t SymbolFileOnDemand::GetDebugInfoSize() {
   // Always return the real debug info size.
   LLDB_LOG(GetLog(), "[{0}] {1} is not skipped", GetSymbolFileName(),
            __FUNCTION__);
-  return m_sym_file_impl->GetDebugInfoSize(load_all_debug_info);
+  return m_sym_file_impl->GetDebugInfoSize();
 }
 
 StatsDuration::Duration SymbolFileOnDemand::GetDebugInfoParseTime() {

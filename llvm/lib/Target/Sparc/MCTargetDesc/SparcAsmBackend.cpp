@@ -136,9 +136,8 @@ namespace {
 
   public:
     SparcAsmBackend(const Target &T)
-        : MCAsmBackend(StringRef(T.getName()) == "sparcel"
-                           ? llvm::endianness::little
-                           : llvm::endianness::big),
+        : MCAsmBackend(StringRef(T.getName()) == "sparcel" ? support::little
+                                                           : support::big),
           TheTarget(T), Is64Bit(StringRef(TheTarget.getName()) == "sparcv9") {}
 
     unsigned getNumFixupKinds() const override {
@@ -265,15 +264,14 @@ namespace {
 
       assert(unsigned(Kind - FirstTargetFixupKind) < getNumFixupKinds() &&
              "Invalid kind!");
-      if (Endian == llvm::endianness::little)
+      if (Endian == support::little)
         return InfosLE[Kind - FirstTargetFixupKind];
 
       return InfosBE[Kind - FirstTargetFixupKind];
     }
 
     bool shouldForceRelocation(const MCAssembler &Asm, const MCFixup &Fixup,
-                               const MCValue &Target,
-                               const MCSubtargetInfo *STI) override {
+                               const MCValue &Target) override {
       if (Fixup.getKind() >= FirstLiteralRelocationKind)
         return true;
       switch ((Sparc::Fixups)Fixup.getKind()) {
@@ -357,8 +355,7 @@ namespace {
       // from the fixup value. The Value has been "split up" into the
       // appropriate bitfields above.
       for (unsigned i = 0; i != NumBytes; ++i) {
-        unsigned Idx =
-            Endian == llvm::endianness::little ? i : (NumBytes - 1) - i;
+        unsigned Idx = Endian == support::little ? i : (NumBytes - 1) - i;
         Data[Offset + Idx] |= uint8_t((Value >> (i * 8)) & 0xff);
       }
     }

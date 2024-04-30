@@ -184,7 +184,7 @@ SBTypeSynthetic::SBTypeSynthetic(
 bool SBTypeSynthetic::CopyOnWrite_Impl() {
   if (!IsValid())
     return false;
-  if (m_opaque_sp.use_count() == 1)
+  if (m_opaque_sp.unique())
     return true;
 
   ScriptedSyntheticChildrenSP new_sp(new ScriptedSyntheticChildren(

@@ -20,13 +20,14 @@
 #include "llvm/CodeGen/CallingConvLower.h"
 #include "llvm/CodeGen/ISDOpcodes.h"
 #include "llvm/CodeGen/MachineFunction.h"
+#include "llvm/CodeGen/MachineValueType.h"
 #include "llvm/CodeGen/SelectionDAGNodes.h"
 #include "llvm/CodeGen/TargetLowering.h"
 #include "llvm/CodeGen/ValueTypes.h"
-#include "llvm/CodeGenTypes/MachineValueType.h"
 #include "llvm/IR/Attributes.h"
 #include "llvm/IR/CallingConv.h"
 #include "llvm/IR/Function.h"
+#include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/InlineAsm.h"
 #include "llvm/Support/CodeGen.h"
 #include <optional>
@@ -41,7 +42,6 @@ class FunctionLoweringInfo;
 class GlobalValue;
 class InstrItineraryData;
 class Instruction;
-class IRBuilderBase;
 class MachineBasicBlock;
 class MachineInstr;
 class SelectionDAG;
@@ -375,14 +375,6 @@ class VectorType;
 
   // Bit position of rounding mode bits in FPSCR.
   const unsigned RoundingBitsPos = 22;
-
-  // Bits of floating-point status. These are NZCV flags, QC bit and cumulative
-  // FP exception bits.
-  const unsigned FPStatusBits = 0xf800009f;
-
-  // Some bits in the FPSCR are not yet defined.  They must be preserved when
-  // modifying the contents.
-  const unsigned FPReservedBits = 0x00006060;
   } // namespace ARM
 
   /// Define some predicates that are used for node matching.
@@ -538,33 +530,33 @@ class VectorType;
     /// vector.  If it is invalid, don't add anything to Ops. If hasMemory is
     /// true it means one of the asm constraint of the inline asm instruction
     /// being processed is 'm'.
-    void LowerAsmOperandForConstraint(SDValue Op, StringRef Constraint,
+    void LowerAsmOperandForConstraint(SDValue Op, std::string &Constraint,
                                       std::vector<SDValue> &Ops,
                                       SelectionDAG &DAG) const override;
 
-    InlineAsm::ConstraintCode
+    unsigned
     getInlineAsmMemConstraint(StringRef ConstraintCode) const override {
       if (ConstraintCode == "Q")
-        return InlineAsm::ConstraintCode::Q;
-      if (ConstraintCode.size() == 2) {
+        return InlineAsm::Constraint_Q;
+      else if (ConstraintCode.size() == 2) {
         if (ConstraintCode[0] == 'U') {
           switch(ConstraintCode[1]) {
           default:
             break;
           case 'm':
-            return InlineAsm::ConstraintCode::Um;
+            return InlineAsm::Constraint_Um;
           case 'n':
-            return InlineAsm::ConstraintCode::Un;
+            return InlineAsm::Constraint_Un;
           case 'q':
-            return InlineAsm::ConstraintCode::Uq;
+            return InlineAsm::Constraint_Uq;
           case 's':
-            return InlineAsm::ConstraintCode::Us;
+            return InlineAsm::Constraint_Us;
           case 't':
-            return InlineAsm::ConstraintCode::Ut;
+            return InlineAsm::Constraint_Ut;
           case 'v':
-            return InlineAsm::ConstraintCode::Uv;
+            return InlineAsm::Constraint_Uv;
           case 'y':
-            return InlineAsm::ConstraintCode::Uy;
+            return InlineAsm::Constraint_Uy;
           }
         }
       }
@@ -762,10 +754,6 @@ class VectorType;
         ComplexDeinterleavingRotation Rotation, Value *InputA, Value *InputB,
         Value *Accumulator = nullptr) const override;
 
-    bool softPromoteHalfType() const override { return true; }
-
-    bool useFPRegsForHalfType() const override { return true; }
-
   protected:
     std::pair<const TargetRegisterClass *, uint8_t>
     findRepresentativeClass(const TargetRegisterInfo *TRI,
@@ -847,8 +835,6 @@ class VectorType;
     SDValue LowerShiftLeftParts(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerGET_ROUNDING(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerSET_ROUNDING(SDValue Op, SelectionDAG &DAG) const;
-    SDValue LowerSET_FPMODE(SDValue Op, SelectionDAG &DAG) const;
-    SDValue LowerRESET_FPMODE(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerConstantFP(SDValue Op, SelectionDAG &DAG,
                             const ARMSubtarget *ST) const;
     SDValue LowerBUILD_VECTOR(SDValue Op, SelectionDAG &DAG,

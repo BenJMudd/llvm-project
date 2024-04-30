@@ -89,7 +89,8 @@ struct TestEmulateNarrowTypePass
     target.addDynamicallyLegalOp<func::CallOp, func::ReturnOp>(opLegalCallback);
     target.addDynamicallyLegalDialect<
         arith::ArithDialect, vector::VectorDialect, memref::MemRefDialect,
-        affine::AffineDialect>(opLegalCallback);
+        affine::AffineDialect>(
+        [&typeConverter](Operation *op) { return typeConverter.isLegal(op); });
 
     RewritePatternSet patterns(ctx);
 

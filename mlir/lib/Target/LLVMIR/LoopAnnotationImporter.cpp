@@ -461,8 +461,8 @@ LoopAnnotationAttr LoopMetadataConversion::convert() {
   return createIfNonNull<LoopAnnotationAttr>(
       ctx, disableNonForced, vecAttr, interleaveAttr, unrollAttr,
       unrollAndJamAttr, licmAttr, distributeAttr, pipelineAttr, peeledAttr,
-      unswitchAttr, mustProgress, isVectorized, startLoc, endLoc,
-      parallelAccesses);
+      unswitchAttr, mustProgress, isVectorized, parallelAccesses, startLoc,
+      endLoc);
 }
 
 LoopAnnotationAttr

@@ -55,7 +55,7 @@ static std::unique_ptr<lto::LTO> createLTO() {
 
   if (config->relocatable)
     c.RelocModel = std::nullopt;
-  else if (ctx.isPic)
+  else if (config->isPic)
     c.RelocModel = Reloc::PIC_;
   else
     c.RelocModel = Reloc::Static;

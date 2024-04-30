@@ -27,3 +27,4 @@ define internal void @_GLOBAL__I_a() section ".text.startup" {
 
 ;CTOR: .section .ctors
 ;CTOR-NOT:  section .init_array
+

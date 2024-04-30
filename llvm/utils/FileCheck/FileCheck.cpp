@@ -390,7 +390,7 @@ BuildInputAnnotations(const SourceMgr &SM, unsigned CheckFileBufferID,
   };
   // How many diagnostics does each pattern have?
   std::map<SMLoc, unsigned, CompareSMLoc> DiagCountPerPattern;
-  for (const FileCheckDiag &Diag : Diags)
+  for (auto Diag : Diags)
     ++DiagCountPerPattern[Diag.CheckLoc];
   // How many diagnostics have we seen so far per pattern?
   std::map<SMLoc, unsigned, CompareSMLoc> DiagIndexPerPattern;
@@ -673,7 +673,7 @@ static void DumpAnnotatedInput(raw_ostream &OS, const FileCheckRequest &Req,
       for (unsigned Col = 1; InputFilePtr != InputFileEnd && !Newline; ++Col) {
         bool WasInMatch = InMatch;
         InMatch = false;
-        for (const InputAnnotation &M : FoundAndExpectedMatches) {
+        for (auto M : FoundAndExpectedMatches) {
           if (M.InputStartCol <= Col && Col < M.InputEndCol) {
             InMatch = true;
             break;
@@ -742,15 +742,20 @@ int main(int argc, char **argv) {
   // In the latter case, the general rule of thumb is to choose the value that
   // provides the most information.
   DumpInputValue DumpInput =
-      DumpInputs.empty() ? DumpInputFail : *llvm::max_element(DumpInputs);
+      DumpInputs.empty()
+          ? DumpInputFail
+          : *std::max_element(DumpInputs.begin(), DumpInputs.end());
   DumpInputFilterValue DumpInputFilter;
   if (DumpInputFilters.empty())
     DumpInputFilter = DumpInput == DumpInputAlways ? DumpInputFilterAll
                                                    : DumpInputFilterError;
   else
-    DumpInputFilter = *llvm::max_element(DumpInputFilters);
-  unsigned DumpInputContext =
-      DumpInputContexts.empty() ? 5 : *llvm::max_element(DumpInputContexts);
+    DumpInputFilter =
+        *std::max_element(DumpInputFilters.begin(), DumpInputFilters.end());
+  unsigned DumpInputContext = DumpInputContexts.empty()
+                                  ? 5
+                                  : *std::max_element(DumpInputContexts.begin(),
+                                                      DumpInputContexts.end());
 
   if (DumpInput == DumpInputHelp) {
     DumpInputAnnotationHelp(outs());
@@ -805,6 +810,17 @@ int main(int argc, char **argv) {
   if (!FC.ValidateCheckPrefixes())
     return 2;
 
+  Regex PrefixRE = FC.buildCheckPrefixRegex();
+  std::string REError;
+  if (!PrefixRE.isValid(REError)) {
+    errs() << "Unable to combine check-prefix strings into a prefix regular "
+              "expression! This is likely a bug in FileCheck's verification of "
+              "the check-prefix strings. Regular expression parsing failed "
+              "with the following error: "
+           << REError << "\n";
+    return 2;
+  }
+
   SourceMgr SM;
 
   // Read the expected strings from the check file.
@@ -826,7 +842,7 @@ int main(int argc, char **argv) {
                             SMLoc());
 
   std::pair<unsigned, unsigned> ImpPatBufferIDRange;
-  if (FC.readCheckFile(SM, CheckFileText, &ImpPatBufferIDRange))
+  if (FC.readCheckFile(SM, CheckFileText, PrefixRE, &ImpPatBufferIDRange))
     return 2;
 
   // Open the file to check and add it to SourceMgr.

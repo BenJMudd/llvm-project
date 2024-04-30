@@ -36,7 +36,10 @@ static constexpr const llvm::ArrayRef<llvm::StringLiteral>
     PrefixTable(PrefixTable_init, std::size(PrefixTable_init) - 1);
 
 static constexpr OptTable::Info InfoTable[] = {
-#define OPTION(...) LLVM_CONSTRUCT_OPT_INFO(__VA_ARGS__),
+#define OPTION(PREFIX, NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, FLAGS, PARAM,  \
+               HELPTEXT, METAVAR, VALUES)                                      \
+  {PREFIX, NAME,  HELPTEXT,    METAVAR,     OPT_##ID,  Option::KIND##Class,    \
+   PARAM,  FLAGS, OPT_##GROUP, OPT_##ALIAS, ALIASARGS, VALUES},
 #include "clang/Driver/Options.inc"
 #undef OPTION
 };

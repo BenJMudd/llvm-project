@@ -38,8 +38,7 @@ public:
 
   explicit BenchmarkRunner(const LLVMState &State, Benchmark::ModeE Mode,
                            BenchmarkPhaseSelectorE BenchmarkPhaseSelector,
-                           ExecutionModeE ExecutionMode,
-                           ArrayRef<ValidationEvent> ValCounters);
+                           ExecutionModeE ExecutionMode);
 
   virtual ~BenchmarkRunner();
 
@@ -57,16 +56,16 @@ public:
   private:
     RunnableConfiguration() = default;
 
-    Benchmark BenchmarkResult;
+    Benchmark InstrBenchmark;
     object::OwningBinary<object::ObjectFile> ObjectFile;
   };
 
   Expected<RunnableConfiguration>
   getRunnableConfiguration(const BenchmarkCode &Configuration,
-                           unsigned MinInstructions, unsigned LoopUnrollFactor,
+                           unsigned NumRepetitions, unsigned LoopUnrollFactor,
                            const SnippetRepetitor &Repetitor) const;
 
-  std::pair<Error, Benchmark>
+  Expected<Benchmark>
   runConfiguration(RunnableConfiguration &&RC,
                    const std::optional<StringRef> &DumpFile) const;
 
@@ -93,19 +92,15 @@ public:
   public:
     virtual ~FunctionExecutor();
 
-    Expected<SmallVector<int64_t, 4>>
-    runAndSample(const char *Counters,
-                 ArrayRef<const char *> ValidationCounters,
-                 SmallVectorImpl<int64_t> &ValidationCounterValues) const;
+    Expected<llvm::SmallVector<int64_t, 4>>
+    runAndSample(const char *Counters) const;
 
   protected:
     static void
-    accumulateCounterValues(const SmallVectorImpl<int64_t> &NewValues,
-                            SmallVectorImpl<int64_t> *Result);
-    virtual Expected<SmallVector<int64_t, 4>>
-    runWithCounter(StringRef CounterName,
-                   ArrayRef<const char *> ValidationCounters,
-                   SmallVectorImpl<int64_t> &ValidationCounterValues) const = 0;
+    accumulateCounterValues(const llvm::SmallVectorImpl<int64_t> &NewValues,
+                            llvm::SmallVectorImpl<int64_t> *Result);
+    virtual Expected<llvm::SmallVector<int64_t, 4>>
+    runWithCounter(StringRef CounterName) const = 0;
   };
 
 protected:
@@ -113,11 +108,6 @@ protected:
   const Benchmark::ModeE Mode;
   const BenchmarkPhaseSelectorE BenchmarkPhaseSelector;
   const ExecutionModeE ExecutionMode;
-
-  SmallVector<ValidationEvent> ValidationCounters;
-
-  Error
-  getValidationCountersToRun(SmallVector<const char *> &ValCountersToRun) const;
 
 private:
   virtual Expected<std::vector<BenchmarkMeasure>>

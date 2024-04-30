@@ -17,7 +17,6 @@ add_clang_unittest(ClangAnalysisFlowSensitiveTests
   MultiVarConstantPropagationTest.cpp
   RecordOpsTest.cpp
   SignAnalysisTest.cpp
-  SimplifyConstraintsTest.cpp
   SingleVarConstantPropagationTest.cpp
   SolverTest.cpp
   TestingSupport.cpp

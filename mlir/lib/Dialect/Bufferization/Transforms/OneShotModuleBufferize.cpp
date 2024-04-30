@@ -67,7 +67,6 @@
 #include "mlir/Dialect/Bufferization/Transforms/Transforms.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
-#include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Operation.h"
 
 using namespace mlir;
@@ -239,8 +238,7 @@ static void removeBufferizationAttributes(BlockArgument bbArg) {
 
 /// Return the func::FuncOp called by `callOp`.
 static func::FuncOp getCalledFunction(func::CallOp callOp) {
-  SymbolRefAttr sym =
-      llvm::dyn_cast_if_present<SymbolRefAttr>(callOp.getCallableForCallee());
+  SymbolRefAttr sym = llvm::dyn_cast_if_present<SymbolRefAttr>(callOp.getCallableForCallee());
   if (!sym)
     return nullptr;
   return dyn_cast_or_null<func::FuncOp>(
@@ -276,14 +274,6 @@ static void equivalenceAnalysis(func::FuncOp funcOp,
   });
 }
 
-/// Return "true" if the given function signature has tensor semantics.
-static bool hasTensorSignature(func::FuncOp funcOp) {
-  return llvm::any_of(funcOp.getFunctionType().getInputs(),
-                      llvm::IsaPred<TensorType>) ||
-         llvm::any_of(funcOp.getFunctionType().getResults(),
-                      llvm::IsaPred<TensorType>);
-}
-
 /// Store all functions of the `moduleOp` in `orderedFuncOps`, sorted by
 /// callee-caller order (i.e. callees without callers first).
 /// Store the map of FuncOp to all its callers in `callerMap`.
@@ -307,16 +297,10 @@ getFuncOpsOrderedByCalls(ModuleOp moduleOp,
                   "without a unique ReturnOp";
     }
 
-    // Collect function calls and populate the caller map.
     numberCallOpsContainedInFuncOp[funcOp] = 0;
     return funcOp.walk([&](func::CallOp callOp) -> WalkResult {
       func::FuncOp calledFunction = getCalledFunction(callOp);
       assert(calledFunction && "could not retrieved called func::FuncOp");
-      // If the called function does not have any tensors in its signature, then
-      // it is not necessary to bufferize the callee before the caller.
-      if (!hasTensorSignature(calledFunction))
-        return WalkResult::skip();
-
       callerMap[calledFunction].insert(callOp);
       if (calledBy[calledFunction].insert(funcOp).second) {
         numberCallOpsContainedInFuncOp[funcOp]++;
@@ -326,7 +310,7 @@ getFuncOpsOrderedByCalls(ModuleOp moduleOp,
   });
   if (res.wasInterrupted())
     return failure();
-  // Iteratively remove function operations that do not call any of the
+  // Iteratively remove function operation that do not call any of the
   // functions remaining in the callCounter map and add them to the worklist.
   while (!numberCallOpsContainedInFuncOp.empty()) {
     auto it = llvm::find_if(numberCallOpsContainedInFuncOp,
@@ -442,31 +426,15 @@ LogicalResult mlir::bufferization::bufferizeModuleOp(
   for (func::FuncOp funcOp : orderedFuncOps) {
     // Note: It would be good to apply cleanups here but we cannot as aliasInfo
     // would be invalidated.
-
-    if (llvm::is_contained(options.noAnalysisFuncFilter, funcOp.getSymName())) {
-      // This function was not analyzed and RaW conflicts were not resolved.
-      // Buffer copies must be inserted before every write.
-      OneShotBufferizationOptions updatedOptions = options;
-      updatedOptions.copyBeforeWrite = true;
-      if (failed(bufferizeOp(funcOp, updatedOptions, statistics)))
-        return failure();
-    } else {
-      if (failed(bufferizeOp(funcOp, options, statistics)))
-        return failure();
-    }
-
+    bool copyBeforeWrite =
+        options.copyBeforeWrite ||
+        llvm::is_contained(options.noAnalysisFuncFilter, funcOp.getSymName());
+    if (failed(bufferizeOp(funcOp, options, copyBeforeWrite,
+                           /*opFilter=*/nullptr, statistics)))
+      return failure();
     // Change buffer return types to more precise layout maps.
     if (options.inferFunctionResultLayout)
       foldMemRefCasts(funcOp);
-  }
-
-  // Bufferize all other ops.
-  for (Operation &op : llvm::make_early_inc_range(moduleOp.getOps())) {
-    // Functions were already bufferized.
-    if (isa<func::FuncOp>(&op))
-      continue;
-    if (failed(bufferizeOp(&op, options, statistics)))
-      return failure();
   }
 
   // Post-pass cleanup of function argument attributes.

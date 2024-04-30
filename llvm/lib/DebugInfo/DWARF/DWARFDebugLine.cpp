@@ -170,14 +170,9 @@ void DWARFDebugLine::Prologue::dump(raw_ostream &OS,
       if (ContentTypes.HasLength)
         OS << format("         length: 0x%8.8" PRIx64 "\n", FileEntry.Length);
       if (ContentTypes.HasSource) {
-        auto Source = FileEntry.Source.getAsCString();
-        if (!Source)
-          consumeError(Source.takeError());
-        else if ((*Source)[0]) {
-          OS << "         source: ";
-          FileEntry.Source.dump(OS, DumpOptions);
-          OS << '\n';
-        }
+        OS <<        "         source: ";
+        FileEntry.Source.dump(OS, DumpOptions);
+        OS << '\n';
       }
     }
   }
@@ -389,25 +384,9 @@ Error DWARFDebugLine::Prologue::parse(
 
   if (getVersion() >= 5) {
     FormParams.AddrSize = DebugLineData.getU8(Cursor);
-    const uint8_t DataAddrSize = DebugLineData.getAddressSize();
-    const uint8_t PrologueAddrSize = getAddressSize();
-    if (Cursor) {
-      if (DataAddrSize == 0) {
-        if (PrologueAddrSize != 4 && PrologueAddrSize != 8) {
-          RecoverableErrorHandler(createStringError(
-              errc::not_supported,
-              "parsing line table prologue at offset 0x%8.8" PRIx64
-              ": invalid address size %" PRIu8,
-              PrologueOffset, PrologueAddrSize));
-        }
-      } else if (DataAddrSize != PrologueAddrSize) {
-        RecoverableErrorHandler(createStringError(
-            errc::not_supported,
-            "parsing line table prologue at offset 0x%8.8" PRIx64 ": address "
-            "size %" PRIu8 " doesn't match architecture address size %" PRIu8,
-            PrologueOffset, PrologueAddrSize, DataAddrSize));
-      }
-    }
+    assert((!Cursor || DebugLineData.getAddressSize() == 0 ||
+            DebugLineData.getAddressSize() == getAddressSize()) &&
+           "Line table header and data extractor disagree");
     SegSelectorSize = DebugLineData.getU8(Cursor);
   }
 
@@ -1472,7 +1451,7 @@ bool DWARFDebugLine::Prologue::getFileNameByIndex(
 
   // sys::path::append skips empty strings.
   sys::path::append(FilePath, Style, IncludeDir, FileName);
-  Result = std::string(FilePath);
+  Result = std::string(FilePath.str());
   return true;
 }
 

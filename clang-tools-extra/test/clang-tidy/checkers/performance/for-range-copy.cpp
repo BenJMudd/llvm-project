@@ -47,11 +47,6 @@ struct S {
   S &operator=(const S &);
 };
 
-struct Point {
-  ~Point() {}
-  int x, y;
-};
-
 struct Convertible {
   operator S() const {
     return S();
@@ -92,10 +87,6 @@ void instantiated() {
   // CHECK-MESSAGES: [[@LINE-1]]:16: warning: the loop variable's type is {{.*}}
   // CHECK-FIXES: {{^}}  for (const S& S2 : View<Iterator<S>>()) {}
 
-  for (const auto [X, Y] : View<Iterator<Point>>()) {}
-  // CHECK-MESSAGES: [[@LINE-1]]:19: warning: the loop variable's type is
-  // CHECK-FIXES: {{^}}  for (const auto& [X, Y] : View<Iterator<Point>>()) {}
-
   for (const T T2 : View<Iterator<T>>()) {}
   // CHECK-MESSAGES: [[@LINE-1]]:16: warning: the loop variable's type is {{.*}}
   // CHECK-FIXES: {{^}}  for (const T& T2 : View<Iterator<T>>()) {}
@@ -132,6 +123,11 @@ struct Mutable {
   ~Mutable() {}
 };
 
+struct Point {
+  ~Point() {}
+  int x, y;
+};
+
 Mutable& operator<<(Mutable &Out, bool B) {
   Out.setBool(B);
   return Out;
@@ -148,7 +144,6 @@ void useByValue(Mutable M);
 void useByConstValue(const Mutable M);
 void mutate(Mutable *M);
 void mutate(Mutable &M);
-void mutate(int &);
 void onceConstOnceMutated(const Mutable &M1, Mutable &M2);
 
 void negativeVariableIsMutated() {
@@ -236,22 +231,6 @@ void positiveOnlyAccessedFieldAsConst() {
     // CHECK-FIXES: for (const auto& UsedAsConst : View<Iterator<Point>>()) {
     use(UsedAsConst.x);
     use(UsedAsConst.y);
-  }
-}
-
-void positiveOnlyUsedAsConstBinding() {
-  for (auto [X, Y] : View<Iterator<Point>>()) {
-    // CHECK-MESSAGES: [[@LINE-1]]:13: warning: loop variable is copied but
-    // CHECK-FIXES: for (const auto& [X, Y] : View<Iterator<Point>>()) {
-    use(X);
-    use(Y);
-  }
-}
-
-void negativeMutatedBinding() {
-  for (auto [X, Y] : View<Iterator<Point>>()) {
-    use(X);
-    mutate(Y);
   }
 }
 
